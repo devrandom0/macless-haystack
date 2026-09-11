@@ -6,6 +6,9 @@ from unittest.mock import MagicMock
 import pytest
 
 from history.archiver import derive_hashed_public_key, fetch_reports_with_cache, load_tracked_keys, run_archiver_loop
+from history.archiver import migrate_devices_json_to_registry
+from history.crypto import decrypt, load_or_create_key
+from history.registry import TrackedDeviceStore
 from history.store import HistoryStore, extract_report_timestamp
 
 
@@ -221,15 +224,18 @@ class _StopLoop(Exception):
     pass
 
 
-def test_run_archiver_loop_loads_keys_fetches_and_stores(tmp_path):
-    devices_file = tmp_path / "devices.json"
-    devices_file.write_text(json.dumps([
-        {"id": 1, "name": "A", "privateKey": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ==", "additionalKeys": []},
-    ]))
-    hashed_key = derive_hashed_public_key("AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ==")
+class _FakeTrackedDeviceStore:
+    def __init__(self, keys):
+        self._keys = keys
 
+    def enabled_keys(self):
+        return self._keys
+
+
+def test_run_archiver_loop_fetches_and_stores_enabled_keys():
     store = HistoryStore(":memory:")
-    entry = _entry(int(time.time()), id_=hashed_key)
+    tracked = _FakeTrackedDeviceStore(["key-a"])
+    entry = _entry(int(time.time()), id_="key-a")
     fetch_from_apple = MagicMock(return_value=[entry])
 
     def sleep_and_stop(_seconds):
@@ -237,56 +243,64 @@ def test_run_archiver_loop_loads_keys_fetches_and_stores(tmp_path):
 
     with pytest.raises(_StopLoop):
         run_archiver_loop(
-            devices_file_path=str(devices_file), store=store, poll_interval_hours=4,
+            tracked_device_store=tracked, store=store, poll_interval_hours=4,
             fetch_from_apple=fetch_from_apple, sleep_fn=sleep_and_stop,
         )
 
-    fetch_from_apple.assert_called_once_with([hashed_key])
-    assert store.get_reports([hashed_key], since=0) == [entry]
-    assert store.last_polled_at(hashed_key) is not None
+    fetch_from_apple.assert_called_once_with(["key-a"])
+    assert store.get_reports(["key-a"], since=0) == [entry]
 
 
-def test_run_archiver_loop_missing_devices_file_returns_without_looping(tmp_path):
-    missing_path = str(tmp_path / "does_not_exist.json")
+def test_run_archiver_loop_rereads_enabled_keys_every_iteration():
     store = HistoryStore(":memory:")
+
+    class _TogglingStore:
+        def __init__(self):
+            self.calls = 0
+
+        def enabled_keys(self):
+            self.calls += 1
+            return ["key-a"] if self.calls == 1 else []
+
+    tracked = _TogglingStore()
+    fetch_from_apple = MagicMock(return_value=[])
+    call_count = {"n": 0}
+
+    def sleep_and_stop_after_two(_seconds):
+        call_count["n"] += 1
+        if call_count["n"] >= 2:
+            raise _StopLoop()
+
+    with pytest.raises(_StopLoop):
+        run_archiver_loop(
+            tracked_device_store=tracked, store=store, poll_interval_hours=4,
+            fetch_from_apple=fetch_from_apple, sleep_fn=sleep_and_stop_after_two,
+        )
+
+    assert tracked.calls == 2
+    assert fetch_from_apple.call_args_list[0].args == (["key-a"],)
+
+
+def test_run_archiver_loop_skips_fetch_when_no_enabled_keys():
+    store = HistoryStore(":memory:")
+    tracked = _FakeTrackedDeviceStore([])
     fetch_from_apple = MagicMock()
 
-    def fail_if_called(_seconds):
-        raise AssertionError("sleep_fn should never be called if the devices file is missing")
+    def sleep_and_stop(_seconds):
+        raise _StopLoop()
 
-    run_archiver_loop(
-        devices_file_path=missing_path, store=store, poll_interval_hours=4,
-        fetch_from_apple=fetch_from_apple, sleep_fn=fail_if_called,
-    )
+    with pytest.raises(_StopLoop):
+        run_archiver_loop(
+            tracked_device_store=tracked, store=store, poll_interval_hours=4,
+            fetch_from_apple=fetch_from_apple, sleep_fn=sleep_and_stop,
+        )
 
     fetch_from_apple.assert_not_called()
 
 
-def test_run_archiver_loop_malformed_devices_file_returns_without_looping(tmp_path):
-    devices_file = tmp_path / "devices.json"
-    # A JSON object instead of an array: iterating it yields its string keys,
-    # and indexing a string with ["privateKey"] raises TypeError, not KeyError.
-    devices_file.write_text(json.dumps({"id": 1, "name": "A", "privateKey": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ=="}))
+def test_run_archiver_loop_continues_after_fetch_failure():
     store = HistoryStore(":memory:")
-    fetch_from_apple = MagicMock()
-
-    def fail_if_called(_seconds):
-        raise AssertionError("sleep_fn should never be called if the devices file is malformed")
-
-    run_archiver_loop(
-        devices_file_path=str(devices_file), store=store, poll_interval_hours=4,
-        fetch_from_apple=fetch_from_apple, sleep_fn=fail_if_called,
-    )
-
-    fetch_from_apple.assert_not_called()
-
-
-def test_run_archiver_loop_continues_after_fetch_failure(tmp_path):
-    devices_file = tmp_path / "devices.json"
-    devices_file.write_text(json.dumps([
-        {"id": 1, "name": "A", "privateKey": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ==", "additionalKeys": []},
-    ]))
-    store = HistoryStore(":memory:")
+    tracked = _FakeTrackedDeviceStore(["key-a"])
     fetch_from_apple = MagicMock(side_effect=Exception("network error"))
 
     def sleep_and_stop(_seconds):
@@ -294,8 +308,77 @@ def test_run_archiver_loop_continues_after_fetch_failure(tmp_path):
 
     with pytest.raises(_StopLoop):
         run_archiver_loop(
-            devices_file_path=str(devices_file), store=store, poll_interval_hours=4,
+            tracked_device_store=tracked, store=store, poll_interval_hours=4,
             fetch_from_apple=fetch_from_apple, sleep_fn=sleep_and_stop,
         )
     # Reaching sleep_fn (and raising _StopLoop from it) proves the exception
     # from fetch_from_apple was caught rather than propagating out of the loop.
+
+
+def test_migrate_devices_json_to_registry_inserts_and_deletes_file(tmp_path):
+    devices_file = tmp_path / "devices.json"
+    devices_file.write_text(json.dumps([
+        {"id": 1, "name": "Keys", "privateKey": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ==",
+         "additionalKeys": ["AgICAgICAgICAgICAgICAgICAgICAgICAgICAg=="]},
+    ]))
+    tracked = TrackedDeviceStore(":memory:")
+    key = load_or_create_key(str(tmp_path / "history_key.bin"))
+
+    migrate_devices_json_to_registry(str(devices_file), tracked, key)
+
+    devices = tracked.list_devices()
+    assert len(devices) == 2
+    assert not devices_file.exists()
+    assert {d["enabled"] for d in devices} == {True}
+
+
+def test_migrate_devices_json_to_registry_skips_when_registry_not_empty(tmp_path):
+    devices_file = tmp_path / "devices.json"
+    devices_file.write_text(json.dumps([
+        {"id": 1, "name": "Keys", "privateKey": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ=="},
+    ]))
+    tracked = TrackedDeviceStore(":memory:")
+    tracked.upsert("existing", "Existing", None, b"x", enabled=True)
+    key = load_or_create_key(str(tmp_path / "history_key.bin"))
+
+    migrate_devices_json_to_registry(str(devices_file), tracked, key)
+
+    assert devices_file.exists()
+    assert [d["hashedPublicKey"] for d in tracked.list_devices()] == ["existing"]
+
+
+def test_migrate_devices_json_to_registry_no_file_is_a_no_op(tmp_path):
+    tracked = TrackedDeviceStore(":memory:")
+    key = load_or_create_key(str(tmp_path / "history_key.bin"))
+
+    migrate_devices_json_to_registry(str(tmp_path / "missing.json"), tracked, key)
+
+    assert tracked.is_empty()
+
+
+def test_migrate_devices_json_to_registry_malformed_file_leaves_file_in_place(tmp_path):
+    devices_file = tmp_path / "devices.json"
+    devices_file.write_text("not json")
+    tracked = TrackedDeviceStore(":memory:")
+    key = load_or_create_key(str(tmp_path / "history_key.bin"))
+
+    migrate_devices_json_to_registry(str(devices_file), tracked, key)
+
+    assert devices_file.exists()
+    assert tracked.is_empty()
+
+
+def test_migrate_devices_json_to_registry_encrypts_private_key(tmp_path):
+    devices_file = tmp_path / "devices.json"
+    devices_file.write_text(json.dumps([
+        {"id": 1, "name": "Keys", "privateKey": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ=="},
+    ]))
+    tracked = TrackedDeviceStore(":memory:")
+    key = load_or_create_key(str(tmp_path / "history_key.bin"))
+
+    migrate_devices_json_to_registry(str(devices_file), tracked, key)
+
+    row = tracked._conn.execute(
+        "SELECT encrypted_private_key FROM tracked_devices"
+    ).fetchone()
+    assert decrypt(key, row[0]) == "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ=="
