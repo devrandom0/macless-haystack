@@ -204,6 +204,10 @@ class _AccessoryDetailState extends State<AccessoryDetail> {
                   setState(() {
                     newAccessory.isActive = checked;
                   });
+                  var accessoryRegistry =
+                      Provider.of<AccessoryRegistry>(context, listen: false);
+                  accessoryRegistry.editAccessory(
+                      widget.accessory, newAccessory);
                 },
               ),
               SwitchListTile(
