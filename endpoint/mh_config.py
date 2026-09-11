@@ -60,6 +60,14 @@ def getEndpointPass():
     return config.get('Settings', 'endpoint_pass', fallback=None)
 
 
+def getHistoryDevicesFile():
+    return config.get('Settings', 'history_devices_file', fallback='devices.json')
+
+
+def getHistoryPollIntervalHours():
+    return float(config.get('Settings', 'history_poll_interval_hours', fallback='4'))
+
+
 def getLogLevel():
     logLevel = config.get('Settings', 'loglevel', fallback='INFO')
     return logging.getLevelName(logLevel)

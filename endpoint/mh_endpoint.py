@@ -6,17 +6,21 @@ import logging
 import os
 import ssl
 import sys
+import threading
 import time
-from collections import OrderedDict
 from datetime import datetime,  timezone
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import requests
 
 import mh_config
+from history import archiver as history_archiver
+from history.store import HistoryStore
 from register import apple_cryptography, pypush_gsa_icloud
 
 logger = logging.getLogger()
+
+history_store = None
 
 
 class ServerHandler(BaseHTTPRequestHandler):
@@ -80,49 +84,31 @@ class ServerHandler(BaseHTTPRequestHandler):
 
         logger.debug('Getting with post: ' + str(post_body))
         body = json.loads(post_body)
-        if "days" in body:
-            days = body['days']
-        else:
-            days = 7
+        days = body.get('days', 7)
+        force = body.get('force', False)
+        ids = list(body['ids'])
         logger.debug('Querying for ' + str(days) + ' days')
-        unixEpoch = int(datetime.now().strftime('%s'))
-        startdate = unixEpoch - (60 * 60 * 24 * days)
 
-        datetime.fromtimestamp(startdate)
-
-        # Date is always 1, because it has no effect
-        data = {"search": [
-            {"startDate": 1, "ids": list(body['ids'])}]}
+        def fetch_from_apple(fetch_ids):
+            data = {"search": [{"startDate": 1, "ids": fetch_ids}]}
+            with requests.post("https://gateway.icloud.com/acsnservice/fetch",
+                                auth=getAuth(regenerate=False, second_factor='sms'),
+                                headers=pypush_gsa_icloud.generate_anisette_headers(),
+                                json=data) as r:
+                r.raise_for_status()
+            return json.loads(r.content.decode())['results']
 
         try:
-            with requests.post("https://gateway.icloud.com/acsnservice/fetch",  auth=getAuth(regenerate=False, second_factor='sms'),
-                              headers=pypush_gsa_icloud.generate_anisette_headers(),
-                              json=data) as r:
-                r.raise_for_status()
+            results = history_archiver.fetch_reports_with_cache(
+                ids, days, force, history_store,
+                mh_config.getHistoryPollIntervalHours(), fetch_from_apple,
+            )
 
-            logger.debug('Return from fetch service:')
-            logger.debug(r.content.decode())
-            result = json.loads(r.content.decode())
-            results = result['results']
-
-            newResults = OrderedDict()
-
-            for idx, entry in enumerate(results):
-                data = base64.b64decode(entry['payload'])
-                timestamp = int.from_bytes(data[0:4], 'big') + 978307200
-                if (timestamp > startdate):
-                    newResults[timestamp] = entry
-
-            sorted_map = OrderedDict(sorted(newResults.items(), reverse=True))
-
-            result["results"] = list(sorted_map.values())
             self.send_response(200)
-            # send response headers
             self.addCORSHeaders()
             self.end_headers()
 
-            # send the body of the response
-            responseBody = json.dumps(result)
+            responseBody = json.dumps({"results": results})
             self.wfile.write(responseBody.encode())
         except requests.exceptions.ConnectTimeout:
             logger.error("Timeout to " + mh_config.getAnisetteServer() +
@@ -175,6 +161,29 @@ if __name__ == "__main__":
     if not os.path.exists(mh_config.getConfigFile()):
         logging.info(f'No auth-token found.')
         apple_cryptography.registerDevice()
+
+    devices_file_path = mh_config.getConfigPath() + '/' + mh_config.getHistoryDevicesFile()
+    if os.path.isfile(devices_file_path):
+        history_store = HistoryStore(mh_config.getConfigPath() + '/history.db')
+
+        def fetch_from_apple(fetch_ids):
+            data = {"search": [{"startDate": 1, "ids": fetch_ids}]}
+            with requests.post("https://gateway.icloud.com/acsnservice/fetch",
+                                auth=getAuth(regenerate=False, second_factor='sms'),
+                                headers=pypush_gsa_icloud.generate_anisette_headers(),
+                                json=data) as r:
+                r.raise_for_status()
+            return json.loads(r.content.decode())['results']
+
+        archiver_thread = threading.Thread(
+            target=history_archiver.run_archiver_loop,
+            args=(devices_file_path, history_store, mh_config.getHistoryPollIntervalHours(), fetch_from_apple),
+            daemon=True,
+        )
+        archiver_thread.start()
+        logger.info(f"History archiver started, tracking devices from {devices_file_path}")
+    else:
+        logger.info(f"No history devices file at {devices_file_path}, history archiving disabled")
 
     Handler = ServerHandler
 
