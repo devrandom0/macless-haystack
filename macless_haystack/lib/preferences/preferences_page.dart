@@ -183,6 +183,14 @@ class _PreferencesPageState extends State<PreferencesPage> {
   }
 
   Future<void> _setArchivingAll(bool enabled) async {
+    var accessories = Provider.of<AccessoryRegistry>(context, listen: false).accessories;
+    if (accessories.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No devices to archive')),
+      );
+      return;
+    }
+
     var previous = _archivingAllEnabled;
     setState(() {
       _archivingAllEnabled = enabled;
@@ -191,7 +199,6 @@ class _PreferencesPageState extends State<PreferencesPage> {
       var url = Settings.getValue<String>(endpointUrl, defaultValue: 'http://localhost:6176')!;
       var user = Settings.getValue<String>(endpointUser, defaultValue: '')!;
       var pass = Settings.getValue<String>(endpointPass, defaultValue: '')!;
-      var accessories = Provider.of<AccessoryRegistry>(context, listen: false).accessories;
 
       List<HistoryDeviceEntry> devices = [];
       for (var accessory in accessories) {
