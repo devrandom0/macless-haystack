@@ -7,6 +7,19 @@ import 'package:macless_haystack/accessory/accessory_registry.dart';
 import 'package:macless_haystack/location/location_model.dart';
 import 'package:provider/provider.dart';
 
+/// Whether the map should auto-fit its camera to [accessories]' current
+/// locations. This is only desired once - the first time a location becomes
+/// available - so a later, unrelated registry update (e.g. a background
+/// poll) doesn't override a pan/zoom the user has already made.
+bool shouldFitToAccessoryLocations(
+    List<Accessory> accessories, bool hasFittedToAccessories) {
+  if (hasFittedToAccessories) {
+    return false;
+  }
+  return accessories
+      .any((accessory) => accessory.isActive && accessory.lastLocation != null);
+}
+
 class AccessoryMap extends StatefulWidget {
   final MapController? mapController;
 
@@ -26,6 +39,7 @@ class _AccessoryMapState extends State<AccessoryMap> {
   late MapController _mapController;
   void Function()? cancelLocationUpdates;
   void Function()? cancelAccessoryUpdates;
+  bool _hasFittedToAccessories = false;
 
   @override
   void initState() {
@@ -89,9 +103,14 @@ class _AccessoryMapState extends State<AccessoryMap> {
     return Consumer2<AccessoryRegistry, LocationModel>(builder:
         (BuildContext context, AccessoryRegistry accessoryRegistry,
             LocationModel locationModel, Widget? child) {
-      // Zoom map to fit all accessories on first accessory update
+      // Zoom map to fit all accessories on first accessory update only -
+      // later rebuilds (e.g. from a background poll) must not override a
+      // pan/zoom the user has already made.
       var accessories = accessoryRegistry.accessories;
-      fitToContent(accessories, locationModel.here);
+      if (shouldFitToAccessoryLocations(accessories, _hasFittedToAccessories)) {
+        _hasFittedToAccessories = true;
+        fitToContent(accessories, locationModel.here);
+      }
 
       return FlutterMap(
         mapController: _mapController,
