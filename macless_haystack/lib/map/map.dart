@@ -9,8 +9,8 @@ import 'package:provider/provider.dart';
 
 /// Whether the map should auto-fit its camera to [accessories]' current
 /// locations. This is only desired once - the first time a location becomes
-/// available - so a later, unrelated registry update (e.g. a background
-/// poll) doesn't override a pan/zoom the user has already made.
+/// available - so a later, unrelated rebuild (e.g. a device location update
+/// streaming in) doesn't override a pan/zoom the user has already made.
 bool shouldFitToAccessoryLocations(
     List<Accessory> accessories, bool hasFittedToAccessories) {
   if (hasFittedToAccessories) {
@@ -51,6 +51,8 @@ class _AccessoryMapState extends State<AccessoryMap> {
     var locationModel = Provider.of<LocationModel>(context, listen: false);
 
     // Resize map to fit all accessories at initial location
+    _hasFittedToAccessories =
+        shouldFitToAccessoryLocations(accessoryRegistry.accessories, false);
     fitToContent(accessoryRegistry.accessories, locationModel.here);
 
     // Fit map if first location is known
@@ -104,8 +106,8 @@ class _AccessoryMapState extends State<AccessoryMap> {
         (BuildContext context, AccessoryRegistry accessoryRegistry,
             LocationModel locationModel, Widget? child) {
       // Zoom map to fit all accessories on first accessory update only -
-      // later rebuilds (e.g. from a background poll) must not override a
-      // pan/zoom the user has already made.
+      // later rebuilds (e.g. from a device location update streaming in)
+      // must not override a pan/zoom the user has already made.
       var accessories = accessoryRegistry.accessories;
       if (shouldFitToAccessoryLocations(accessories, _hasFittedToAccessories)) {
         _hasFittedToAccessories = true;
