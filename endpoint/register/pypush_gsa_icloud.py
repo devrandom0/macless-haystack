@@ -117,20 +117,32 @@ def gsa_authenticate(username, password):
 """
     spd = plist.loads(PLISTHEADER + spd)
 
-    if "au" in resp["Status"] and resp["Status"]["au"] in ["trustedDeviceSecondaryAuth", "secondaryAuth"]:
-        logger.info("2FA required, requesting SMS code. (No other 2FA-code will work!)")
+    if "au" in resp["Status"]:
+        au = resp["Status"]["au"]
         # Replace bytes with strings
         for k, v in spd.items():
             if isinstance(v, bytes):
                 spd[k] = base64.b64encode(v).decode()
-        sms_second_factor(spd["adsid"], spd["GsIdmsToken"])
+        try:
+            _dispatch_second_factor(au, spd["adsid"], spd["GsIdmsToken"])
+        except ValueError:
+            logger.error(f"Unknown auth value {au}")
+            return
 
         return gsa_authenticate(username, password)
-    elif "au" in resp["Status"]:
-        logger.error(f"Unknown auth value {r['Status']['au']}")
-        return
     else:
         return spd
+
+
+def _dispatch_second_factor(au, dsid, idms_token):
+    if au == "trustedDeviceSecondaryAuth":
+        logger.info("2FA required, requesting trusted-device code.")
+        trusted_device_second_factor(dsid, idms_token)
+    elif au == "secondaryAuth":
+        logger.info("2FA required, requesting SMS code. (No other 2FA-code will work!)")
+        sms_second_factor(dsid, idms_token)
+    else:
+        raise ValueError(f"Unknown auth value {au}")
 
 
 def gsa_authenticated_request(parameters):
@@ -232,7 +244,7 @@ def decrypt_cbc(usr, data):
 WAITING_TIME = 60
 
 
-def sms_second_factor(dsid, idms_token):
+def _build_2fa_headers(dsid, idms_token):
     identity_token = base64.b64encode(
         (dsid + ":" + idms_token).encode()).decode()
 
@@ -240,12 +252,16 @@ def sms_second_factor(dsid, idms_token):
         "User-Agent": "Xcode",
         "Accept-Language": "en-us",
         "X-Apple-Identity-Token": identity_token,
-        "X-Apple-App-Info": "com.apple.gs.xcode.auth",
-        "X-Xcode-Version": "11.2 (11B41)",
         "X-Mme-Client-Info": '<MacBookPro18,3> <Mac OS X;13.4.1;22F8> <com.apple.AOSKit/282 (com.apple.akd/1.0)>'
     }
-
     headers.update(generate_anisette_headers())
+    return headers
+
+
+def sms_second_factor(dsid, idms_token):
+    headers = _build_2fa_headers(dsid, idms_token)
+    headers["X-Apple-App-Info"] = "com.apple.gs.xcode.auth"
+    headers["X-Xcode-Version"] = "11.2 (11B41)"
 
     # Extract the "boot_args" from the auth page to get the id of the trusted phone number
     pattern = r'<script.*class="boot_args">\s*(.*?)\s*</script>'
@@ -312,6 +328,67 @@ def sms_second_factor(dsid, idms_token):
     else:
         raise Exception(
             "2FA unsuccessful. Maybe wrong code or wrong number. Check your account details.")
+
+
+def trusted_device_second_factor(dsid, idms_token):
+    headers = _build_2fa_headers(dsid, idms_token)
+    headers["Content-Type"] = "text/x-xml-plist"
+    headers["Accept"] = "text/x-xml-plist"
+
+    def request_trusted_device_code():
+        with requests.get(
+                "https://gsa.apple.com/auth/verify/trusteddevice",
+                headers=headers,
+                verify=False,
+                timeout=5,
+        ) as resp:
+            resp.raise_for_status()
+        logger.info("Requested trusted-device 2FA code")
+
+    request_trusted_device_code()
+
+    for handler in logger.handlers:
+        handler.flush()
+    # Prompt for the 2FA code shown as a popup on a trusted device
+    start_time = time.perf_counter()
+    code = input(
+        f"Enter the 2FA code shown on your trusted device (If you do not see it, wait {WAITING_TIME}s and press Enter. An attempt will be made to resend it.): ")
+    end_time = time.perf_counter()
+
+    if code == "":
+        elapsed_time = int(end_time - start_time)
+        if elapsed_time < WAITING_TIME:
+            waiting_time = WAITING_TIME - elapsed_time
+            logger.info(
+                f"You only waited {elapsed_time} seconds. The next request will be started in {waiting_time} seconds")
+            time.sleep(waiting_time)
+            code = input("Enter the 2FA code if you have received it in the meantime, otherwise press Enter: ")
+            if code == "":
+                request_trusted_device_code()
+                code = input("Enter the 2FA code shown on your trusted device: ")
+        else:
+            request_trusted_device_code()
+            code = input("Enter the 2FA code shown on your trusted device: ")
+
+    submit_headers = dict(headers)
+    submit_headers["security-code"] = code
+
+    with requests.get(
+            "https://gsa.apple.com/grandslam/GsService2/validate",
+            headers=submit_headers,
+            verify=False,
+            timeout=5,
+    ) as resp:
+        resp.raise_for_status()
+
+    response = f"HTTP-Code: {resp.status_code}"
+    logger.debug(response)
+    # Headers does not include Apple DSID, 2FA failed
+    if resp.ok and "X-Apple-DSID" in resp.headers:
+        logger.info("2FA successful")
+    else:
+        raise Exception(
+            "2FA unsuccessful. Maybe wrong code. Check your account details.")
 
 
 def request_code(headers,sms_id):
