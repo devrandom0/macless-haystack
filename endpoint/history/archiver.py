@@ -18,3 +18,15 @@ def derive_hashed_public_key(private_key_b64):
     ).public_key().public_numbers().x
     adv_bytes = public_x.to_bytes(28, "big")
     return base64.b64encode(hashlib.sha256(adv_bytes).digest()).decode("ascii")
+
+
+def load_tracked_keys(devices_file_path):
+    with open(devices_file_path, "r") as f:
+        devices = json.load(f)
+
+    hashed_keys = []
+    for device in devices:
+        private_keys = [device["privateKey"]] + list(device.get("additionalKeys", []))
+        for private_key_b64 in private_keys:
+            hashed_keys.append(derive_hashed_public_key(private_key_b64))
+    return hashed_keys
