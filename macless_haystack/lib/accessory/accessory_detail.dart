@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_settings_screens/flutter_settings_screens.dart';
 import 'package:provider/provider.dart';
 import 'package:macless_haystack/accessory/accessory_color_selector.dart';
 import 'package:macless_haystack/accessory/accessory_icon.dart';
 import 'package:macless_haystack/accessory/accessory_icon_selector.dart';
 import 'package:macless_haystack/accessory/accessory_model.dart';
 import 'package:macless_haystack/accessory/accessory_registry.dart';
+import 'package:macless_haystack/history/history_archive_service.dart';
 import 'package:macless_haystack/item_management/accessory_name_input.dart';
+import 'package:macless_haystack/preferences/user_preferences_model.dart';
 
 class AccessoryDetail extends StatefulWidget {
   final Accessory accessory;
@@ -32,12 +35,89 @@ class _AccessoryDetailState extends State<AccessoryDetail> {
   // An accessory storing the changed values.
   late Accessory newAccessory;
   final _formKey = GlobalKey<FormState>();
+  bool _archivingLoading = true;
+  bool _archivingEnabled = false;
 
   @override
   void initState() {
     // Initialize changed accessory with existing accessory properties.
     newAccessory = widget.accessory.clone();
     super.initState();
+    _loadArchivingStatus();
+  }
+
+  Future<void> _loadArchivingStatus() async {
+    try {
+      var url = Settings.getValue<String>(endpointUrl,
+          defaultValue: 'http://localhost:6176')!;
+      var user = Settings.getValue<String>(endpointUser, defaultValue: '')!;
+      var pass = Settings.getValue<String>(endpointPass, defaultValue: '')!;
+      var devices = await HistoryArchiveService.getArchivedDevices(
+          url, user, pass);
+      var relevantKeys = {
+        widget.accessory.hashedPublicKey,
+        ...widget.accessory.additionalKeys
+      };
+      var enabled = devices
+          .any((d) => relevantKeys.contains(d.hashedPublicKey) && d.enabled);
+      if (mounted) {
+        setState(() {
+          _archivingEnabled = enabled;
+          _archivingLoading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _archivingLoading = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _setArchiving(bool enabled) async {
+    var previous = _archivingEnabled;
+    setState(() {
+      _archivingEnabled = enabled;
+    });
+    try {
+      var url = Settings.getValue<String>(endpointUrl,
+          defaultValue: 'http://localhost:6176')!;
+      var user = Settings.getValue<String>(endpointUser, defaultValue: '')!;
+      var pass = Settings.getValue<String>(endpointPass, defaultValue: '')!;
+
+      var accessory = widget.accessory;
+      var additionalPrivateKeys = await accessory.getAdditionalPrivateKeys();
+      List<HistoryDeviceEntry> devices = [
+        HistoryDeviceEntry(
+          hashedPublicKey: accessory.hashedPublicKey,
+          privateKey: await accessory.getPrivateKey(),
+          name: accessory.name,
+          accessoryId: accessory.id,
+          enabled: enabled,
+        ),
+        for (var i = 0; i < accessory.additionalKeys.length; i++)
+          HistoryDeviceEntry(
+            hashedPublicKey: accessory.additionalKeys[i],
+            privateKey: additionalPrivateKeys[i],
+            name: '${accessory.name} (extra key)',
+            accessoryId: accessory.id,
+            enabled: enabled,
+          ),
+      ];
+
+      await HistoryArchiveService.setDevicesArchiving(
+          url, user, pass, devices);
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _archivingEnabled = previous;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not update server-side archiving: $e')),
+        );
+      }
+    }
   }
 
   @override
@@ -125,6 +205,13 @@ class _AccessoryDetailState extends State<AccessoryDetail> {
                     newAccessory.isActive = checked;
                   });
                 },
+              ),
+              SwitchListTile(
+                value: _archivingEnabled,
+                title: const Text('Archive location history on server'),
+                subtitle:
+                    _archivingLoading ? const Text('Loading status…') : null,
+                onChanged: _archivingLoading ? null : _setArchiving,
               ),
               ListTile(
                 title: OutlinedButton(
