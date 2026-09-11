@@ -95,6 +95,12 @@ class ServerHandler(BaseHTTPRequestHandler):
             self.addCORSHeaders()
             self.send_header('WWW-Authenticate', 'Basic realm="Auth Realm"')
             self.end_headers()
+            # Drain any unread body so the socket doesn't close with
+            # buffered inbound data, which makes the OS send a TCP RST
+            # instead of a clean close and can reset the client's read.
+            content_len = int(self.headers.get('content-length', 0) or 0)
+            if content_len:
+                self.rfile.read(content_len)
             return
         if hasattr(self.headers, 'getheader'):
             content_len = int(self.headers.getheader('content-length', 0))
@@ -103,13 +109,21 @@ class ServerHandler(BaseHTTPRequestHandler):
 
         post_body = self.rfile.read(content_len)
 
-        logger.debug('Getting with post: ' + str(post_body))
-        body = json.loads(post_body)
-
         path = urlparse(self.path).path
         if path == '/history/devices':
+            try:
+                body = json.loads(post_body)
+            except json.JSONDecodeError as e:
+                self.send_response(400)
+                self.addCORSHeaders()
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": str(e)}).encode())
+                return
             self._handle_post_history_devices(body)
             return
+
+        logger.debug('Getting with post: ' + str(post_body))
+        body = json.loads(post_body)
 
         days = body.get('days', 7)
         force = body.get('force', False)
@@ -146,7 +160,7 @@ class ServerHandler(BaseHTTPRequestHandler):
             self.send_response(501)
 
     def _handle_post_history_devices(self, body):
-        if tracked_device_store is None:
+        if tracked_device_store is None or history_encryption_key is None:
             self.send_response(503)
             self.addCORSHeaders()
             self.end_headers()
@@ -160,10 +174,19 @@ class ServerHandler(BaseHTTPRequestHandler):
             now = int(time.time())
             parsed = []
             for device in devices:
+                hashed_public_key = device['hashedPublicKey']
+                private_key = device['privateKey']
+                name = device['name']
+                if not isinstance(hashed_public_key, str):
+                    raise TypeError("'hashedPublicKey' must be a string")
+                if not isinstance(private_key, str):
+                    raise TypeError("'privateKey' must be a string")
+                if not isinstance(name, str):
+                    raise TypeError("'name' must be a string")
                 parsed.append((
-                    device['hashedPublicKey'],
-                    device['privateKey'],
-                    device['name'],
+                    hashed_public_key,
+                    private_key,
+                    name,
                     device.get('accessoryId'),
                     bool(device['enabled']),
                 ))
@@ -174,9 +197,17 @@ class ServerHandler(BaseHTTPRequestHandler):
             self.wfile.write(json.dumps({"error": str(e)}).encode())
             return
 
-        for hashed_public_key, private_key, name, accessory_id, enabled in parsed:
-            encrypted = crypto.encrypt(history_encryption_key, private_key)
-            tracked_device_store.upsert(hashed_public_key, name, accessory_id, encrypted, enabled, when=now)
+        try:
+            for hashed_public_key, private_key, name, accessory_id, enabled in parsed:
+                encrypted = crypto.encrypt(history_encryption_key, private_key)
+                tracked_device_store.upsert(hashed_public_key, name, accessory_id, encrypted, enabled, when=now)
+        except Exception as e:
+            logger.error(f"Failed to persist tracked devices: {e}", exc_info=True)
+            self.send_response(500)
+            self.addCORSHeaders()
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "internal server error"}).encode())
+            return
 
         self.send_response(200)
         self.addCORSHeaders()
