@@ -100,15 +100,18 @@ def migrate_devices_json_to_registry(devices_file_path, tracked_device_store, en
                 hashed_key = derive_hashed_public_key(private_key_b64)
                 encrypted = crypto.encrypt(encryption_key, private_key_b64)
                 entry_name = name if index == 0 else f"{name} (extra key)"
-                rows.append((hashed_key, entry_name, encrypted))
+                rows.append((hashed_key, entry_name, None, encrypted, True))
     except Exception as e:
         logger.error(f"Could not migrate {devices_file_path} to the device registry: {e}", exc_info=True)
         return
 
-    for hashed_key, entry_name, encrypted in rows:
-        tracked_device_store.upsert(hashed_key, entry_name, None, encrypted, enabled=True, when=now)
+    try:
+        tracked_device_store.upsert_many(rows, when=now)
+        os.remove(devices_file_path)
+    except Exception as e:
+        logger.error(f"Could not migrate {devices_file_path} to the device registry: {e}", exc_info=True)
+        return
 
-    os.remove(devices_file_path)
     logger.info(f"Migrated devices from {devices_file_path} into the device registry; file removed")
 
 

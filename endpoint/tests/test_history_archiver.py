@@ -382,3 +382,24 @@ def test_migrate_devices_json_to_registry_encrypts_private_key(tmp_path):
         "SELECT encrypted_private_key FROM tracked_devices"
     ).fetchone()
     assert decrypt(key, row[0]) == "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ=="
+
+
+class _FailingWriteTrackedDeviceStore:
+    def is_empty(self):
+        return True
+
+    def upsert_many(self, rows, when=None):
+        raise sqlite3.OperationalError("disk I/O error")
+
+
+def test_migrate_devices_json_to_registry_write_failure_leaves_file_in_place(tmp_path):
+    devices_file = tmp_path / "devices.json"
+    devices_file.write_text(json.dumps([
+        {"id": 1, "name": "Keys", "privateKey": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ=="},
+    ]))
+    tracked = _FailingWriteTrackedDeviceStore()
+    key = load_or_create_key(str(tmp_path / "history_key.bin"))
+
+    migrate_devices_json_to_registry(str(devices_file), tracked, key)
+
+    assert devices_file.exists()

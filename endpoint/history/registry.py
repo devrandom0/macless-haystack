@@ -30,6 +30,21 @@ class TrackedDeviceStore:
             )
             self._conn.commit()
 
+    def upsert_many(self, rows, when=None):
+        when = when if when is not None else int(time.time())
+        with self._lock:
+            try:
+                self._conn.executemany(
+                    "INSERT OR REPLACE INTO tracked_devices "
+                    "(hashed_public_key, name, accessory_id, encrypted_private_key, enabled, updated_at) "
+                    "VALUES (?, ?, ?, ?, ?, ?)",
+                    [(hp, name, aid, enc, int(bool(en)), when) for hp, name, aid, enc, en in rows],
+                )
+            except Exception:
+                self._conn.rollback()
+                raise
+            self._conn.commit()
+
     def list_devices(self):
         with self._lock:
             rows = self._conn.execute(

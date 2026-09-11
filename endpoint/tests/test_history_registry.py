@@ -1,3 +1,7 @@
+import sqlite3
+
+import pytest
+
 from history.registry import TrackedDeviceStore
 
 
@@ -57,3 +61,35 @@ def test_upsert_accepts_missing_accessory_id():
     store.upsert("hash-a", "A", None, b"a", enabled=True)
 
     assert store.list_devices()[0]["accessoryId"] is None
+
+
+def test_upsert_many_inserts_all_rows():
+    store = TrackedDeviceStore(":memory:")
+    rows = [
+        ("hash-a", "A", None, b"a", True),
+        ("hash-b", "B", "acc-1", b"b", False),
+        ("hash-c", "C", "acc-2", b"c", True),
+    ]
+
+    store.upsert_many(rows)
+
+    devices = store.list_devices()
+    assert len(devices) == 3
+    assert {d["hashedPublicKey"] for d in devices} == {"hash-a", "hash-b", "hash-c"}
+    by_key = {d["hashedPublicKey"]: d for d in devices}
+    assert by_key["hash-a"] == {"hashedPublicKey": "hash-a", "name": "A", "accessoryId": None, "enabled": True}
+    assert by_key["hash-b"] == {"hashedPublicKey": "hash-b", "name": "B", "accessoryId": "acc-1", "enabled": False}
+    assert by_key["hash-c"] == {"hashedPublicKey": "hash-c", "name": "C", "accessoryId": "acc-2", "enabled": True}
+
+
+def test_upsert_many_rolls_back_on_error():
+    store = TrackedDeviceStore(":memory:")
+    rows = [
+        ("hash-a", "A", None, b"a", True),
+        ("hash-b", None, None, b"b", True),  # name is NOT NULL, raises during executemany
+    ]
+
+    with pytest.raises(sqlite3.Error):
+        store.upsert_many(rows)
+
+    assert store.is_empty() is True
