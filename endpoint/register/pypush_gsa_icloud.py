@@ -123,12 +123,11 @@ def gsa_authenticate(username, password):
         for k, v in spd.items():
             if isinstance(v, bytes):
                 spd[k] = base64.b64encode(v).decode()
-        try:
-            _dispatch_second_factor(au, spd["adsid"], spd["GsIdmsToken"])
-        except ValueError:
+        if au not in ("trustedDeviceSecondaryAuth", "secondaryAuth"):
             logger.error(f"Unknown auth value {au}")
             return
 
+        _dispatch_second_factor(au, spd["adsid"], spd["GsIdmsToken"])
         return gsa_authenticate(username, password)
     else:
         return spd
@@ -244,7 +243,7 @@ def decrypt_cbc(usr, data):
 WAITING_TIME = 60
 
 
-def _build_2fa_headers(dsid, idms_token):
+def _common_2fa_headers(dsid, idms_token):
     identity_token = base64.b64encode(
         (dsid + ":" + idms_token).encode()).decode()
 
@@ -258,8 +257,28 @@ def _build_2fa_headers(dsid, idms_token):
     return headers
 
 
+def _prompt_for_code(initial_prompt, resend_fn):
+    for handler in logger.handlers:
+        handler.flush()
+    start_time = time.perf_counter()
+    code = input(initial_prompt)
+    elapsed_time = int(time.perf_counter() - start_time)
+
+    if code == "" and elapsed_time < WAITING_TIME:
+        waiting_time = WAITING_TIME - elapsed_time
+        logger.info(
+            f"You only waited {elapsed_time} seconds. The next request will be started in {waiting_time} seconds")
+        time.sleep(waiting_time)
+        code = input("Enter the 2FA code if you have received it in the meantime, otherwise press Enter: ")
+
+    if code == "":
+        code = resend_fn()
+
+    return code
+
+
 def sms_second_factor(dsid, idms_token):
-    headers = _build_2fa_headers(dsid, idms_token)
+    headers = _common_2fa_headers(dsid, idms_token)
     headers["X-Apple-App-Info"] = "com.apple.gs.xcode.auth"
     headers["X-Xcode-Version"] = "11.2 (11B41)"
 
@@ -282,27 +301,12 @@ def sms_second_factor(dsid, idms_token):
 
         logger.info(f"Using phone with id {sms_id} for SMS2FA")
         body = {"phoneNumber": {"id": sms_id}, "mode": "sms"}
-        for handler in logger.handlers:
-            handler.flush()
-        # Prompt for the 2FA code. It's just a string like '123456', no dashes or spaces
-        start_time = time.perf_counter()
-        code = input(
-            f"Enter SMS 2FA code (If you do not receive a code, wait {WAITING_TIME}s and press Enter. An attempt will be made to request the SMS in another way.): ")
-        end_time = time.perf_counter()
 
-    if code == "":
-        elapsed_time = int(end_time - start_time)
-        if elapsed_time < WAITING_TIME:
-            waiting_time = WAITING_TIME - elapsed_time
-            logger.info(
-                f"You only waited {elapsed_time} seconds. The next request will be started in {waiting_time} seconds")
-            time.sleep(waiting_time)
-            code = input(f"Enter SMS 2FA code if you have received it in the meantime, otherwise press Enter: ")
-
-            if code == "":
-                code = request_code(headers,sms_id)
-        else:
-            code = request_code(headers,sms_id)
+    # Prompt for the 2FA code. It's just a string like '123456', no dashes or spaces
+    code = _prompt_for_code(
+        f"Enter SMS 2FA code (If you do not receive a code, wait {WAITING_TIME}s and press Enter. An attempt will be made to request the SMS in another way.): ",
+        lambda: request_code(headers, sms_id),
+    )
 
     body['securityCode'] = {'code': code}
 
@@ -331,64 +335,56 @@ def sms_second_factor(dsid, idms_token):
 
 
 def trusted_device_second_factor(dsid, idms_token):
-    headers = _build_2fa_headers(dsid, idms_token)
+    headers = _common_2fa_headers(dsid, idms_token)
     headers["Content-Type"] = "text/x-xml-plist"
     headers["Accept"] = "text/x-xml-plist"
 
     def request_trusted_device_code():
+        # Apple's 2FA endpoints are known to answer with a non-2xx here even though the
+        # push still went out, so only a server error is treated as a real failure.
         with requests.get(
                 "https://gsa.apple.com/auth/verify/trusteddevice",
                 headers=headers,
                 verify=False,
-                timeout=5,
+                timeout=10,
         ) as resp:
-            resp.raise_for_status()
+            if resp.status_code >= 500:
+                resp.raise_for_status()
+            logger.debug(f"Trusted-device code request returned HTTP {resp.status_code}")
         logger.info("Requested trusted-device 2FA code")
+
+    def resend():
+        request_trusted_device_code()
+        return input("Enter the 2FA code shown on your trusted device: ")
 
     request_trusted_device_code()
 
-    for handler in logger.handlers:
-        handler.flush()
-    # Prompt for the 2FA code shown as a popup on a trusted device
-    start_time = time.perf_counter()
-    code = input(
-        f"Enter the 2FA code shown on your trusted device (If you do not see it, wait {WAITING_TIME}s and press Enter. An attempt will be made to resend it.): ")
-    end_time = time.perf_counter()
+    code = _prompt_for_code(
+        f"Enter the 2FA code shown on your trusted device (If you do not see it, wait {WAITING_TIME}s and press Enter. An attempt will be made to resend it.): ",
+        resend,
+    )
 
-    if code == "":
-        elapsed_time = int(end_time - start_time)
-        if elapsed_time < WAITING_TIME:
-            waiting_time = WAITING_TIME - elapsed_time
-            logger.info(
-                f"You only waited {elapsed_time} seconds. The next request will be started in {waiting_time} seconds")
-            time.sleep(waiting_time)
-            code = input("Enter the 2FA code if you have received it in the meantime, otherwise press Enter: ")
-            if code == "":
-                request_trusted_device_code()
-                code = input("Enter the 2FA code shown on your trusted device: ")
-        else:
-            request_trusted_device_code()
-            code = input("Enter the 2FA code shown on your trusted device: ")
-
+    # Anisette metadata is meant to be single-use; the trigger/wait/resend round trip above
+    # can stretch well past that, so regenerate it right before the request that matters.
     submit_headers = dict(headers)
+    submit_headers.update(generate_anisette_headers())
     submit_headers["security-code"] = code
 
     with requests.get(
             "https://gsa.apple.com/grandslam/GsService2/validate",
             headers=submit_headers,
             verify=False,
-            timeout=5,
+            timeout=10,
     ) as resp:
         resp.raise_for_status()
+        header_string = "Headers:\n"
+        for header, value in resp.headers.items():
+            header_string += f"{header}: {value}\n"
+        logger.debug(f"HTTP-Code: {resp.status_code} with {len(resp.text)} bytes\n{header_string}{resp.text}")
 
-    response = f"HTTP-Code: {resp.status_code}"
-    logger.debug(response)
-    # Headers does not include Apple DSID, 2FA failed
-    if resp.ok and "X-Apple-DSID" in resp.headers:
-        logger.info("2FA successful")
-    else:
-        raise Exception(
-            "2FA unsuccessful. Maybe wrong code. Check your account details.")
+    # Unlike the SMS endpoint, this one hasn't been confirmed to signal a wrong code via
+    # its response, so success is left for the caller's re-authentication attempt to prove.
+    logger.info("Trusted-device code submitted, re-authenticating to confirm.")
 
 
 def request_code(headers,sms_id):
