@@ -6,15 +6,22 @@ import 'package:macless_haystack/preferences/user_preferences_model.dart';
 
 enum TimeFormatPreference { system, h12, h24 }
 
-/// Maps the raw settings value for [timeFormatKey] to a [TimeFormatPreference].
+/// Raw settings values for [timeFormatKey], shared with the settings tile so
+/// the dropdown options and the parsing below can never drift apart.
+const String timeFormatSystemValue = 'system';
+const String timeFormatH12Value = '12h';
+const String timeFormatH24Value = '24h';
+
+/// Maps a raw settings value to a [TimeFormatPreference].
 ///
-/// Anything other than the known '12h'/'24h' values (including null) falls
-/// back to following the device locale, matching this setting's default.
+/// Anything other than the known [timeFormatH12Value]/[timeFormatH24Value]
+/// values (including null) falls back to following the device locale,
+/// matching this setting's default.
 TimeFormatPreference timeFormatPreferenceFromString(String? value) {
   switch (value) {
-    case '12h':
+    case timeFormatH12Value:
       return TimeFormatPreference.h12;
-    case '24h':
+    case timeFormatH24Value:
       return TimeFormatPreference.h24;
     default:
       return TimeFormatPreference.system;
@@ -25,22 +32,30 @@ TimeFormatPreference timeFormatPreferenceFromString(String? value) {
 ///
 /// 'h12'/'h24' force that clock style regardless of [locale]; 'system'
 /// follows the locale's own convention, same as the app's previous behavior.
+/// Falls back to a fixed, locale-independent format if [locale] isn't one
+/// intl recognizes (e.g. a device reporting "POSIX" or an empty locale),
+/// so a broken device locale never crashes formatting.
 String formatTimeOfDay(
     DateTime time, TimeFormatPreference preference, String locale) {
-  switch (preference) {
-    case TimeFormatPreference.h12:
-      return DateFormat('h:mm a', locale).format(time);
-    case TimeFormatPreference.h24:
-      return DateFormat('HH:mm', locale).format(time);
-    case TimeFormatPreference.system:
-      return DateFormat.jm(locale).format(time);
+  try {
+    switch (preference) {
+      case TimeFormatPreference.h12:
+        return DateFormat('h:mm a', locale).format(time);
+      case TimeFormatPreference.h24:
+        return DateFormat.Hm(locale).format(time);
+      case TimeFormatPreference.system:
+        return DateFormat.jm(locale).format(time);
+    }
+  } catch (_) {
+    return DateFormat('HH:mm').format(time);
   }
 }
 
 /// Formats the time-of-day portion of [time] using the user's configured
 /// time format preference (Settings, key [timeFormatKey]).
 String formatTime(DateTime time) {
-  var preference = timeFormatPreferenceFromString(
-      Settings.getValue<String>(timeFormatKey, defaultValue: 'system'));
+  var preference = timeFormatPreferenceFromString(Settings.getValue<String>(
+      timeFormatKey,
+      defaultValue: timeFormatSystemValue));
   return formatTimeOfDay(time, preference, Platform.localeName);
 }

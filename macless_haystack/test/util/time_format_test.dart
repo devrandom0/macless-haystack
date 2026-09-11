@@ -8,7 +8,6 @@ void main() {
     await initializeDateFormatting('de_DE');
   });
 
-
   group('timeFormatPreferenceFromString', () {
     test('maps "12h" to h12', () {
       expect(timeFormatPreferenceFromString('12h'), TimeFormatPreference.h12);
@@ -59,6 +58,24 @@ void main() {
     test('system follows the given locale (de_DE -> 24-hour)', () {
       var result =
           formatTimeOfDay(time, TimeFormatPreference.system, 'de_DE');
+      expect(result, '14:05');
+    });
+
+    test('h12 renders midnight and noon without an off-by-one', () {
+      expect(
+          formatTimeOfDay(DateTime(2026, 9, 12, 0, 5),
+              TimeFormatPreference.h12, 'en_US'),
+          '12:05 AM');
+      expect(
+          formatTimeOfDay(DateTime(2026, 9, 12, 12, 5),
+              TimeFormatPreference.h12, 'en_US'),
+          '12:05 PM');
+    });
+
+    test('falls back to a fixed 24-hour format for an unparseable locale',
+        () {
+      var result =
+          formatTimeOfDay(time, TimeFormatPreference.h12, 'POSIX');
       expect(result, '14:05');
     });
   });

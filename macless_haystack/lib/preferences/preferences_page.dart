@@ -5,6 +5,7 @@ import 'package:macless_haystack/accessory/accessory_registry.dart';
 import 'package:macless_haystack/history/history_archive_service.dart';
 import 'package:macless_haystack/location/location_model.dart';
 import 'package:macless_haystack/preferences/user_preferences_model.dart';
+import 'package:macless_haystack/util/time_format.dart';
 import 'package:flutter_settings_screens/flutter_settings_screens.dart';
 
 class PreferencesPage extends StatefulWidget {
@@ -91,11 +92,11 @@ class _PreferencesPageState extends State<PreferencesPage> {
       title: 'Time format',
       settingKey: timeFormatKey,
       values: <String, String>{
-        'system': 'System default',
-        '12h': '12-hour',
-        '24h': '24-hour',
+        timeFormatSystemValue: 'System default',
+        timeFormatH12Value: '12-hour',
+        timeFormatH24Value: '24-hour',
       },
-      selected: 'system',
+      selected: timeFormatSystemValue,
     );
   }
 

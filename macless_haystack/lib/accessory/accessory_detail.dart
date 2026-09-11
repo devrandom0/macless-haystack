@@ -204,10 +204,15 @@ class _AccessoryDetailState extends State<AccessoryDetail> {
                   setState(() {
                     newAccessory.isActive = checked;
                   });
+                  // Persist only the active flag, from the accessory as
+                  // currently saved - not from newAccessory, which may hold
+                  // other unsaved, unvalidated edits from this same form.
                   var accessoryRegistry =
                       Provider.of<AccessoryRegistry>(context, listen: false);
+                  var updatedAccessory = widget.accessory.clone();
+                  updatedAccessory.isActive = checked;
                   accessoryRegistry.editAccessory(
-                      widget.accessory, newAccessory);
+                      widget.accessory, updatedAccessory);
                 },
               ),
               SwitchListTile(
