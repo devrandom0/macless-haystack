@@ -54,7 +54,6 @@ jobs:
           context: ./endpoint
           platforms: linux/amd64,linux/arm64
           push: true
-          file: ./endpoint/Dockerfile_dev
           tags: christld/macless-haystack:latest-dev,christld/macless-haystack:v${{ env.VERSION }}-${{ github.sha }},
       - name: Build and push docker main image
         if: github.ref == 'refs/heads/main'

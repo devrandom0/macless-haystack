@@ -89,16 +89,8 @@ adjusted) and every setup is different.
 
 #### How do I update the Docker container
 
-An update of the container should generally not be necessary, as it automatically updates when restarted. This can be
-achieved by using
-
-```bash
-docker restart macless-haystack
-```
-
-Upon startup, the container automatically fetches the latest state from this repository. If, however, an update of the
-container is necessary (for example, if it is mentioned in the release notes), the old one can be deleted and a new one
-pulled with:
+`docker restart` does **not** update the container; the image is now built with the code baked in rather than
+fetching it live, so the old one has to be replaced with a freshly pulled image:
 
 ```bash
 docker rm -f macless-haystack
