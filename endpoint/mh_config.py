@@ -68,6 +68,10 @@ def getHistoryPollIntervalHours():
     return float(config.get('Settings', 'history_poll_interval_hours', fallback='4'))
 
 
+def getHistoryMasterKeyFile():
+    return config.get('Settings', 'history_master_key_file', fallback='history_key.bin')
+
+
 def getLogLevel():
     logLevel = config.get('Settings', 'loglevel', fallback='INFO')
     return logging.getLevelName(logLevel)
