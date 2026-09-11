@@ -5,6 +5,7 @@ import 'package:macless_haystack/accessory/accessory_icon.dart';
 import 'package:macless_haystack/accessory/no_accessories.dart';
 import 'package:macless_haystack/item_management/item_export.dart';
 import 'package:macless_haystack/accessory/accessory_registry.dart';
+import 'package:macless_haystack/util/time_format.dart';
 import 'package:intl/intl.dart';
 
 class KeyManagement extends StatelessWidget {
@@ -30,8 +31,8 @@ class KeyManagement extends StatelessWidget {
             children: accessories.map((accessory) {
               String lastSeen = accessory.datePublished != null &&
                       accessory.datePublished != DateTime(1970)
-                  ? DateFormat('dd.MM.yyyy kk:mm')
-                      .format(accessory.datePublished!)
+                  ? '${DateFormat('dd.MM.yyyy').format(accessory.datePublished!)} '
+                      '${formatTime(accessory.datePublished!)}'
                   : 'Never';
               return Material(
                   child: ListTile(

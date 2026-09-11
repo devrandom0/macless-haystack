@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:macless_haystack/accessory/accessory_icon.dart';
 import 'package:macless_haystack/accessory/accessory_model.dart';
+import 'package:macless_haystack/util/time_format.dart';
 import 'package:intl/intl.dart';
 
 import 'accessory_battery.dart';
@@ -64,7 +65,7 @@ class AccessoryListItemState extends State<AccessoryListItem> {
         // Format published date in a human readable way
         String? dateString = widget.accessory.datePublished != null &&
                 widget.accessory.datePublished != DateTime(1970)
-            ? '\n${DateFormat.yMMMd(Platform.localeName).format(widget.accessory.datePublished!)} ${DateFormat.jm(Platform.localeName).format(widget.accessory.datePublished!)}'
+            ? '\n${DateFormat.yMMMd(Platform.localeName).format(widget.accessory.datePublished!)} ${formatTime(widget.accessory.datePublished!)}'
             : '';
 
         return AnimatedContainer(

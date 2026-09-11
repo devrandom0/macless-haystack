@@ -42,6 +42,7 @@ class _PreferencesPageState extends State<PreferencesPage> {
             getUserTile(),
             getPassTile(),
             getNumberofDaysTile(),
+            getTimeFormatTile(),
             getArchiveAllTile(),
             ListTile(
               title: getAbout(),
@@ -82,6 +83,19 @@ class _PreferencesPageState extends State<PreferencesPage> {
         7: "7",
       },
       selected: 7,
+    );
+  }
+
+  getTimeFormatTile() {
+    return const DropDownSettingsTile<String>(
+      title: 'Time format',
+      settingKey: timeFormatKey,
+      values: <String, String>{
+        'system': 'System default',
+        '12h': '12-hour',
+        '24h': '24-hour',
+      },
+      selected: 'system',
     );
   }
 
