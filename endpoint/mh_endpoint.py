@@ -183,11 +183,14 @@ class ServerHandler(BaseHTTPRequestHandler):
                     raise TypeError("'privateKey' must be a string")
                 if not isinstance(name, str):
                     raise TypeError("'name' must be a string")
+                accessory_id = device.get('accessoryId')
+                if accessory_id is not None and not isinstance(accessory_id, str):
+                    raise TypeError("'accessoryId' must be a string or null")
                 parsed.append((
                     hashed_public_key,
                     private_key,
                     name,
-                    device.get('accessoryId'),
+                    accessory_id,
                     bool(device['enabled']),
                 ))
         except (KeyError, ValueError, TypeError) as e:

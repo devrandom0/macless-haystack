@@ -176,6 +176,17 @@ def test_post_history_devices_non_string_hashed_public_key_returns_400(server):
     assert "error" in body
 
 
+def test_post_history_devices_non_string_accessory_id_returns_400(server):
+    status, body = _post(server, '/history/devices', {
+        "devices": [
+            {"hashedPublicKey": "hash-a", "privateKey": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ==",
+             "name": "Keys", "accessoryId": 12345, "enabled": True},
+        ]
+    })
+    assert status == 400
+    assert "error" in body
+
+
 def test_post_history_devices_corrupted_encryption_key_returns_500(server):
     mh_endpoint.history_encryption_key = b'not-a-valid-fernet-key'
     status, body = _post(server, '/history/devices', {
