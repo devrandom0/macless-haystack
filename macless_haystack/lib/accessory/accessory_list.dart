@@ -15,6 +15,34 @@ import 'package:macless_haystack/location/location_model.dart';
 import '../callbacks.dart';
 import 'accessory_model.dart';
 
+/// The active accessories in [accessories], preserving their relative order.
+List<Accessory> activeAccessories(Iterable<Accessory> accessories) {
+  return accessories.where((accessory) => accessory.isActive).toList();
+}
+
+/// The inactive accessories in [accessories], preserving their relative
+/// order.
+List<Accessory> inactiveAccessories(Iterable<Accessory> accessories) {
+  return accessories.where((accessory) => !accessory.isActive).toList();
+}
+
+/// Rebuilds the full accessory order after a drag-reorder within one group
+/// (active or inactive).
+///
+/// The registry's storage layer only understands a single flat order, so the
+/// other group's current order is preserved and spliced in front of or
+/// behind the freshly reordered group.
+List<Accessory> mergedOrderAfterGroupReorder({
+  required List<Accessory> allAccessories,
+  required List<Accessory> reorderedGroup,
+  required bool reorderedGroupIsActive,
+}) {
+  if (reorderedGroupIsActive) {
+    return [...reorderedGroup, ...inactiveAccessories(allAccessories)];
+  }
+  return [...activeAccessories(allAccessories), ...reorderedGroup];
+}
+
 class AccessoryList extends StatefulWidget {
   final LoadLocationUpdatesCallback loadLocationUpdates;
   final SaveOrderUpdatesCallback saveOrderUpdatesCallback;
@@ -66,127 +94,175 @@ class _AccessoryListState extends State<AccessoryList> {
         if (accessories.isEmpty) {
           return const NoAccessoriesPlaceholder();
         }
+
+        var active = activeAccessories(accessories);
+        var inactive = inactiveAccessories(accessories);
+
         // Use pull to refresh method
         return SlidableAutoCloseBehavior(
           child: Scrollbar(
-            child: ReorderableListView(
-              onReorder: (int oldIndex, int newIndex) {
-                List<Accessory> copiedList = List.from(accessories);
-                final accessory = copiedList.removeAt(oldIndex);
-                if (copiedList.length < newIndex) {
-                  copiedList.add(accessory);
-                } else {
-                  copiedList.insert(newIndex, accessory);
-                }
-                setState(() {
-                  widget.saveOrderUpdatesCallback(copiedList);
-                });
-              },
-              children: accessories.map((accessory) {
-                // Calculate distance from users devices location
-                Widget? trailing;
-                if (locationModel.here != null &&
-                    accessory.lastLocation != null) {
-                  const Distance distance = Distance();
-                  final double km = distance.as(LengthUnit.Kilometer,
-                      locationModel.here!, accessory.lastLocation!);
-                  trailing = Text('$km km');
-                }
-                // Get human readable location
-                return Slidable(
-                  key: ValueKey(accessory),
-                  startActionPane: !accessory.isActive
-                      ? null
-                      : ActionPane(
-                          key: ValueKey(accessory),
-                          motion: const ScrollMotion(),
-                          dragDismissible: false,
-                          children: [
-                              SlidableAction(
-                                onPressed: (context) async {
-                                  await widget.loadLocationUpdates(accessory);
-                                },
-                                foregroundColor: Theme.of(context).primaryColor,
-                                icon: Icons.refresh,
-                                label: 'Refresh',
-                              ),
-                            ]),
-                  endActionPane: ActionPane(
-                    motion: const DrawerMotion(),
-                    children: [
-                      if (accessory.isActive)
-                        SlidableAction(
-                          onPressed: (context) async {
-                            if (accessory.lastLocation != null &&
-                                accessory.isActive) {
-                              var loc = accessory.lastLocation!;
-                              await MapsLauncher.launchCoordinates(
-                                  loc.latitude, loc.longitude, accessory.name);
-                            }
-                          },
-                          foregroundColor: Theme.of(context).primaryColor,
-                          icon: Icons.directions,
-                          label: 'Navigate',
-                        ),
-                      if (accessory.isActive)
-                        SlidableAction(
-                          onPressed: (context) {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                  builder: (context) => AccessoryHistory(
-                                        accessory: accessory,
-                                      )),
-                            );
-                          },
-                          backgroundColor: Theme.of(context).primaryColor,
-                          icon: Icons.history,
-                          label: 'History',
-                        ),
-                      if (!accessory.isActive)
-                        SlidableAction(
-                          onPressed: (context) {
-                            var accessoryRegistry =
-                                Provider.of<AccessoryRegistry>(context,
-                                    listen: false);
-                            var newAccessory = accessory.clone();
-                            newAccessory.isActive = true;
-                            accessoryRegistry.editAccessory(
-                                accessory, newAccessory);
-                          },
-                          backgroundColor: Colors.green,
-                          foregroundColor: Colors.white,
-                          icon: Icons.toggle_on_outlined,
-                          label: 'Activate',
-                        ),
-                    ],
+            child: ListView(
+              children: [
+                if (active.isNotEmpty)
+                  _buildGroup(
+                    title: 'Active',
+                    group: active,
+                    groupIsActive: true,
+                    allAccessories: accessories,
+                    locationModel: locationModel,
                   ),
-                  child: Builder(builder: (context) {
-                    return AccessoryListItem(
-                      accessory: accessory,
-                      distance: trailing,
-                      herePlace: locationModel.herePlace,
-                      onTap: () {
-                        if (accessory.isActive) {
-                          var lastLocation = accessory.lastLocation;
-                          if (lastLocation != null) {
-                            widget.centerOnPoint?.call(lastLocation);
-                          }
-                        }
-                      },
-                      onLongPress: !accessory.isActive
-                          ? null
-                          : () async {
-                              await widget.loadLocationUpdates(accessory);
-                            },
-                    );
-                  }),
-                );
-              }).toList(),
+                if (inactive.isNotEmpty)
+                  _buildGroup(
+                    title: 'Inactive',
+                    group: inactive,
+                    groupIsActive: false,
+                    allAccessories: accessories,
+                    locationModel: locationModel,
+                  ),
+              ],
             ),
           ),
         );
       },
+    );
+  }
+
+  Widget _buildGroup({
+    required String title,
+    required List<Accessory> group,
+    required bool groupIsActive,
+    required List<Accessory> allAccessories,
+    required LocationModel locationModel,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+          child: Text(title, style: Theme.of(context).textTheme.labelLarge),
+        ),
+        ReorderableListView(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          onReorder: (int oldIndex, int newIndex) {
+            List<Accessory> copiedGroup = List.from(group);
+            final accessory = copiedGroup.removeAt(oldIndex);
+            if (copiedGroup.length < newIndex) {
+              copiedGroup.add(accessory);
+            } else {
+              copiedGroup.insert(newIndex, accessory);
+            }
+            setState(() {
+              widget.saveOrderUpdatesCallback(mergedOrderAfterGroupReorder(
+                allAccessories: allAccessories,
+                reorderedGroup: copiedGroup,
+                reorderedGroupIsActive: groupIsActive,
+              ));
+            });
+          },
+          children: group
+              .map((accessory) =>
+                  _buildAccessoryTile(accessory, locationModel))
+              .toList(),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildAccessoryTile(Accessory accessory, LocationModel locationModel) {
+    // Calculate distance from users devices location
+    Widget? trailing;
+    if (locationModel.here != null && accessory.lastLocation != null) {
+      const Distance distance = Distance();
+      final double km = distance.as(
+          LengthUnit.Kilometer, locationModel.here!, accessory.lastLocation!);
+      trailing = Text('$km km');
+    }
+    // Get human readable location
+    return Slidable(
+      key: ValueKey(accessory),
+      startActionPane: !accessory.isActive
+          ? null
+          : ActionPane(
+              key: ValueKey(accessory),
+              motion: const ScrollMotion(),
+              dragDismissible: false,
+              children: [
+                  SlidableAction(
+                    onPressed: (context) async {
+                      await widget.loadLocationUpdates(accessory);
+                    },
+                    foregroundColor: Theme.of(context).primaryColor,
+                    icon: Icons.refresh,
+                    label: 'Refresh',
+                  ),
+                ]),
+      endActionPane: ActionPane(
+        motion: const DrawerMotion(),
+        children: [
+          if (accessory.isActive)
+            SlidableAction(
+              onPressed: (context) async {
+                if (accessory.lastLocation != null && accessory.isActive) {
+                  var loc = accessory.lastLocation!;
+                  await MapsLauncher.launchCoordinates(
+                      loc.latitude, loc.longitude, accessory.name);
+                }
+              },
+              foregroundColor: Theme.of(context).primaryColor,
+              icon: Icons.directions,
+              label: 'Navigate',
+            ),
+          if (accessory.isActive)
+            SlidableAction(
+              onPressed: (context) {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                      builder: (context) =>
+                          AccessoryHistory(accessory: accessory)),
+                );
+              },
+              backgroundColor: Theme.of(context).primaryColor,
+              icon: Icons.history,
+              label: 'History',
+            ),
+          if (!accessory.isActive)
+            SlidableAction(
+              onPressed: (context) {
+                var accessoryRegistry =
+                    Provider.of<AccessoryRegistry>(context, listen: false);
+                var newAccessory = accessory.clone();
+                newAccessory.isActive = true;
+                accessoryRegistry.editAccessory(accessory, newAccessory);
+              },
+              backgroundColor: Colors.green,
+              foregroundColor: Colors.white,
+              icon: Icons.toggle_on_outlined,
+              label: 'Activate',
+            ),
+        ],
+      ),
+      child: Builder(builder: (context) {
+        return AccessoryListItem(
+          accessory: accessory,
+          distance: trailing,
+          herePlace: locationModel.herePlace,
+          onTap: () {
+            if (accessory.isActive) {
+              var lastLocation = accessory.lastLocation;
+              if (lastLocation != null) {
+                widget.centerOnPoint?.call(lastLocation);
+              }
+            }
+          },
+          onLongPress: !accessory.isActive
+              ? null
+              : () async {
+                  await widget.loadLocationUpdates(accessory);
+                },
+        );
+      }),
     );
   }
 }
