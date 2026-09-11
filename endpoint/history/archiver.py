@@ -70,3 +70,20 @@ def fetch_reports_with_cache(ids, days, force, store, poll_interval_hours, fetch
 
     entries = store.get_reports(ids, since)
     return sorted(entries, key=extract_report_timestamp, reverse=True)
+
+
+def run_archiver_loop(devices_file_path, store, poll_interval_hours, fetch_from_apple, sleep_fn=time.sleep):
+    try:
+        hashed_keys = load_tracked_keys(devices_file_path)
+    except (OSError, ValueError, KeyError) as e:
+        logger.error(f"Could not load history devices file {devices_file_path}: {e}")
+        return
+
+    logger.info(f"History archiver tracking {len(hashed_keys)} key(s), polling every {poll_interval_hours}h")
+    while True:
+        try:
+            entries = fetch_from_apple(hashed_keys)
+            _store_fetched_entries(hashed_keys, entries, store, int(time.time()))
+        except Exception as e:
+            logger.error(f"History archiver poll failed: {e}", exc_info=True)
+        sleep_fn(poll_interval_hours * 3600)

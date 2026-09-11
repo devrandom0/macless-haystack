@@ -2,7 +2,9 @@ import json
 import time
 from unittest.mock import MagicMock
 
-from history.archiver import derive_hashed_public_key, fetch_reports_with_cache, load_tracked_keys
+import pytest
+
+from history.archiver import derive_hashed_public_key, fetch_reports_with_cache, load_tracked_keys, run_archiver_loop
 from history.store import HistoryStore, extract_report_timestamp
 
 
@@ -173,3 +175,68 @@ def test_fetch_reports_with_cache_sorts_newest_first():
     )
 
     assert [extract_report_timestamp(r) for r in results] == [now - 50, now - 100]
+
+
+class _StopLoop(Exception):
+    pass
+
+
+def test_run_archiver_loop_loads_keys_fetches_and_stores(tmp_path):
+    devices_file = tmp_path / "devices.json"
+    devices_file.write_text(json.dumps([
+        {"id": 1, "name": "A", "privateKey": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ==", "additionalKeys": []},
+    ]))
+    hashed_key = derive_hashed_public_key("AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ==")
+
+    store = HistoryStore(":memory:")
+    entry = _entry(int(time.time()), id_=hashed_key)
+    fetch_from_apple = MagicMock(return_value=[entry])
+
+    def sleep_and_stop(_seconds):
+        raise _StopLoop()
+
+    with pytest.raises(_StopLoop):
+        run_archiver_loop(
+            devices_file_path=str(devices_file), store=store, poll_interval_hours=4,
+            fetch_from_apple=fetch_from_apple, sleep_fn=sleep_and_stop,
+        )
+
+    fetch_from_apple.assert_called_once_with([hashed_key])
+    assert store.get_reports([hashed_key], since=0) == [entry]
+    assert store.last_polled_at(hashed_key) is not None
+
+
+def test_run_archiver_loop_missing_devices_file_returns_without_looping(tmp_path):
+    missing_path = str(tmp_path / "does_not_exist.json")
+    store = HistoryStore(":memory:")
+    fetch_from_apple = MagicMock()
+
+    def fail_if_called(_seconds):
+        raise AssertionError("sleep_fn should never be called if the devices file is missing")
+
+    run_archiver_loop(
+        devices_file_path=missing_path, store=store, poll_interval_hours=4,
+        fetch_from_apple=fetch_from_apple, sleep_fn=fail_if_called,
+    )
+
+    fetch_from_apple.assert_not_called()
+
+
+def test_run_archiver_loop_continues_after_fetch_failure(tmp_path):
+    devices_file = tmp_path / "devices.json"
+    devices_file.write_text(json.dumps([
+        {"id": 1, "name": "A", "privateKey": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ==", "additionalKeys": []},
+    ]))
+    store = HistoryStore(":memory:")
+    fetch_from_apple = MagicMock(side_effect=Exception("network error"))
+
+    def sleep_and_stop(_seconds):
+        raise _StopLoop()
+
+    with pytest.raises(_StopLoop):
+        run_archiver_loop(
+            devices_file_path=str(devices_file), store=store, poll_interval_hours=4,
+            fetch_from_apple=fetch_from_apple, sleep_fn=sleep_and_stop,
+        )
+    # Reaching sleep_fn (and raising _StopLoop from it) proves the exception
+    # from fetch_from_apple was caught rather than propagating out of the loop.
