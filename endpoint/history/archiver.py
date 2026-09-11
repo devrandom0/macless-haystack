@@ -2,6 +2,7 @@ import base64
 import hashlib
 import json
 import logging
+import sqlite3
 import time
 
 from cryptography.hazmat.backends import default_backend
@@ -47,35 +48,42 @@ def fetch_reports_with_cache(ids, days, force, store, poll_interval_hours, fetch
     now = int(time.time())
     since = now - (days * 86400)
 
-    if store is None:
+    def _fetch_live():
         entries = fetch_from_apple(ids)
         entries = [e for e in entries if extract_report_timestamp(e) > since]
         return sorted(entries, key=extract_report_timestamp, reverse=True)
 
-    freshness_window = poll_interval_hours * 3600
-    stale_ids = [
-        hashed_key for hashed_key in ids
-        if force
-        or store.last_polled_at(hashed_key) is None
-        or (now - store.last_polled_at(hashed_key)) > freshness_window
-    ]
+    if store is None:
+        return _fetch_live()
 
-    if stale_ids:
-        try:
-            fresh_entries = fetch_from_apple(stale_ids)
-        except Exception as e:
-            logger.warning(f"Live fetch failed, falling back to cached history: {e}")
-        else:
-            _store_fetched_entries(stale_ids, fresh_entries, store, now)
+    try:
+        freshness_window = poll_interval_hours * 3600
+        stale_ids = [
+            hashed_key for hashed_key in ids
+            if force
+            or store.last_polled_at(hashed_key) is None
+            or (now - store.last_polled_at(hashed_key)) > freshness_window
+        ]
 
-    entries = store.get_reports(ids, since)
-    return sorted(entries, key=extract_report_timestamp, reverse=True)
+        if stale_ids:
+            try:
+                fresh_entries = fetch_from_apple(stale_ids)
+            except Exception as e:
+                logger.warning(f"Live fetch failed, falling back to cached history: {e}")
+            else:
+                _store_fetched_entries(stale_ids, fresh_entries, store, now)
+
+        entries = store.get_reports(ids, since)
+        return sorted(entries, key=extract_report_timestamp, reverse=True)
+    except sqlite3.Error as e:
+        logger.error(f"History store error, falling back to live Apple fetch without caching: {e}")
+        return _fetch_live()
 
 
 def run_archiver_loop(devices_file_path, store, poll_interval_hours, fetch_from_apple, sleep_fn=time.sleep):
     try:
         hashed_keys = load_tracked_keys(devices_file_path)
-    except (OSError, ValueError, KeyError) as e:
+    except Exception as e:
         logger.error(f"Could not load history devices file {devices_file_path}: {e}")
         return
 

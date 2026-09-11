@@ -31,12 +31,16 @@ class HistoryStore:
 
     def record_reports(self, hashed_key, reports):
         with self._lock:
-            for entry in reports:
-                timestamp = extract_report_timestamp(entry)
-                self._conn.execute(
-                    "INSERT OR REPLACE INTO reports (hashed_key, timestamp, entry_json) VALUES (?, ?, ?)",
-                    (hashed_key, timestamp, json.dumps(entry)),
-                )
+            try:
+                for entry in reports:
+                    timestamp = extract_report_timestamp(entry)
+                    self._conn.execute(
+                        "INSERT OR REPLACE INTO reports (hashed_key, timestamp, entry_json) VALUES (?, ?, ?)",
+                        (hashed_key, timestamp, json.dumps(entry)),
+                    )
+            except Exception:
+                self._conn.rollback()
+                raise
             self._conn.commit()
 
     def get_reports(self, hashed_keys, since):
@@ -66,7 +70,3 @@ class HistoryStore:
                 (hashed_key,),
             ).fetchone()
         return row[0] if row else None
-
-    def close(self):
-        with self._lock:
-            self._conn.close()

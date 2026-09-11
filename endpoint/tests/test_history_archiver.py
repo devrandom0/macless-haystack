@@ -1,4 +1,5 @@
 import json
+import sqlite3
 import time
 from unittest.mock import MagicMock
 
@@ -177,6 +178,45 @@ def test_fetch_reports_with_cache_sorts_newest_first():
     assert [extract_report_timestamp(r) for r in results] == [now - 50, now - 100]
 
 
+def test_fetch_reports_with_cache_falls_back_to_live_fetch_on_store_error():
+    store = HistoryStore(":memory:")
+    store.mark_polled("key-a", when=int(time.time()))  # fresh, so no refresh is attempted
+    store.get_reports = MagicMock(side_effect=sqlite3.Error("disk I/O error"))
+    now = int(time.time())
+    live_entry = _entry(now - 100)
+    fetch_from_apple = MagicMock(return_value=[live_entry])
+
+    results = fetch_reports_with_cache(
+        ids=["key-a"], days=7, force=False, store=store,
+        poll_interval_hours=4, fetch_from_apple=fetch_from_apple,
+    )
+
+    fetch_from_apple.assert_called_once_with(["key-a"])
+    assert results == [live_entry]
+
+
+def test_fetch_reports_with_cache_mixed_fresh_and_stale_ids():
+    store = HistoryStore(":memory:")
+    now = int(time.time())
+
+    # key-a is fresh: recently polled, already has a stored entry.
+    store.mark_polled("key-a", when=now)
+    fresh_a_entry = _entry(now - 100, id_="key-a")
+    store.record_reports("key-a", [fresh_a_entry])
+
+    # key-b is stale: never polled.
+    stale_b_entry = _entry(now - 50, id_="key-b")
+    fetch_from_apple = MagicMock(return_value=[stale_b_entry])
+
+    results = fetch_reports_with_cache(
+        ids=["key-a", "key-b"], days=7, force=False, store=store,
+        poll_interval_hours=4, fetch_from_apple=fetch_from_apple,
+    )
+
+    fetch_from_apple.assert_called_once_with(["key-b"])
+    assert {r["id"] for r in results} == {"key-a", "key-b"}
+
+
 class _StopLoop(Exception):
     pass
 
@@ -216,6 +256,25 @@ def test_run_archiver_loop_missing_devices_file_returns_without_looping(tmp_path
 
     run_archiver_loop(
         devices_file_path=missing_path, store=store, poll_interval_hours=4,
+        fetch_from_apple=fetch_from_apple, sleep_fn=fail_if_called,
+    )
+
+    fetch_from_apple.assert_not_called()
+
+
+def test_run_archiver_loop_malformed_devices_file_returns_without_looping(tmp_path):
+    devices_file = tmp_path / "devices.json"
+    # A JSON object instead of an array: iterating it yields its string keys,
+    # and indexing a string with ["privateKey"] raises TypeError, not KeyError.
+    devices_file.write_text(json.dumps({"id": 1, "name": "A", "privateKey": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ=="}))
+    store = HistoryStore(":memory:")
+    fetch_from_apple = MagicMock()
+
+    def fail_if_called(_seconds):
+        raise AssertionError("sleep_fn should never be called if the devices file is malformed")
+
+    run_archiver_loop(
+        devices_file_path=str(devices_file), store=store, poll_interval_hours=4,
         fetch_from_apple=fetch_from_apple, sleep_fn=fail_if_called,
     )
 

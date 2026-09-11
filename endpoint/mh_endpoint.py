@@ -164,24 +164,29 @@ if __name__ == "__main__":
 
     devices_file_path = mh_config.getConfigPath() + '/' + mh_config.getHistoryDevicesFile()
     if os.path.isfile(devices_file_path):
-        history_store = HistoryStore(mh_config.getConfigPath() + '/history.db')
+        try:
+            history_store = HistoryStore(mh_config.getConfigPath() + '/history.db')
+        except Exception as e:
+            logger.error(f"Could not open history database, archiving disabled: {e}", exc_info=True)
+            history_store = None
 
-        def fetch_from_apple(fetch_ids):
-            data = {"search": [{"startDate": 1, "ids": fetch_ids}]}
-            with requests.post("https://gateway.icloud.com/acsnservice/fetch",
-                                auth=getAuth(regenerate=False, second_factor='sms'),
-                                headers=pypush_gsa_icloud.generate_anisette_headers(),
-                                json=data) as r:
-                r.raise_for_status()
-            return json.loads(r.content.decode())['results']
+        if history_store is not None:
+            def fetch_from_apple(fetch_ids):
+                data = {"search": [{"startDate": 1, "ids": fetch_ids}]}
+                with requests.post("https://gateway.icloud.com/acsnservice/fetch",
+                                    auth=getAuth(regenerate=False, second_factor='sms'),
+                                    headers=pypush_gsa_icloud.generate_anisette_headers(),
+                                    json=data) as r:
+                    r.raise_for_status()
+                return json.loads(r.content.decode())['results']
 
-        archiver_thread = threading.Thread(
-            target=history_archiver.run_archiver_loop,
-            args=(devices_file_path, history_store, mh_config.getHistoryPollIntervalHours(), fetch_from_apple),
-            daemon=True,
-        )
-        archiver_thread.start()
-        logger.info(f"History archiver started, tracking devices from {devices_file_path}")
+            archiver_thread = threading.Thread(
+                target=history_archiver.run_archiver_loop,
+                args=(devices_file_path, history_store, mh_config.getHistoryPollIntervalHours(), fetch_from_apple),
+                daemon=True,
+            )
+            archiver_thread.start()
+            logger.info(f"History archiver started, tracking devices from {devices_file_path}")
     else:
         logger.info(f"No history devices file at {devices_file_path}, history archiving disabled")
 

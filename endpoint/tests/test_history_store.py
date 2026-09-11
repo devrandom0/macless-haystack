@@ -1,6 +1,8 @@
 import base64
 import time
 
+import pytest
+
 from history.store import HistoryStore, extract_report_timestamp
 
 
@@ -78,3 +80,20 @@ def test_mark_polled_defaults_to_now():
     store.mark_polled("key-a")
     after = int(time.time())
     assert before <= store.last_polled_at("key-a") <= after
+
+
+def test_record_reports_rolls_back_on_error_mid_batch():
+    store = HistoryStore(":memory:")
+    good_entry = _entry(1_700_000_000, extra={"statusCode": 0})
+    bad_entry = {"id": "key-a"}  # missing "payload" -> extract_report_timestamp raises KeyError
+
+    with pytest.raises(KeyError):
+        store.record_reports("key-a", [good_entry, bad_entry])
+
+    # A later successful call commits its own transaction. If the failed batch's
+    # earlier insert wasn't rolled back, it would still be pending and get
+    # swept into this commit even though its own batch never completed.
+    other_entry = _entry(1_800_000_000, extra={"statusCode": 0})
+    store.record_reports("key-b", [other_entry])
+
+    assert store.get_reports(["key-a"], since=0) == []
