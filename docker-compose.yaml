@@ -1,0 +1,26 @@
+services:
+  anisette:
+    image: dadoum/anisette-v3-server
+    container_name: anisette
+    restart: always
+    ports:
+      - "6969:6969"
+    volumes:
+      - anisette-v3_data:/home/Alcoholic/.config/anisette-v3
+
+  macless-haystack:
+    image: moghaddas/macless-haystack:dev
+    container_name: macless-haystack
+    restart: unless-stopped
+    depends_on:
+      - anisette
+    ports:
+      - "6176:6176"
+    volumes:
+      - mh_data:/app/endpoint/data
+    stdin_open: true
+    tty: true
+
+volumes:
+  anisette-v3_data:
+  mh_data:
