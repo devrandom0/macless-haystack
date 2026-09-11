@@ -144,7 +144,7 @@ def gsa_authenticated_request(parameters):
         "Content-Type": "text/x-xml-plist",
         "Accept": "*/*",
         "User-Agent": "akd/1.0 CFNetwork/978.0.7 Darwin/18.7.0",
-        "X-MMe-Client-Info": '<MacBookPro18,3> <Mac OS X;13.4.1;22F8> <com.apple.AOSKit/282 (com.apple.dt.Xcode/3594.4.19)>'
+        "X-MMe-Client-Info": '<MacBookPro18,3> <Mac OS X;13.4.1;22F8> <com.apple.AOSKit/282 (com.apple.akd/1.0)>'
     }
 
     with  requests.post(
@@ -242,7 +242,7 @@ def sms_second_factor(dsid, idms_token):
         "X-Apple-Identity-Token": identity_token,
         "X-Apple-App-Info": "com.apple.gs.xcode.auth",
         "X-Xcode-Version": "11.2 (11B41)",
-        "X-Mme-Client-Info": '<MacBookPro18,3> <Mac OS X;13.4.1;22F8> <com.apple.AOSKit/282 (com.apple.dt.Xcode/3594.4.19)>'
+        "X-Mme-Client-Info": '<MacBookPro18,3> <Mac OS X;13.4.1;22F8> <com.apple.AOSKit/282 (com.apple.akd/1.0)>'
     }
 
     headers.update(generate_anisette_headers())
