@@ -37,6 +37,16 @@ jobs:
       - name: Initialize Submodules
         run: |
           git submodule update --init --recursive
+      - name: Set up Python for endpoint tests
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+          cache-dependency-path: endpoint/requirements-dev.txt
+      - name: Run endpoint tests
+        run: |
+          pip install -r endpoint/requirements-dev.txt
+          pytest endpoint/tests
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
 
@@ -54,7 +64,6 @@ jobs:
           context: ./endpoint
           platforms: linux/amd64,linux/arm64
           push: true
-          file: ./endpoint/Dockerfile_dev
           tags: christld/macless-haystack:latest-dev,christld/macless-haystack:v${{ env.VERSION }}-${{ github.sha }},
       - name: Build and push docker main image
         if: github.ref == 'refs/heads/main'
