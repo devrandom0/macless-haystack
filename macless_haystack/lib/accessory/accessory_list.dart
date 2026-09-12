@@ -29,6 +29,11 @@ List<Accessory> inactiveAccessories(Iterable<Accessory> accessories) {
   return accessories.where((accessory) => !accessory.isActive).toList();
 }
 
+/// The label shown (and announced) for a group header, e.g. 'Active (3)'.
+String groupHeaderLabel(String title, int count) {
+  return '$title ($count)';
+}
+
 /// Rebuilds the full accessory order after a drag-reorder within one group
 /// (active or inactive).
 ///
@@ -92,6 +97,10 @@ class _AccessoryListState extends State<AccessoryList> {
             }
             return Scrollbar(
               child: ListView(
+                // Both tabs stay mounted via IndexedStack, so this and the
+                // Accessories tab's list would otherwise fight over the
+                // shared PrimaryScrollController.
+                primary: false,
                 children: placeholderList,
               ),
             );
@@ -119,6 +128,10 @@ class _AccessoryListState extends State<AccessoryList> {
         return SlidableAutoCloseBehavior(
           child: Scrollbar(
             child: CustomScrollView(
+              // Both tabs stay mounted via IndexedStack, so this and the
+              // Accessories tab's list would otherwise fight over the
+              // shared PrimaryScrollController.
+              primary: false,
               slivers: [
                 if (active.isNotEmpty)
                   ..._buildGroupSlivers(
@@ -155,13 +168,14 @@ class _AccessoryListState extends State<AccessoryList> {
     required LocationModel locationModel,
   }) {
     final isCollapsed = _collapsedGroups.contains(keyPrefix);
+    final displayTitle = groupHeaderLabel(title, group.length);
     return [
       SliverToBoxAdapter(
         key: ValueKey('$keyPrefix-header'),
         child: Semantics(
           button: true,
           expanded: !isCollapsed,
-          label: title,
+          label: displayTitle,
           child: Material(
             type: MaterialType.transparency,
             child: InkWell(
@@ -181,7 +195,7 @@ class _AccessoryListState extends State<AccessoryList> {
                 child: ExcludeSemantics(
                   child: Row(
                     children: [
-                      Text(title,
+                      Text(displayTitle,
                           style: Theme.of(context).textTheme.labelLarge),
                       const SizedBox(width: 4),
                       // expand_more starts pointing down (collapsed) and

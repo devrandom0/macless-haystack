@@ -28,6 +28,10 @@ class KeyManagement extends StatelessWidget {
 
         return Scrollbar(
           child: ListView(
+            // Both tabs stay mounted via IndexedStack, so this and the Map
+            // tab's list would otherwise fight over the shared
+            // PrimaryScrollController.
+            primary: false,
             children: accessories.map((accessory) {
               String lastSeen = accessory.datePublished != null &&
                       accessory.datePublished != DateTime(1970)

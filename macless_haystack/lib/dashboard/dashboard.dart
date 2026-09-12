@@ -30,13 +30,12 @@ class Dashboard extends StatefulWidget {
 
 class _DashboardState extends State<Dashboard> {
   /// A list of the tabs displayed in the bottom tab bar.
+  ///
+  /// Only the per-tab chrome (icon/label/action button) lives here - the
+  /// tab bodies themselves are built once into [_tabBodies] and kept alive
+  /// via IndexedStack, see its field doc.
   late final List<Map<String, dynamic>> _tabs = [
     {
-      'title': 'My Accessories',
-      'body': (ctx) => AccessoryMapListVertical(
-            loadLocationUpdates: loadLocationUpdates,
-            saveOrderUpdatesCallback: saveAccessories,
-          ),
       'icon': Icons.place,
       'label': 'Map',
       'actionButton': (ctx) => RefreshAction(
@@ -46,12 +45,21 @@ class _DashboardState extends State<Dashboard> {
           ),
     },
     {
-      'title': 'My Accessories',
-      'body': (ctx) => const KeyManagement(),
       'icon': Icons.style,
       'label': 'Accessories',
       'actionButton': (ctx) => const NewKeyAction(),
     },
+  ];
+
+  /// The tab bodies, built once and kept mounted via IndexedStack so a
+  /// tab's own State (e.g. AccessoryList's collapsed-groups) survives
+  /// switching away and back, instead of being torn down and recreated.
+  late final List<Widget> _tabBodies = [
+    AccessoryMapListVertical(
+      loadLocationUpdates: loadLocationUpdates,
+      saveOrderUpdatesCallback: saveAccessories,
+    ),
+    const KeyManagement(),
   ];
 
   @override
@@ -152,7 +160,10 @@ class _DashboardState extends State<Dashboard> {
             ),
           ],
         ),
-        body: _tabs[_selectedIndex]['body'](context),
+        body: IndexedStack(
+          index: _selectedIndex,
+          children: _tabBodies,
+        ),
         bottomNavigationBar: BottomNavigationBar(
           items: _tabs
               .map((tab) => BottomNavigationBarItem(
