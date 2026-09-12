@@ -115,17 +115,6 @@ class AccessoryListItemState extends State<AccessoryListItem> {
   }
 
   Widget _buildIcon() {
-    switch (widget.accessory.lastBatteryStatus) {
-      case AccessoryBatteryStatus.ok:
-        return const Icon(Icons.battery_full, color: Colors.green, size: 13);
-      case AccessoryBatteryStatus.medium:
-        return const Icon(Icons.battery_3_bar, color: Colors.orange, size: 13);
-      case AccessoryBatteryStatus.low:
-        return const Icon(Icons.battery_1_bar, color: Colors.red, size: 13);
-      case AccessoryBatteryStatus.criticalLow:
-        return const Icon(Icons.battery_alert, color: Colors.red, size: 13);
-      default:
-        return const SizedBox(width: 13);
-    }
+    return AccessoryBatteryIcon(status: widget.accessory.lastBatteryStatus);
   }
 }
