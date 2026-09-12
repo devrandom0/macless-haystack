@@ -69,7 +69,7 @@ class AccessoryList extends StatefulWidget {
 }
 
 class _AccessoryListState extends State<AccessoryList> {
-  // Per-session UI state only, not persisted - a fresh build always starts
+  // Per-session UI state only, not persisted - a fresh State always starts
   // with both groups expanded.
   final Set<String> _collapsedGroups = {};
 
@@ -104,6 +104,11 @@ class _AccessoryListState extends State<AccessoryList> {
 
         var active = activeAccessories(accessories);
         var inactive = inactiveAccessories(accessories);
+        // A group that's empty can't show a header to re-expand, so drop
+        // any stale collapsed flag now rather than surprising the user
+        // with an already-collapsed section if it refills later.
+        if (active.isEmpty) _collapsedGroups.remove('active');
+        if (inactive.isEmpty) _collapsedGroups.remove('inactive');
 
         // Use pull to refresh method
         //
@@ -153,30 +158,44 @@ class _AccessoryListState extends State<AccessoryList> {
     return [
       SliverToBoxAdapter(
         key: ValueKey('$keyPrefix-header'),
-        child: InkWell(
-          onTap: () {
-            setState(() {
-              if (isCollapsed) {
-                _collapsedGroups.remove(keyPrefix);
-              } else {
-                _collapsedGroups.add(keyPrefix);
-              }
-            });
-          },
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-            child: Row(
-              children: [
-                Text(title, style: Theme.of(context).textTheme.labelLarge),
-                const SizedBox(width: 4),
-                // expand_more starts pointing down (collapsed) and rotates
-                // to point up (expanded), matching ExpansionTile's convention.
-                AnimatedRotation(
-                  turns: isCollapsed ? 0 : 0.5,
-                  duration: const Duration(milliseconds: 200),
-                  child: const Icon(Icons.expand_more),
+        child: Semantics(
+          button: true,
+          expanded: !isCollapsed,
+          label: title,
+          child: Material(
+            type: MaterialType.transparency,
+            child: InkWell(
+              onTap: () {
+                setState(() {
+                  // Read live rather than trusting the isCollapsed captured
+                  // above the setState boundary, so this stays correct even
+                  // if a future change starts mutating _collapsedGroups
+                  // from somewhere else between builds.
+                  if (!_collapsedGroups.remove(keyPrefix)) {
+                    _collapsedGroups.add(keyPrefix);
+                  }
+                });
+              },
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+                child: ExcludeSemantics(
+                  child: Row(
+                    children: [
+                      Text(title,
+                          style: Theme.of(context).textTheme.labelLarge),
+                      const SizedBox(width: 4),
+                      // expand_more starts pointing down (collapsed) and
+                      // rotates to point up (expanded), matching
+                      // ExpansionTile's convention.
+                      AnimatedRotation(
+                        turns: isCollapsed ? 0 : 0.5,
+                        duration: const Duration(milliseconds: 200),
+                        child: const Icon(Icons.expand_more),
+                      ),
+                    ],
+                  ),
                 ),
-              ],
+              ),
             ),
           ),
         ),
