@@ -52,7 +52,7 @@ class _PreferencesPageState extends State<PreferencesPage> {
     );
   }
 
-  getLocationTile() {
+  Widget getLocationTile() {
     return SwitchSettingsTile(
       settingKey: locationAccessWantedKey,
       title: 'Show this devices location',
@@ -67,7 +67,7 @@ class _PreferencesPageState extends State<PreferencesPage> {
     );
   }
 
-  getNumberofDaysTile() {
+  Widget getNumberofDaysTile() {
     return const DropDownSettingsTile<int>(
       title: 'Number of days to fetch location',
       settingKey: numberOfDaysToFetch,
@@ -85,7 +85,7 @@ class _PreferencesPageState extends State<PreferencesPage> {
     );
   }
 
-  getUrlTile() {
+  Widget getUrlTile() {
     return TextInputSettingsTile(
       initialValue: 'http://localhost:6176',
       settingKey: endpointUrl,
@@ -100,7 +100,7 @@ class _PreferencesPageState extends State<PreferencesPage> {
     );
   }
 
-  getUserTile() {
+  Widget getUserTile() {
     return const TextInputSettingsTile(
       initialValue: '',
       settingKey: endpointUser,
@@ -108,7 +108,7 @@ class _PreferencesPageState extends State<PreferencesPage> {
     );
   }
 
-  getPassTile() {
+  Widget getPassTile() {
     return const TextInputSettingsTile(
       obscureText: true,
       initialValue: '',
@@ -117,7 +117,7 @@ class _PreferencesPageState extends State<PreferencesPage> {
     );
   }
 
-  getAbout() {
+  Widget getAbout() {
     return TextButton(
         style: ButtonStyle(
             padding:
@@ -138,7 +138,7 @@ class _PreferencesPageState extends State<PreferencesPage> {
             ));
   }
 
-  getFetchOnStartupTile() {
+  Widget getFetchOnStartupTile() {
     return SwitchSettingsTile(
       settingKey: fetchLocationOnStartupKey,
       defaultValue: true,
@@ -236,7 +236,7 @@ class _PreferencesPageState extends State<PreferencesPage> {
     }
   }
 
-  getArchiveAllTile() {
+  Widget getArchiveAllTile() {
     return SwitchListTile(
       value: _archivingAllEnabled,
       title: const Text('Archive all devices on server'),
