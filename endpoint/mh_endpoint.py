@@ -196,12 +196,22 @@ class ServerHandler(BaseHTTPRequestHandler):
                 accessory_id = device.get('accessoryId')
                 if accessory_id is not None and not isinstance(accessory_id, str):
                     raise TypeError("'accessoryId' must be a string or null")
+                poll_interval_hours = device.get('pollIntervalHours', 4)
+                if not isinstance(poll_interval_hours, (int, float)) or poll_interval_hours < 1:
+                    raise ValueError(
+                        "'pollIntervalHours' must be at least 1 to avoid triggering Apple's rate limits")
+                retention_days = device.get('retentionDays', 30)
+                if (not isinstance(retention_days, (int, float)) or retention_days < 1
+                        or retention_days != int(retention_days)):
+                    raise ValueError("'retentionDays' must be at least 1")
                 parsed.append((
                     hashed_public_key,
                     private_key,
                     name,
                     accessory_id,
                     bool(device['enabled']),
+                    poll_interval_hours,
+                    int(retention_days),
                 ))
         except (KeyError, ValueError, TypeError) as e:
             self.send_response(400)
@@ -211,9 +221,15 @@ class ServerHandler(BaseHTTPRequestHandler):
             return
 
         try:
-            for hashed_public_key, private_key, name, accessory_id, enabled in parsed:
+            for hashed_public_key, private_key, name, accessory_id, enabled, poll_interval_hours, retention_days in parsed:
+                previous = tracked_device_store.get_device(hashed_public_key)
                 encrypted = crypto.encrypt(history_encryption_key, private_key)
-                tracked_device_store.upsert(hashed_public_key, name, accessory_id, encrypted, enabled, when=now)
+                tracked_device_store.upsert(
+                    hashed_public_key, name, accessory_id, encrypted, enabled,
+                    poll_interval_hours=poll_interval_hours, retention_days=retention_days, when=now,
+                )
+                if previous is not None and retention_days < previous["retentionDays"] and history_store is not None:
+                    history_store.delete_reports_older_than(hashed_public_key, now - retention_days * 86400)
         except Exception as e:
             logger.error(f"Failed to persist tracked devices: {e}", exc_info=True)
             self.send_response(500)
@@ -298,7 +314,7 @@ if __name__ == "__main__":
 
         archiver_thread = threading.Thread(
             target=history_archiver.run_archiver_loop,
-            args=(tracked_device_store, history_store, mh_config.getHistoryPollIntervalHours(), fetch_from_apple),
+            args=(tracked_device_store, history_store, fetch_from_apple),
             daemon=True,
         )
         archiver_thread.start()

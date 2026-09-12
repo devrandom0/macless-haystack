@@ -54,6 +54,14 @@ class HistoryStore:
             ).fetchall()
         return [json.loads(row[0]) for row in rows]
 
+    def delete_reports_older_than(self, hashed_key, cutoff_timestamp):
+        with self._lock:
+            self._conn.execute(
+                "DELETE FROM reports WHERE hashed_key = ? AND timestamp < ?",
+                (hashed_key, cutoff_timestamp),
+            )
+            self._conn.commit()
+
     def mark_polled(self, hashed_key, when=None):
         when = when if when is not None else int(time.time())
         with self._lock:

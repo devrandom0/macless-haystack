@@ -106,7 +106,7 @@ def migrate_devices_json_to_registry(devices_file_path, tracked_device_store, en
         return
 
     try:
-        tracked_device_store.upsert_many(rows, when=now)
+        tracked_device_store.upsert_many(rows, poll_interval_hours=4, retention_days=30, when=now)
         os.remove(devices_file_path)
     except Exception as e:
         logger.error(f"Could not migrate {devices_file_path} to the device registry: {e}", exc_info=True)
@@ -115,16 +115,26 @@ def migrate_devices_json_to_registry(devices_file_path, tracked_device_store, en
     logger.info(f"Migrated devices from {devices_file_path} into the device registry; file removed")
 
 
-def run_archiver_loop(tracked_device_store, store, poll_interval_hours, fetch_from_apple, sleep_fn=time.sleep):
-    logger.info(f"History archiver started, polling every {poll_interval_hours}h")
+def run_archiver_loop(tracked_device_store, store, fetch_from_apple, sleep_fn=time.sleep, tick_interval_seconds=300):
+    logger.info(f"History archiver started, checking devices every {tick_interval_seconds}s against their own poll interval")
     while True:
         try:
-            hashed_keys = tracked_device_store.enabled_keys()
-            if hashed_keys:
-                entries = fetch_from_apple(hashed_keys)
-                _store_fetched_entries(hashed_keys, entries, store, int(time.time()))
+            devices = tracked_device_store.enabled_devices_with_intervals()
+            if devices:
+                now = int(time.time())
+                due_keys = [
+                    hashed_key for hashed_key, poll_interval_hours, _ in devices
+                    if store.last_polled_at(hashed_key) is None
+                    or (now - store.last_polled_at(hashed_key)) >= poll_interval_hours * 3600
+                ]
+                if due_keys:
+                    entries = fetch_from_apple(due_keys)
+                    _store_fetched_entries(due_keys, entries, store, now)
+
+                for hashed_key, _, retention_days in devices:
+                    store.delete_reports_older_than(hashed_key, now - retention_days * 86400)
             else:
                 logger.debug("History archiver: no enabled devices, skipping poll")
         except Exception as e:
             logger.error(f"History archiver poll failed: {e}", exc_info=True)
-        sleep_fn(poll_interval_hours * 3600)
+        sleep_fn(tick_interval_seconds)

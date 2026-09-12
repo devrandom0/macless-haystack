@@ -1,6 +1,7 @@
 import base64
 import json
 import threading
+import time
 
 import pytest
 from http.client import HTTPConnection
@@ -10,6 +11,7 @@ import mh_config
 import mh_endpoint
 from history.crypto import decrypt, load_or_create_key
 from history.registry import TrackedDeviceStore
+from history.store import HistoryStore, extract_report_timestamp
 
 
 @pytest.fixture
@@ -28,6 +30,13 @@ def server(tmp_path):
         thread.join()
         mh_endpoint.tracked_device_store = None
         mh_endpoint.history_encryption_key = None
+        mh_endpoint.history_store = None
+
+
+def _report_entry(unix_timestamp, id_="key-a"):
+    apple_timestamp = unix_timestamp - 978307200
+    payload = apple_timestamp.to_bytes(4, "big") + b"\x00" * 4
+    return {"payload": base64.b64encode(payload).decode("ascii"), "id": id_}
 
 
 def _post(server, path, body, headers=None):
@@ -75,8 +84,99 @@ def test_post_history_devices_upserts_and_get_reflects_it(server):
     status, body = _get(server, '/history/devices')
     assert status == 200
     assert body == {"devices": [
-        {"hashedPublicKey": "hash-a", "name": "Keys", "accessoryId": "acc-1", "enabled": True},
+        {
+            "hashedPublicKey": "hash-a", "name": "Keys", "accessoryId": "acc-1", "enabled": True,
+            "pollIntervalHours": 4, "retentionDays": 30,
+        },
     ]}
+
+
+def test_post_history_devices_accepts_poll_interval_and_retention_overrides(server):
+    status, body = _post(server, '/history/devices', {
+        "devices": [
+            {"hashedPublicKey": "hash-a", "privateKey": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ==",
+             "name": "Keys", "accessoryId": "acc-1", "enabled": True,
+             "pollIntervalHours": 6, "retentionDays": 14},
+        ]
+    })
+    assert status == 200
+
+    status, body = _get(server, '/history/devices')
+    assert body == {"devices": [
+        {
+            "hashedPublicKey": "hash-a", "name": "Keys", "accessoryId": "acc-1", "enabled": True,
+            "pollIntervalHours": 6, "retentionDays": 14,
+        },
+    ]}
+
+
+def test_post_history_devices_poll_interval_below_one_returns_400(server):
+    status, body = _post(server, '/history/devices', {
+        "devices": [
+            {"hashedPublicKey": "hash-a", "privateKey": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ==",
+             "name": "Keys", "accessoryId": None, "enabled": True, "pollIntervalHours": 0.5},
+        ]
+    })
+    assert status == 400
+    assert "error" in body
+
+
+def test_post_history_devices_retention_days_below_one_returns_400(server):
+    status, body = _post(server, '/history/devices', {
+        "devices": [
+            {"hashedPublicKey": "hash-a", "privateKey": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ==",
+             "name": "Keys", "accessoryId": None, "enabled": True, "retentionDays": 0},
+        ]
+    })
+    assert status == 400
+    assert "error" in body
+
+
+def test_post_history_devices_lowering_retention_deletes_out_of_range_reports(server):
+    mh_endpoint.history_store = HistoryStore(":memory:")
+    _post(server, '/history/devices', {
+        "devices": [
+            {"hashedPublicKey": "hash-a", "privateKey": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ==",
+             "name": "Keys", "accessoryId": None, "enabled": True, "retentionDays": 30},
+        ]
+    })
+    now = int(time.time())
+    old_entry = _report_entry(now - (20 * 86400))  # 20 days old: within 30 days, outside 10 days
+    new_entry = _report_entry(now - 86400)  # 1 day old: within both windows
+    mh_endpoint.history_store.record_reports("hash-a", [old_entry, new_entry])
+
+    status, _ = _post(server, '/history/devices', {
+        "devices": [
+            {"hashedPublicKey": "hash-a", "privateKey": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ==",
+             "name": "Keys", "accessoryId": None, "enabled": True, "retentionDays": 10},
+        ]
+    })
+
+    assert status == 200
+    assert mh_endpoint.history_store.get_reports(["hash-a"], since=0) == [new_entry]
+
+
+def test_post_history_devices_raising_retention_does_not_delete_reports(server):
+    mh_endpoint.history_store = HistoryStore(":memory:")
+    _post(server, '/history/devices', {
+        "devices": [
+            {"hashedPublicKey": "hash-a", "privateKey": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ==",
+             "name": "Keys", "accessoryId": None, "enabled": True, "retentionDays": 10},
+        ]
+    })
+    now = int(time.time())
+    old_entry = _report_entry(now - (20 * 86400))  # 20 days old
+    mh_endpoint.history_store.record_reports("hash-a", [old_entry])
+
+    status, _ = _post(server, '/history/devices', {
+        "devices": [
+            {"hashedPublicKey": "hash-a", "privateKey": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ==",
+             "name": "Keys", "accessoryId": None, "enabled": True, "retentionDays": 30},
+        ]
+    })
+
+    assert status == 200
+    assert mh_endpoint.history_store.get_reports(["hash-a"], since=0) == [old_entry]
 
 
 def test_post_history_devices_encrypts_private_key(server):

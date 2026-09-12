@@ -82,6 +82,30 @@ def test_mark_polled_defaults_to_now():
     assert before <= store.last_polled_at("key-a") <= after
 
 
+def test_delete_reports_older_than_removes_only_older_rows():
+    store = HistoryStore(":memory:")
+    old_entry = _entry(1_700_000_000)
+    new_entry = _entry(1_700_000_100)
+    store.record_reports("key-a", [old_entry, new_entry])
+
+    store.delete_reports_older_than("key-a", cutoff_timestamp=1_700_000_050)
+
+    assert store.get_reports(["key-a"], since=0) == [new_entry]
+
+
+def test_delete_reports_older_than_only_affects_given_hashed_key():
+    store = HistoryStore(":memory:")
+    old_entry_a = _entry(1_700_000_000, id_="key-a")
+    old_entry_b = _entry(1_700_000_000, id_="key-b")
+    store.record_reports("key-a", [old_entry_a])
+    store.record_reports("key-b", [old_entry_b])
+
+    store.delete_reports_older_than("key-a", cutoff_timestamp=1_700_000_050)
+
+    assert store.get_reports(["key-a"], since=0) == []
+    assert store.get_reports(["key-b"], since=0) == [old_entry_b]
+
+
 def test_record_reports_rolls_back_on_error_mid_batch():
     store = HistoryStore(":memory:")
     good_entry = _entry(1_700_000_000, extra={"statusCode": 0})

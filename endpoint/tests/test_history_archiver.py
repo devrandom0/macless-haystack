@@ -225,16 +225,17 @@ class _StopLoop(Exception):
 
 
 class _FakeTrackedDeviceStore:
-    def __init__(self, keys):
-        self._keys = keys
+    def __init__(self, devices):
+        # devices: [(hashed_key, poll_interval_hours, retention_days), ...]
+        self._devices = devices
 
-    def enabled_keys(self):
-        return self._keys
+    def enabled_devices_with_intervals(self):
+        return self._devices
 
 
-def test_run_archiver_loop_fetches_and_stores_enabled_keys():
+def test_run_archiver_loop_fetches_and_stores_due_devices():
     store = HistoryStore(":memory:")
-    tracked = _FakeTrackedDeviceStore(["key-a"])
+    tracked = _FakeTrackedDeviceStore([("key-a", 4, 30)])
     entry = _entry(int(time.time()), id_="key-a")
     fetch_from_apple = MagicMock(return_value=[entry])
 
@@ -243,7 +244,7 @@ def test_run_archiver_loop_fetches_and_stores_enabled_keys():
 
     with pytest.raises(_StopLoop):
         run_archiver_loop(
-            tracked_device_store=tracked, store=store, poll_interval_hours=4,
+            tracked_device_store=tracked, store=store,
             fetch_from_apple=fetch_from_apple, sleep_fn=sleep_and_stop,
         )
 
@@ -251,16 +252,92 @@ def test_run_archiver_loop_fetches_and_stores_enabled_keys():
     assert store.get_reports(["key-a"], since=0) == [entry]
 
 
-def test_run_archiver_loop_rereads_enabled_keys_every_iteration():
+def test_run_archiver_loop_skips_devices_not_yet_due():
+    store = HistoryStore(":memory:")
+    store.mark_polled("key-a", when=int(time.time()))  # just polled, interval is 4h
+    tracked = _FakeTrackedDeviceStore([("key-a", 4, 30)])
+    fetch_from_apple = MagicMock()
+
+    def sleep_and_stop(_seconds):
+        raise _StopLoop()
+
+    with pytest.raises(_StopLoop):
+        run_archiver_loop(
+            tracked_device_store=tracked, store=store,
+            fetch_from_apple=fetch_from_apple, sleep_fn=sleep_and_stop,
+        )
+
+    fetch_from_apple.assert_not_called()
+
+
+def test_run_archiver_loop_only_fetches_due_devices_in_one_batch_call():
+    store = HistoryStore(":memory:")
+    store.mark_polled("key-fresh", when=int(time.time()))  # 1h interval, just polled: not due
+    store.mark_polled("key-stale", when=int(time.time()) - (5 * 3600))  # 4h interval, 5h ago: due
+    tracked = _FakeTrackedDeviceStore([("key-fresh", 1, 30), ("key-stale", 4, 30)])
+    fetch_from_apple = MagicMock(return_value=[])
+
+    def sleep_and_stop(_seconds):
+        raise _StopLoop()
+
+    with pytest.raises(_StopLoop):
+        run_archiver_loop(
+            tracked_device_store=tracked, store=store,
+            fetch_from_apple=fetch_from_apple, sleep_fn=sleep_and_stop,
+        )
+
+    fetch_from_apple.assert_called_once_with(["key-stale"])
+
+
+def test_run_archiver_loop_treats_never_polled_device_as_due():
+    store = HistoryStore(":memory:")
+    tracked = _FakeTrackedDeviceStore([("key-a", 4, 30)])
+    fetch_from_apple = MagicMock(return_value=[])
+
+    def sleep_and_stop(_seconds):
+        raise _StopLoop()
+
+    with pytest.raises(_StopLoop):
+        run_archiver_loop(
+            tracked_device_store=tracked, store=store,
+            fetch_from_apple=fetch_from_apple, sleep_fn=sleep_and_stop,
+        )
+
+    fetch_from_apple.assert_called_once_with(["key-a"])
+
+
+def test_run_archiver_loop_enforces_retention_for_every_enabled_device_each_tick():
+    store = HistoryStore(":memory:")
+    now = int(time.time())
+    old_entry = _entry(now - (40 * 86400), id_="key-a")  # 40 days old
+    new_entry = _entry(now - 86400, id_="key-a")  # 1 day old
+    store.record_reports("key-a", [old_entry, new_entry])
+    store.mark_polled("key-a", when=now)  # not due, so retention runs without a poll
+    tracked = _FakeTrackedDeviceStore([("key-a", 4, 30)])  # 30 day retention
+    fetch_from_apple = MagicMock()
+
+    def sleep_and_stop(_seconds):
+        raise _StopLoop()
+
+    with pytest.raises(_StopLoop):
+        run_archiver_loop(
+            tracked_device_store=tracked, store=store,
+            fetch_from_apple=fetch_from_apple, sleep_fn=sleep_and_stop,
+        )
+
+    assert store.get_reports(["key-a"], since=0) == [new_entry]
+
+
+def test_run_archiver_loop_rereads_enabled_devices_every_tick():
     store = HistoryStore(":memory:")
 
     class _TogglingStore:
         def __init__(self):
             self.calls = 0
 
-        def enabled_keys(self):
+        def enabled_devices_with_intervals(self):
             self.calls += 1
-            return ["key-a"] if self.calls == 1 else []
+            return [("key-a", 4, 30)] if self.calls == 1 else []
 
     tracked = _TogglingStore()
     fetch_from_apple = MagicMock(return_value=[])
@@ -273,7 +350,7 @@ def test_run_archiver_loop_rereads_enabled_keys_every_iteration():
 
     with pytest.raises(_StopLoop):
         run_archiver_loop(
-            tracked_device_store=tracked, store=store, poll_interval_hours=4,
+            tracked_device_store=tracked, store=store,
             fetch_from_apple=fetch_from_apple, sleep_fn=sleep_and_stop_after_two,
         )
 
@@ -281,7 +358,7 @@ def test_run_archiver_loop_rereads_enabled_keys_every_iteration():
     assert fetch_from_apple.call_args_list[0].args == (["key-a"],)
 
 
-def test_run_archiver_loop_skips_fetch_when_no_enabled_keys():
+def test_run_archiver_loop_skips_fetch_when_no_enabled_devices():
     store = HistoryStore(":memory:")
     tracked = _FakeTrackedDeviceStore([])
     fetch_from_apple = MagicMock()
@@ -291,7 +368,7 @@ def test_run_archiver_loop_skips_fetch_when_no_enabled_keys():
 
     with pytest.raises(_StopLoop):
         run_archiver_loop(
-            tracked_device_store=tracked, store=store, poll_interval_hours=4,
+            tracked_device_store=tracked, store=store,
             fetch_from_apple=fetch_from_apple, sleep_fn=sleep_and_stop,
         )
 
@@ -300,7 +377,7 @@ def test_run_archiver_loop_skips_fetch_when_no_enabled_keys():
 
 def test_run_archiver_loop_continues_after_fetch_failure():
     store = HistoryStore(":memory:")
-    tracked = _FakeTrackedDeviceStore(["key-a"])
+    tracked = _FakeTrackedDeviceStore([("key-a", 4, 30)])
     fetch_from_apple = MagicMock(side_effect=Exception("network error"))
 
     def sleep_and_stop(_seconds):
@@ -308,11 +385,31 @@ def test_run_archiver_loop_continues_after_fetch_failure():
 
     with pytest.raises(_StopLoop):
         run_archiver_loop(
-            tracked_device_store=tracked, store=store, poll_interval_hours=4,
+            tracked_device_store=tracked, store=store,
             fetch_from_apple=fetch_from_apple, sleep_fn=sleep_and_stop,
         )
     # Reaching sleep_fn (and raising _StopLoop from it) proves the exception
     # from fetch_from_apple was caught rather than propagating out of the loop.
+
+
+def test_run_archiver_loop_uses_tick_interval_for_sleep():
+    store = HistoryStore(":memory:")
+    tracked = _FakeTrackedDeviceStore([])
+    fetch_from_apple = MagicMock()
+    seen = {}
+
+    def sleep_and_stop(seconds):
+        seen["seconds"] = seconds
+        raise _StopLoop()
+
+    with pytest.raises(_StopLoop):
+        run_archiver_loop(
+            tracked_device_store=tracked, store=store,
+            fetch_from_apple=fetch_from_apple, sleep_fn=sleep_and_stop,
+            tick_interval_seconds=60,
+        )
+
+    assert seen["seconds"] == 60
 
 
 def test_migrate_devices_json_to_registry_inserts_and_deletes_file(tmp_path):
