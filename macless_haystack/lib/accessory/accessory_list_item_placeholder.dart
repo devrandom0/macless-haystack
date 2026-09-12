@@ -17,6 +17,9 @@ class AccessoryListItemPlaceholder extends StatelessWidget {
       title: TextPlaceholder(),
       subtitle: TextPlaceholder(),
       dense: true,
+      visualDensity: VisualDensity.compact,
+      contentPadding: EdgeInsets.symmetric(horizontal: 12),
+      minVerticalPadding: 0,
       leading: AvatarPlaceholder(),
       trailing: TextPlaceholder(width: 60),
     );
