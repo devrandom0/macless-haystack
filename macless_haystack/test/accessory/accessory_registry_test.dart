@@ -1,3 +1,4 @@
+import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:latlong2/latlong.dart';
@@ -306,6 +307,35 @@ void main() {
     registry.saveOrderUpdates([a]);
 
     expect(notified, isTrue);
+  });
+
+  group('checkStorageUpgradeStatus', () {
+    test('returns and stores the status the platform reports', () async {
+      const status = SecureStorageUpgradeStatus(
+        state: SecureStorageUpgradeState.legacyDataDiscarded,
+        entryCount: 2,
+      );
+      var storage = MockFlutterSecureStorage();
+      when(storage.checkUpgradeStatus()).thenAnswer((_) async => status);
+      registry.setStorage = storage;
+
+      final result = await registry.checkStorageUpgradeStatus();
+
+      expect(result, status);
+      expect(registry.storageUpgradeStatus, status);
+    });
+
+    test('does not throw when the platform side raises', () async {
+      var storage = MockFlutterSecureStorage();
+      when(storage.checkUpgradeStatus())
+          .thenThrow(PlatformException(code: 'read_error'));
+      registry.setStorage = storage;
+
+      final result = await registry.checkStorageUpgradeStatus();
+
+      expect(result, SecureStorageUpgradeStatus.unsupported);
+      expect(registry.storageUpgradeStatus, SecureStorageUpgradeStatus.unsupported);
+    });
   });
 }
 

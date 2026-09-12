@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:macless_haystack/accessory/secure_storage_upgrade.dart';
 import 'package:macless_haystack/dashboard/dashboard.dart';
 import 'package:provider/provider.dart';
 import 'package:macless_haystack/accessory/accessory_registry.dart';
@@ -56,6 +57,8 @@ class AppLayout extends StatefulWidget {
 }
 
 class _AppLayoutState extends State<AppLayout> {
+  bool _storageWarningShown = false;
+
   @override
   initState() {
     super.initState();
@@ -63,6 +66,7 @@ class _AppLayoutState extends State<AppLayout> {
     var accessoryRegistry =
         Provider.of<AccessoryRegistry>(context, listen: false);
     accessoryRegistry.loadAccessories();
+    accessoryRegistry.checkStorageUpgradeStatus();
   }
 
   @override
@@ -77,10 +81,41 @@ class _AppLayoutState extends State<AppLayout> {
     super.didChangeDependencies();
   }
 
+  void _maybeShowStorageWarning(BuildContext context, String warning) {
+    if (_storageWarningShown) {
+      return;
+    }
+    _storageWarningShown = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!context.mounted) return;
+      showDialog<void>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Secure Storage Warning'),
+          content: Text(warning),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('OK'),
+            ),
+          ],
+        ),
+      );
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     bool isInitialized = context.watch<UserPreferences>().initialized;
     bool isLoading = context.watch<AccessoryRegistry>().loading;
+    var storageUpgradeStatus =
+        context.watch<AccessoryRegistry>().storageUpgradeStatus;
+    if (storageUpgradeStatus != null) {
+      var warning = secureStorageUpgradeWarning(storageUpgradeStatus);
+      if (warning != null) {
+        _maybeShowStorageWarning(context, warning);
+      }
+    }
     if (!isInitialized || isLoading) {
       return const Splashscreen();
     }

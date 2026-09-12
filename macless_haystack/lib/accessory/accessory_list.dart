@@ -309,8 +309,9 @@ class _AccessoryListState extends State<AccessoryList> {
               onPressed: (context) {
                 if (accessory.lastLocation != null && accessory.isActive) {
                   var loc = accessory.lastLocation!;
-                  Share.share(buildLocationShareLink(
-                      loc.latitude, loc.longitude));
+                  SharePlus.instance.share(ShareParams(
+                      text: buildLocationShareLink(
+                          loc.latitude, loc.longitude)));
                 }
               },
               backgroundColor:

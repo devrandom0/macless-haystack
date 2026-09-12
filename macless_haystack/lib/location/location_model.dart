@@ -6,6 +6,7 @@ import 'package:geocoding/geocoding.dart' as geocode;
 import 'package:latlong2/latlong.dart';
 import 'package:location/location.dart';
 import 'package:logger/logger.dart';
+import 'package:macless_haystack/location/location_permission.dart';
 
 class LocationModel extends ChangeNotifier {
   LatLng? here;
@@ -37,12 +38,11 @@ class LocationModel extends ChangeNotifier {
 
     permissionGranted = await location.requestPermission();
     if (permissionGranted == PermissionStatus.denied) {
+      // A soft denial can still be reversed by asking again; deniedForever
+      // and every other status fall straight through to the check below.
       permissionGranted = await location.requestPermission();
-      if (permissionGranted != PermissionStatus.granted) {
-        return false;
-      }
     }
-    return true;
+    return isLocationPermissionGranted(permissionGranted);
   }
 
   /// Requests location updates from the platform.
@@ -73,19 +73,18 @@ class LocationModel extends ChangeNotifier {
   /// Additionally updates the current address information to match
   /// the new location.
   void _updateLocation(LocationData locationData) {
-    if (locationData.latitude != null && locationData.longitude != null) {
-      logger.d(
-          'Location here: ${locationData.latitude!}, ${locationData.longitude!}');
-      here = LatLng(locationData.latitude!, locationData.longitude!);
-      initialLocationSet = true;
-      getAddress(here!).then((value) {
-        herePlace = value;
-        notifyListeners();
-      });
-    } else {
-      logger.e('Received invalid location data: $locationData');
-    }
+    logger.d(
+        'Location here: ${locationData.latitude}, ${locationData.longitude}');
+    here = LatLng(locationData.latitude, locationData.longitude);
+    initialLocationSet = true;
+    // Notify immediately so the map moves without waiting on the (slower,
+    // best-effort) address lookup below, then notify again once that
+    // resolves so the address label catches up.
     notifyListeners();
+    getAddress(here!).then((value) {
+      herePlace = value;
+      notifyListeners();
+    });
   }
 
   /// Cancels the listening for location updates.
@@ -115,9 +114,13 @@ class LocationModel extends ChangeNotifier {
     double lng = location.longitude;
 
     try {
-      if (geocode.GeocodingPlatform.instance != null) {
+      // Constructing Geocoding() itself touches the platform channel, so
+      // guard on the factory instance first rather than catching from the
+      // constructor (keeps this safe to call where no platform is
+      // registered, e.g. plain Dart unit tests).
+      if (geocode.GeocodingPlatformFactory.instance != null) {
         List<geocode.Placemark> placemarks =
-            await geocode.placemarkFromCoordinates(lat, lng);
+            await geocode.Geocoding().placemarkFromCoordinates(lat, lng);
         return placemarks.first;
       }
     } on MissingPluginException {

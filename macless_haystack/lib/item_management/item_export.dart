@@ -70,7 +70,9 @@ class ItemExportMenu extends StatelessWidget {
                   onTap: () async {
                     var advertisementKey =
                         await accessory.getHashedAdvertisementKey();
-                    Share.share(advertisementKey);
+                    SharePlus.instance.share(
+                      ShareParams(text: advertisementKey),
+                    );
                     if (context.mounted) {
                       Navigator.pop(context);
                     }
@@ -81,7 +83,9 @@ class ItemExportMenu extends StatelessWidget {
                   onTap: () async {
                     var advertisementKey =
                         await accessory.getAdvertisementKey();
-                    Share.share(advertisementKey);
+                    SharePlus.instance.share(
+                      ShareParams(text: advertisementKey),
+                    );
                     if (context.mounted) {
                       Navigator.pop(context);
                     }
@@ -91,7 +95,9 @@ class ItemExportMenu extends StatelessWidget {
                   title: const Text('Export Private Key (Base64)'),
                   onTap: () async {
                     var privateKey = await accessory.getPrivateKey();
-                    Share.share(privateKey);
+                    SharePlus.instance.share(
+                      ShareParams(text: privateKey),
+                    );
                     if (context.mounted) {
                       Navigator.pop(context);
                     }
@@ -156,9 +162,8 @@ class ItemExportMenu extends StatelessWidget {
       await file.writeAsString(encodedAccessories);
       // Share export file over os share dialog
 
-      Share.shareXFiles(
-        [XFile(file.path)],
-        subject: filename,
+      SharePlus.instance.share(
+        ShareParams(files: [XFile(file.path)], subject: filename),
       );
     }
   }
