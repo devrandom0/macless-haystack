@@ -321,8 +321,6 @@ class _PreferencesPageState extends State<PreferencesPage> {
     }
   }
 
-  /// Same range checks as [validatePollIntervalHours], but an empty field is
-  /// valid here since leaving it blank means "keep each device's own value".
   /// Applies the entered poll interval/retention to every device that is
   /// currently archived on the server. This only updates those settings -
   /// it never enables archiving for a device that's currently off, and
@@ -415,7 +413,7 @@ class _PreferencesPageState extends State<PreferencesPage> {
               controller: _defaultPollIntervalController,
               decoration:
                   const InputDecoration(labelText: 'Default poll interval (hours)'),
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              keyboardType: TextInputType.number,
               validator: validateOptionalPollIntervalHours,
             ),
             TextFormField(

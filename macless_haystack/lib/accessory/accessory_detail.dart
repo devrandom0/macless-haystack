@@ -39,12 +39,20 @@ class _AccessoryDetailState extends State<AccessoryDetail> {
   final _archiveSettingsFormKey = GlobalKey<FormState>();
   bool _archivingLoading = true;
   bool _archivingEnabled = false;
-  // Guards against overlapping archive requests (e.g. rapidly re-toggling
-  // the switch): while true, the switch and the settings form are disabled,
-  // so at most one _setArchiving/_disableArchivingBestEffort/
-  // _updateArchiveSettings call (including its own follow-up reload) is
-  // ever in flight at a time.
+  // Disables the archive switch/Update button while an operation started
+  // from one of those two controls is in flight, so a user can't fire a
+  // second overlapping request from them. Deliberately NOT set by
+  // _disableArchivingBestEffort, which is triggered by the separate Is
+  // Active toggle and must never visibly disable other controls while its
+  // best-effort network call is in flight (or hung).
   bool _archivingUpdating = false;
+  // Every operation that can eventually apply a fetched/computed archiving
+  // state captures the current value on entry and only calls setState if
+  // it's still current when it finishes - so an Is Active deactivation
+  // (which isn't blocked by _archivingUpdating and can complete out of
+  // order) can't have its result overwritten by an older, slower operation
+  // that was already in flight when it started.
+  int _archivingGeneration = 0;
   final _pollIntervalController = TextEditingController();
   final _retentionDaysController = TextEditingController();
 
@@ -67,7 +75,13 @@ class _AccessoryDetailState extends State<AccessoryDetail> {
   /// [onlyIfBlank] is true, the interval/retention fields are only
   /// populated when currently empty, so this never overwrites a value
   /// the user may already be editing.
-  Future<void> _loadArchivingStatus({bool onlyIfBlank = false}) async {
+  ///
+  /// [generation] lets a caller that already claimed a generation (e.g.
+  /// _setArchiving, before its own await) pass it through, so this load
+  /// is treated as part of that same operation rather than a new one -
+  /// if anything else starts in the meantime, both become stale together.
+  Future<void> _loadArchivingStatus({bool onlyIfBlank = false, int? generation}) async {
+    var myGeneration = generation ?? ++_archivingGeneration;
     try {
       var url = Settings.getValue<String>(endpointUrl,
           defaultValue: 'http://localhost:6176')!;
@@ -88,8 +102,14 @@ class _AccessoryDetailState extends State<AccessoryDetail> {
       }
       if (mounted) {
         setState(() {
-          _archivingEnabled = enabledDevice != null;
           _archivingLoading = false;
+          // A newer operation (e.g. Is Active deactivating this accessory)
+          // has already superseded this load - only the loading flag above
+          // still applies, the fetched status itself is stale.
+          if (myGeneration != _archivingGeneration) {
+            return;
+          }
+          _archivingEnabled = enabledDevice != null;
           if (enabledDevice != null) {
             if (!onlyIfBlank || _pollIntervalController.text.isEmpty) {
               _pollIntervalController.text =
@@ -142,6 +162,7 @@ class _AccessoryDetailState extends State<AccessoryDetail> {
   }
 
   Future<void> _setArchiving(bool enabled) async {
+    var myGeneration = ++_archivingGeneration;
     var previous = _archivingEnabled;
     setState(() {
       _archivingEnabled = enabled;
@@ -163,12 +184,13 @@ class _AccessoryDetailState extends State<AccessoryDetail> {
       // brand-new device, or the device's preserved existing value)
       // instead of sitting empty until the screen is reopened. Only fill
       // in blank fields, in case the user started typing while this was
-      // in flight.
+      // in flight. Passing myGeneration ties this load to the same
+      // operation, so it's skipped if Is Active deactivated in the meantime.
       if (enabled) {
-        await _loadArchivingStatus(onlyIfBlank: true);
+        await _loadArchivingStatus(onlyIfBlank: true, generation: myGeneration);
       }
     } catch (e) {
-      if (mounted) {
+      if (mounted && myGeneration == _archivingGeneration) {
         setState(() {
           _archivingEnabled = previous;
         });
@@ -187,13 +209,11 @@ class _AccessoryDetailState extends State<AccessoryDetail> {
 
   /// Best-effort disabling of server-side archiving when this accessory is
   /// deactivated. Failures are swallowed - this is a secondary side effect
-  /// of the Is Active toggle, which must keep working even if this fails.
+  /// of the Is Active toggle, which must keep working even if this fails,
+  /// so it deliberately never sets _archivingUpdating (which would visibly
+  /// disable the archive switch/Update button for as long as this hangs).
   Future<void> _disableArchivingBestEffort() async {
-    if (mounted) {
-      setState(() {
-        _archivingUpdating = true;
-      });
-    }
+    var myGeneration = ++_archivingGeneration;
     try {
       var url = Settings.getValue<String>(endpointUrl,
           defaultValue: 'http://localhost:6176')!;
@@ -203,7 +223,7 @@ class _AccessoryDetailState extends State<AccessoryDetail> {
       var devices = await _buildDeviceEntries(false);
       await HistoryArchiveService.setDevicesArchiving(
           url, user, pass, devices);
-      if (mounted) {
+      if (mounted && myGeneration == _archivingGeneration) {
         setState(() {
           _archivingEnabled = false;
         });
@@ -211,12 +231,6 @@ class _AccessoryDetailState extends State<AccessoryDetail> {
     } catch (e) {
       // Best-effort: ignore failures, the Is Active toggle already
       // committed locally and must not be blocked by this.
-    } finally {
-      if (mounted) {
-        setState(() {
-          _archivingUpdating = false;
-        });
-      }
     }
   }
 

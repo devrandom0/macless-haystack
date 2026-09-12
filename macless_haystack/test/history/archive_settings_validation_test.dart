@@ -71,4 +71,42 @@ void main() {
       expect(validateRetentionDays(null), isNotNull);
     });
   });
+
+  group('validateOptionalPollIntervalHours', () {
+    test('accepts an empty string', () {
+      expect(validateOptionalPollIntervalHours(''), isNull);
+    });
+
+    test('accepts whitespace-only input', () {
+      expect(validateOptionalPollIntervalHours('   '), isNull);
+    });
+
+    test('accepts null', () {
+      expect(validateOptionalPollIntervalHours(null), isNull);
+    });
+
+    test('applies the normal range check once non-empty', () {
+      expect(validateOptionalPollIntervalHours('0'), isNotNull);
+      expect(validateOptionalPollIntervalHours('4'), isNull);
+    });
+  });
+
+  group('validateOptionalRetentionDays', () {
+    test('accepts an empty string', () {
+      expect(validateOptionalRetentionDays(''), isNull);
+    });
+
+    test('accepts whitespace-only input', () {
+      expect(validateOptionalRetentionDays('   '), isNull);
+    });
+
+    test('accepts null', () {
+      expect(validateOptionalRetentionDays(null), isNull);
+    });
+
+    test('applies the normal range check once non-empty', () {
+      expect(validateOptionalRetentionDays('0'), isNotNull);
+      expect(validateOptionalRetentionDays('30'), isNull);
+    });
+  });
 }
