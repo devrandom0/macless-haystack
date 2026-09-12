@@ -201,16 +201,23 @@ class _PreferencesPageState extends State<PreferencesPage> {
             if (submitted == null) return;
             var (text, clear) = submitted;
             if (clear) {
+              var previousValue = value;
               onChanged('');
               if (context.mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Password cleared')),
+                  SnackBar(
+                    content: const Text('Password cleared'),
+                    action: SnackBarAction(
+                      label: 'Undo',
+                      onPressed: () => onChanged(previousValue),
+                    ),
+                  ),
                 );
               }
               return;
             }
             var resolved = resolvePasswordEdit(text, value.isNotEmpty);
-            if (resolved != null) {
+            if (resolved != null && resolved != value) {
               onChanged(resolved);
               if (context.mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(
