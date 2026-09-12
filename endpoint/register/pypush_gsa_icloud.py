@@ -329,7 +329,7 @@ def _prompt_for_code(initial_prompt, resend_fn):
     return code
 
 
-def sms_second_factor(dsid, idms_token):
+def request_sms_code(dsid, idms_token):
     headers = _common_2fa_headers(dsid, idms_token)
     headers["X-Apple-App-Info"] = "com.apple.gs.xcode.auth"
     headers["X-Xcode-Version"] = "11.2 (11B41)"
@@ -352,18 +352,15 @@ def sms_second_factor(dsid, idms_token):
             logger.error("Script for sms id not found. Using the first phone number")
 
         logger.info(f"Using phone with id {sms_id} for SMS2FA")
-        body = {"phoneNumber": {"id": sms_id}, "mode": "sms"}
 
-    # Prompt for the 2FA code. It's just a string like '123456', no dashes or spaces
-    code = _prompt_for_code(
-        f"Enter SMS 2FA code (If you do not receive a code, wait {WAITING_TIME}s and press Enter. An attempt will be made to request the SMS in another way.): ",
-        lambda: request_code(headers, sms_id),
-    )
+    return headers, sms_id
 
-    body['securityCode'] = {'code': code}
+
+def submit_sms_code(headers, sms_id, code):
+    body = {"phoneNumber": {"id": sms_id}, "mode": "sms", "securityCode": {"code": code}}
 
     # Send the 2FA code to Apple
-    with  requests.post(
+    with requests.post(
             "https://gsa.apple.com/auth/verify/phone/securitycode",
             json=body,
             headers=headers,
@@ -382,8 +379,19 @@ def sms_second_factor(dsid, idms_token):
     if resp.ok and "X-Apple-DSID" in resp.headers:
         logger.info("2FA successful")
     else:
-        raise Exception(
-            "2FA unsuccessful. Maybe wrong code or wrong number. Check your account details.")
+        raise AppleAuthError("invalid_code")
+
+
+def sms_second_factor(dsid, idms_token):
+    headers, sms_id = request_sms_code(dsid, idms_token)
+
+    # Prompt for the 2FA code. It's just a string like '123456', no dashes or spaces
+    code = _prompt_for_code(
+        f"Enter SMS 2FA code (If you do not receive a code, wait {WAITING_TIME}s and press Enter. An attempt will be made to request the SMS in another way.): ",
+        lambda: request_code(headers, sms_id),
+    )
+
+    submit_sms_code(headers, sms_id, code)
 
 
 def request_trusted_device_code(dsid, idms_token):

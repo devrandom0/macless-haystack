@@ -158,3 +158,48 @@ def test_submit_trusted_device_code_raises_on_server_error():
             patch.object(gsa.requests, "get", return_value=submit_resp):
         with pytest.raises(requests.HTTPError):
             gsa.submit_trusted_device_code({}, "000000")
+
+
+def test_request_sms_code_extracts_phone_id_from_boot_args():
+    boot_args = '{"direct": {"phoneNumberVerification": {"trustedPhoneNumber": {"id": 7}}}}'
+    auth_resp = _mock_response(
+        text=f'<script class="boot_args">{boot_args}</script>',
+    )
+
+    with patch.object(gsa, "generate_anisette_headers", return_value={"X-Anisette": "1"}), \
+            patch.object(gsa.requests, "get", return_value=auth_resp) as mock_get:
+        headers, sms_id = gsa.request_sms_code("dsid-1", "token-1")
+
+    mock_get.assert_called_once_with("https://gsa.apple.com/auth", headers=headers, verify=False)
+    assert sms_id == 7
+    assert headers["X-Anisette"] == "1"
+
+
+def test_request_sms_code_defaults_to_phone_id_one_when_boot_args_missing():
+    auth_resp = _mock_response(text="<html>no script here</html>")
+
+    with patch.object(gsa, "generate_anisette_headers", return_value={}), \
+            patch.object(gsa.requests, "get", return_value=auth_resp):
+        _, sms_id = gsa.request_sms_code("dsid-1", "token-1")
+
+    assert sms_id == 1
+
+
+def test_submit_sms_code_succeeds_when_dsid_header_present():
+    submit_resp = _mock_response(headers={"X-Apple-DSID": "dsid-1"}, ok=True)
+
+    with patch.object(gsa.requests, "post", return_value=submit_resp) as mock_post:
+        gsa.submit_sms_code({"h": "1"}, 7, "654321")
+
+    assert mock_post.call_args.args[0] == "https://gsa.apple.com/auth/verify/phone/securitycode"
+    assert mock_post.call_args.kwargs["json"] == {
+        "phoneNumber": {"id": 7}, "mode": "sms", "securityCode": {"code": "654321"},
+    }
+
+
+def test_submit_sms_code_raises_apple_auth_error_when_dsid_header_missing():
+    submit_resp = _mock_response(headers={}, ok=True)
+
+    with patch.object(gsa.requests, "post", return_value=submit_resp):
+        with pytest.raises(gsa.AppleAuthError, match="invalid_code"):
+            gsa.submit_sms_code({}, 7, "000000")
