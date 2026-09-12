@@ -357,13 +357,17 @@ def request_sms_code(dsid, idms_token):
 
 
 def submit_sms_code(headers, sms_id, code):
+    # Anisette metadata is meant to be single-use; the trigger/wait/resend round trip
+    # before this can stretch well past that, so regenerate it right before submitting.
+    submit_headers = dict(headers)
+    submit_headers.update(generate_anisette_headers())
     body = {"phoneNumber": {"id": sms_id}, "mode": "sms", "securityCode": {"code": code}}
 
     # Send the 2FA code to Apple
     with requests.post(
             "https://gsa.apple.com/auth/verify/phone/securitycode",
             json=body,
-            headers=headers,
+            headers=submit_headers,
             verify=False,
             timeout=5,
     ) as resp:

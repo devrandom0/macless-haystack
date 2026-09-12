@@ -128,6 +128,32 @@ def test_post_apple_login_returns_502_when_apple_unreachable(server):
     assert status == 502
 
 
+def test_post_apple_login_discards_previous_pending_login_even_when_request_invalid(server):
+    needs_2fa = mh_endpoint.pypush_gsa_icloud.NeedsSecondFactor(
+        method="secondaryAuth", dsid="d-1", idms_token="t-1")
+    with patch.object(mh_endpoint.pypush_gsa_icloud, "gsa_authenticate", return_value=needs_2fa), \
+            patch.object(mh_endpoint.pypush_gsa_icloud, "request_second_factor_code",
+                          return_value={"headers": {}, "sms_id": 7}):
+        status, body = _post(server, '/auth/apple/login', {"username": "user@example.com", "password": "hunter2"})
+
+    assert body == {"status": "code_required", "method": "sms"}
+    assert mh_endpoint.pending_apple_login is not None
+
+    status, _ = _post(server, '/auth/apple/login', {"username": "user@example.com"})
+
+    assert status == 400
+    assert mh_endpoint.pending_apple_login is None
+
+
+def test_post_apple_login_requires_basic_auth_when_endpoint_credentials_configured(server, monkeypatch):
+    monkeypatch.setattr(mh_config, "getEndpointUser", lambda: "simo")
+    monkeypatch.setattr(mh_config, "getEndpointPass", lambda: "secret")
+
+    status, body = _post(server, '/auth/apple/login', {"username": "user@example.com", "password": "hunter2"})
+
+    assert status == 401
+
+
 def _set_pending(method="secondaryAuth", state=None, username="user@example.com",
                   password="hunter2", age_seconds=0):
     mh_endpoint.pending_apple_login = mh_endpoint.PendingAppleLogin(
@@ -245,6 +271,16 @@ def test_get_apple_status_reports_pending_during_login(server):
     status, body = _get(server, '/auth/apple/status')
 
     assert body["pending"] is True
+
+
+def test_get_apple_status_reports_not_pending_once_pending_login_expired(server):
+    _set_pending(age_seconds=mh_endpoint.PENDING_LOGIN_TIMEOUT_SECONDS + 1)
+
+    status, body = _get(server, '/auth/apple/status')
+
+    assert status == 200
+    assert body["pending"] is False
+    assert mh_endpoint.pending_apple_login is None
 
 
 def test_raise_for_status_marking_stale_sets_flag_on_401():

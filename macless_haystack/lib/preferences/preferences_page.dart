@@ -354,7 +354,14 @@ class _PreferencesPageState extends State<PreferencesPage> {
       title: 'Enable in-app Apple ID login',
       activeColor: Theme.of(context).colorScheme.onPrimary,
       onChange: (enabled) {
-        setState(() => _appleAuthEnabled = enabled);
+        setState(() {
+          _appleAuthEnabled = enabled;
+          if (!enabled) {
+            // The endpoint can be repointed while the switch is off, so a kept
+            // status would describe the wrong server on re-enable.
+            _appleAuthStatus = null;
+          }
+        });
         if (enabled) {
           _loadAppleAuthStatus();
         }

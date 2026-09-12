@@ -303,6 +303,9 @@ class ServerHandler(BaseHTTPRequestHandler):
     def _handle_post_auth_apple_login(self, body):
         global pending_apple_login
 
+        # Even when this attempt fails, a stored password must not outlive it.
+        pending_apple_login = None
+
         try:
             username = body['username']
             password = body['password']
@@ -414,6 +417,7 @@ class ServerHandler(BaseHTTPRequestHandler):
         self._send_json(200, {"status": "authenticated"})
 
     def _handle_get_auth_apple_status(self):
+        _expire_pending_login_if_stale()
         logged_in = os.path.exists(mh_config.getConfigFile()) and not apple_session_stale
         self._send_json(200, {"loggedIn": logged_in, "pending": pending_apple_login is not None})
 
@@ -427,6 +431,12 @@ _SECOND_FACTOR_METHOD_NAMES = {
     "trustedDeviceSecondaryAuth": "trusted_device",
     "secondaryAuth": "sms",
 }
+
+
+def _expire_pending_login_if_stale():
+    global pending_apple_login
+    if pending_apple_login is not None and time.time() - pending_apple_login.started_at > PENDING_LOGIN_TIMEOUT_SECONDS:
+        pending_apple_login = None
 
 
 def _complete_apple_login(g, username):
