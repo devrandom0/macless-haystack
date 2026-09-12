@@ -79,26 +79,34 @@ class AccessoryListItemState extends State<AccessoryListItem> {
                   Text(
                     widget.accessory.name,
                     style: TextStyle(
+                      fontSize: 14,
                       color: widget.accessory.isActive
                           ? Theme.of(context).colorScheme.onSurface
                           : Theme.of(context).disabledColor,
                     ),
                   ),
-                  const SizedBox(width: 5),
+                  const SizedBox(width: 4),
                   _buildIcon(),
                 ],
               ),
               subtitle: SingleChildScrollView(
                 scrollDirection: Axis.vertical,
-                child: Text(locationString + dateString),
+                child: Text(
+                  locationString + dateString,
+                  style: const TextStyle(fontSize: 12),
+                ),
               ),
               trailing: widget.distance,
               dense: true,
+              visualDensity: VisualDensity.compact,
+              contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+              minVerticalPadding: 0,
               leading: GestureDetector(
                 onLongPress: widget.onLongPress,
                 child: AccessoryIcon(
                   icon: widget.accessory.icon,
                   color: widget.accessory.color,
+                  size: 20,
                 ),
               ),
             ));
@@ -109,15 +117,15 @@ class AccessoryListItemState extends State<AccessoryListItem> {
   Widget _buildIcon() {
     switch (widget.accessory.lastBatteryStatus) {
       case AccessoryBatteryStatus.ok:
-        return const Icon(Icons.battery_full, color: Colors.green, size: 15);
+        return const Icon(Icons.battery_full, color: Colors.green, size: 13);
       case AccessoryBatteryStatus.medium:
-        return const Icon(Icons.battery_3_bar, color: Colors.orange, size: 15);
+        return const Icon(Icons.battery_3_bar, color: Colors.orange, size: 13);
       case AccessoryBatteryStatus.low:
-        return const Icon(Icons.battery_1_bar, color: Colors.red, size: 15);
+        return const Icon(Icons.battery_1_bar, color: Colors.red, size: 13);
       case AccessoryBatteryStatus.criticalLow:
-        return const Icon(Icons.battery_alert, color: Colors.red, size: 15);
+        return const Icon(Icons.battery_alert, color: Colors.red, size: 13);
       default:
-        return const SizedBox(width: 15);
+        return const SizedBox(width: 13);
     }
   }
 }
