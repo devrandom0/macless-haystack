@@ -21,6 +21,22 @@ from Crypto.Hash import SHA256
 
 from endpoint import mh_config
 
+from dataclasses import dataclass
+
+
+class AppleAuthError(Exception):
+    """Raised when a GSA login step fails in a way the caller must handle
+    explicitly: bad credentials, a bad 2FA code, an unrecognized challenge
+    type, or a non-zero account status from Apple."""
+
+
+@dataclass
+class NeedsSecondFactor:
+    method: str
+    dsid: str
+    idms_token: str
+
+
 # Created here so that it is consistent
 USER_ID = uuid.uuid4()
 DEVICE_ID = uuid.uuid4()
@@ -42,7 +58,15 @@ def icloud_login_mobileme(username='', password=''):
     if not password:
         password = getpass('Password: ')
 
-    g = gsa_authenticate(username, password)
+    g = gsa_authenticate_interactive(username, password)
+    return register_mobileme(g, username)
+
+
+def register_mobileme(g, username):
+    """Registers this device against mobileme using the searchPartyToken
+    pet from a completed GSA login `g`. Returns {'dsid', 'searchPartyToken'}
+    ready to write to auth.json. Raises AppleAuthError if Apple reports a
+    non-zero account status (e.g. the account needs a credit card on file)."""
     pet = g["t"]["com.apple.gs.idms.pet"]["token"]
     adsid = g["adsid"]
 
@@ -71,7 +95,24 @@ def icloud_login_mobileme(username='', password=''):
         resp.raise_for_status()
     response = f"HTTP-Code: {resp.status_code}\n{resp.text}"
     logger.debug(response)
-    return plist.loads(resp.content)
+    mobileme = plist.loads(resp.content)
+
+    status = mobileme['delegates']['com.apple.mobileme']['status']
+    if status != 0:
+        msg = mobileme['delegates']['com.apple.mobileme']['status-message']
+        logger.error('Invalid status: ' + str(status))
+        logger.error('Error message: ' + msg)
+        if 'blocking' in msg:
+            logger.error(
+                'It seems your account score is not high enough. Log in to '
+                'https://appleid.apple.com/ and add your credit card (nothing '
+                'will be charged) or additional data to increase it.')
+        raise AppleAuthError(msg)
+
+    return {
+        'dsid': mobileme['dsid'],
+        'searchPartyToken': mobileme['delegates']['com.apple.mobileme']['service-data']['tokens']['searchPartyToken'],
+    }
 
 
 def gsa_authenticate(username, password):
@@ -84,7 +125,7 @@ def gsa_authenticate(username, password):
 
     if r["sp"] not in ["s2k", "s2k_fo"]:
         logger.warning(f"This implementation only supports s2k and sk2_fo. Server returned {r['sp']}")
-        return
+        raise AppleAuthError(f"unsupported_protocol:{r['sp']}")
 
     # Change the password out from under the SRP library, as we couldn't calculate it without the salt.
     usr.p = encrypt_password(password, r["s"], r["i"], r["sp"])
@@ -94,7 +135,7 @@ def gsa_authenticate(username, password):
     # Make sure we processed the challenge correctly
     if m is None:
         logger.error("Failed to process challenge")
-        return
+        raise AppleAuthError("invalid_credentials")
     logger.info("Authentication request completion")
     resp = gsa_authenticated_request(
         {"c": r["c"], "M1": m, "u": username, "o": "complete"})
@@ -103,11 +144,11 @@ def gsa_authenticate(username, password):
     if "M2" not in resp:
         logger.error("Error on authentication")
         logger.error(resp)
-        return
+        raise AppleAuthError("invalid_credentials")
     usr.verify_session(resp["M2"])
     if not usr.authenticated():
         logger.error("Failed to verify session")
-        return
+        raise AppleAuthError("invalid_credentials")
 
     spd = decrypt_cbc(usr, resp["spd"])
     # For some reason plistlib doesn't accept it without the header...
@@ -117,7 +158,7 @@ def gsa_authenticate(username, password):
 """
     spd = plist.loads(PLISTHEADER + spd)
 
-    if "au" in resp["Status"]:
+    if "au" in resp.get("Status", {}):
         au = resp["Status"]["au"]
         # Replace bytes with strings
         for k, v in spd.items():
@@ -125,12 +166,23 @@ def gsa_authenticate(username, password):
                 spd[k] = base64.b64encode(v).decode()
         if au not in ("trustedDeviceSecondaryAuth", "secondaryAuth"):
             logger.error(f"Unknown auth value {au}")
-            return
+            raise AppleAuthError(f"unknown_auth_value:{au}")
 
-        _dispatch_second_factor(au, spd["adsid"], spd["GsIdmsToken"])
-        return gsa_authenticate(username, password)
+        return NeedsSecondFactor(method=au, dsid=spd["adsid"], idms_token=spd["GsIdmsToken"])
     else:
         return spd
+
+
+def gsa_authenticate_interactive(username, password):
+    """Blocking CLI wrapper: retries gsa_authenticate through as many 2FA
+    rounds as Apple requires, prompting on stdin via _dispatch_second_factor
+    each time. Behaves exactly like the old gsa_authenticate did before it
+    was split to support a non-blocking HTTP-driven login flow."""
+    result = gsa_authenticate(username, password)
+    while isinstance(result, NeedsSecondFactor):
+        _dispatch_second_factor(result.method, result.dsid, result.idms_token)
+        result = gsa_authenticate(username, password)
+    return result
 
 
 def _dispatch_second_factor(au, dsid, idms_token):

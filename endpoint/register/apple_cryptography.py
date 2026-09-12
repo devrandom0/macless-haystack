@@ -11,7 +11,7 @@ from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives.ciphers import Cipher
 
 from endpoint import mh_config
-from .pypush_gsa_icloud import icloud_login_mobileme
+from .pypush_gsa_icloud import AppleAuthError, icloud_login_mobileme
 
 logger = logging.getLogger()
 
@@ -41,27 +41,13 @@ def getAuth(regenerate=False):
             j = json.load(f)
     else:
         logger.info('Trying to login')
-        mobileme = icloud_login_mobileme(
-            username=mh_config.getUser(), password=mh_config.getPass())
-
-        logger.debug('Answer from icloud login')
-        logger.debug(mobileme)
-        status = mobileme['delegates']['com.apple.mobileme']['status']
-        if status == 0:
-            j = {'dsid': mobileme['dsid'], 'searchPartyToken': mobileme['delegates']
-                 ['com.apple.mobileme']['service-data']['tokens']['searchPartyToken']}
-            with open(mh_config.getConfigFile(), "w") as f:
-                json.dump(j, f)
-        else:
-            msg = mobileme['delegates']['com.apple.mobileme']['status-message']
-            logger.error('Invalid status: ' + str(status))
-            logger.error('Error message: ' + msg)
-            if 'blocking' in msg:
-                logger.error(
-                    'It seems your account score is not high enough. Log in to https://appleid.apple.com/ and add your credit card (nothing will be charged) or additional data to increase it.')
+        try:
+            j = icloud_login_mobileme(username=mh_config.getUser(), password=mh_config.getPass())
+        except AppleAuthError:
             logger.error('Unable to proceed, program will be terminated.')
-
             sys.exit()
+        with open(mh_config.getConfigFile(), "w") as f:
+            json.dump(j, f)
     return (j['dsid'], j['searchPartyToken'])
 
 
