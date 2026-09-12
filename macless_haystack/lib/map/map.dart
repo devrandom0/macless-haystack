@@ -200,7 +200,10 @@ class _AccessoryMapState extends State<AccessoryMap> {
                       padding: const EdgeInsets.all(5),
                       child: Container(
                         decoration: BoxDecoration(
-                          color: Theme.of(context).indicatorColor,
+                          // indicatorColor resolves to onPrimarySurfaceColor,
+                          // which is white in the light theme and invisible
+                          // against the surface-colored circle behind it.
+                          color: Theme.of(context).colorScheme.primary,
                           shape: BoxShape.circle,
                         ),
                       ),

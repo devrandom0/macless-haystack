@@ -214,7 +214,7 @@ class _AccessoryListState extends State<AccessoryList> {
                     onPressed: (context) async {
                       await widget.loadLocationUpdates(accessory);
                     },
-                    foregroundColor: Theme.of(context).primaryColor,
+                    foregroundColor: Theme.of(context).colorScheme.primary,
                     icon: Icons.refresh,
                     label: 'Refresh',
                   ),
@@ -231,7 +231,7 @@ class _AccessoryListState extends State<AccessoryList> {
                       loc.latitude, loc.longitude, accessory.name);
                 }
               },
-              foregroundColor: Theme.of(context).primaryColor,
+              foregroundColor: Theme.of(context).colorScheme.primary,
               icon: Icons.directions,
               label: 'Navigate',
             ),
@@ -245,7 +245,7 @@ class _AccessoryListState extends State<AccessoryList> {
                           AccessoryHistory(accessory: accessory)),
                 );
               },
-              backgroundColor: Theme.of(context).primaryColor,
+              backgroundColor: Theme.of(context).colorScheme.primary,
               icon: Icons.history,
               label: 'History',
             ),
@@ -258,7 +258,7 @@ class _AccessoryListState extends State<AccessoryList> {
                       loc.latitude, loc.longitude));
                 }
               },
-              foregroundColor: Theme.of(context).primaryColor,
+              foregroundColor: Theme.of(context).colorScheme.primary,
               icon: Icons.share,
               label: 'Share',
             ),

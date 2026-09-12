@@ -368,7 +368,7 @@ class _AccessoryDetailState extends State<AccessoryDetail> {
                             },
                             icon: Icon(
                               Icons.edit,
-                              color: Theme.of(context).primaryColor,
+                              color: Theme.of(context).colorScheme.primary,
                             ),
                           ),
                         ),

@@ -161,11 +161,8 @@ class _DashboardState extends State<Dashboard> {
                   ))
               .toList(),
           currentIndex: _selectedIndex,
-          // secondaryHeaderColor resolves to a near-white blue-50 tint in the
-          // light theme, which is nearly invisible against the nav bar's
-          // white background; onSurfaceVariant is the token Material 3
-          // actually designs for muted foreground content on surface.
-          unselectedItemColor: Theme.of(context).colorScheme.onSurfaceVariant,
+          // secondaryHeaderColor's blue[50]/grey[700] was nearly invisible against the nav bar.
+          unselectedItemColor: Theme.of(context).colorScheme.outline,
           onTap: _onItemTapped,
         ),
         floatingActionButton:
