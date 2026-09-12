@@ -43,6 +43,16 @@ void main() {
     });
   });
 
+  group('groupHeaderLabel', () {
+    test('appends the count in parentheses', () {
+      expect(groupHeaderLabel('Active', 3), 'Active (3)');
+    });
+
+    test('shows zero rather than omitting the group', () {
+      expect(groupHeaderLabel('Inactive', 0), 'Inactive (0)');
+    });
+  });
+
   group('mergedOrderAfterGroupReorder', () {
     test('splices a reordered active group back in front of the inactives',
         () {
