@@ -165,6 +165,15 @@ class ServerHandler(BaseHTTPRequestHandler):
             self._handle_post_auth_apple_login(body)
             return
 
+        if path == '/auth/apple/verify':
+            try:
+                body = json.loads(post_body)
+            except json.JSONDecodeError as e:
+                self._send_json(400, {"error": str(e)})
+                return
+            self._handle_post_auth_apple_verify(body)
+            return
+
         logger.debug('Getting with post: ' + str(post_body))
         body = json.loads(post_body)
 
@@ -329,6 +338,68 @@ class ServerHandler(BaseHTTPRequestHandler):
         try:
             _complete_apple_login(result, username)
         except pypush_gsa_icloud.AppleAuthError as e:
+            self._send_json(401, {"error": "account_error", "message": str(e)})
+            return
+        except requests.exceptions.RequestException:
+            self._send_json(502, {"error": "apple_unreachable"})
+            return
+
+        pending_apple_login = None
+        self._send_json(200, {"status": "authenticated"})
+
+    def _handle_post_auth_apple_verify(self, body):
+        global pending_apple_login
+
+        pending = pending_apple_login
+        if pending is None:
+            self._send_json(409, {"error": "no_pending_login"})
+            return
+        if time.time() - pending.started_at > PENDING_LOGIN_TIMEOUT_SECONDS:
+            pending_apple_login = None
+            self._send_json(410, {"error": "login_expired"})
+            return
+
+        try:
+            code = body['code']
+            if not isinstance(code, str):
+                raise TypeError("'code' must be a string")
+        except (KeyError, TypeError) as e:
+            self._send_json(400, {"error": str(e)})
+            return
+
+        try:
+            pypush_gsa_icloud.submit_second_factor_code(pending.method, pending.state, code)
+        except pypush_gsa_icloud.AppleAuthError:
+            pending_apple_login = None
+            self._send_json(401, {"error": "invalid_code"})
+            return
+        except requests.exceptions.RequestException:
+            self._send_json(502, {"error": "apple_unreachable"})
+            return
+
+        try:
+            result = pypush_gsa_icloud.gsa_authenticate(pending.username, pending.password)
+        except pypush_gsa_icloud.AppleAuthError:
+            pending_apple_login = None
+            self._send_json(401, {"error": "invalid_code"})
+            return
+        except requests.exceptions.RequestException:
+            self._send_json(502, {"error": "apple_unreachable"})
+            return
+
+        if isinstance(result, pypush_gsa_icloud.NeedsSecondFactor):
+            # The trusted-device flow doesn't signal a wrong code at submit
+            # time (see submit_trusted_device_code) - Apple demanding
+            # another round of 2FA immediately after is how a wrong code
+            # shows up here instead.
+            pending_apple_login = None
+            self._send_json(401, {"error": "invalid_code"})
+            return
+
+        try:
+            _complete_apple_login(result, pending.username)
+        except pypush_gsa_icloud.AppleAuthError as e:
+            pending_apple_login = None
             self._send_json(401, {"error": "account_error", "message": str(e)})
             return
         except requests.exceptions.RequestException:

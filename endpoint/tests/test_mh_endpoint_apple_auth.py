@@ -1,5 +1,6 @@
 import json
 import threading
+import time
 from http.client import HTTPConnection
 from http.server import HTTPServer
 from unittest.mock import patch
@@ -125,3 +126,89 @@ def test_post_apple_login_returns_502_when_apple_unreachable(server):
         status, body = _post(server, '/auth/apple/login', {"username": "user@example.com", "password": "hunter2"})
 
     assert status == 502
+
+
+def _set_pending(method="secondaryAuth", state=None, username="user@example.com",
+                  password="hunter2", age_seconds=0):
+    mh_endpoint.pending_apple_login = mh_endpoint.PendingAppleLogin(
+        method=method, state=state or {"headers": {}, "sms_id": 7},
+        username=username, password=password,
+        started_at=time.time() - age_seconds,
+    )
+
+
+def test_post_apple_verify_returns_409_when_nothing_pending(server):
+    status, body = _post(server, '/auth/apple/verify', {"code": "654321"})
+
+    assert status == 409
+    assert body == {"error": "no_pending_login"}
+
+
+def test_post_apple_verify_returns_410_when_pending_login_expired(server):
+    _set_pending(age_seconds=mh_endpoint.PENDING_LOGIN_TIMEOUT_SECONDS + 1)
+
+    status, body = _post(server, '/auth/apple/verify', {"code": "654321"})
+
+    assert status == 410
+    assert body == {"error": "login_expired"}
+    assert mh_endpoint.pending_apple_login is None
+
+
+def test_post_apple_verify_returns_400_when_code_missing(server):
+    _set_pending()
+
+    status, body = _post(server, '/auth/apple/verify', {})
+
+    assert status == 400
+    assert mh_endpoint.pending_apple_login is not None
+
+
+def test_post_apple_verify_returns_401_when_submit_rejects_code(server):
+    _set_pending(method="secondaryAuth")
+
+    with patch.object(mh_endpoint.pypush_gsa_icloud, "submit_second_factor_code",
+                       side_effect=mh_endpoint.pypush_gsa_icloud.AppleAuthError("invalid_code")):
+        status, body = _post(server, '/auth/apple/verify', {"code": "000000"})
+
+    assert status == 401
+    assert body == {"error": "invalid_code"}
+    assert mh_endpoint.pending_apple_login is None
+
+
+def test_post_apple_verify_returns_401_when_reauth_still_needs_second_factor(server):
+    _set_pending(method="trustedDeviceSecondaryAuth", state={"headers": {}})
+    needs_2fa_again = mh_endpoint.pypush_gsa_icloud.NeedsSecondFactor(
+        method="trustedDeviceSecondaryAuth", dsid="d-1", idms_token="t-1")
+
+    with patch.object(mh_endpoint.pypush_gsa_icloud, "submit_second_factor_code"), \
+            patch.object(mh_endpoint.pypush_gsa_icloud, "gsa_authenticate", return_value=needs_2fa_again):
+        status, body = _post(server, '/auth/apple/verify', {"code": "000000"})
+
+    assert status == 401
+    assert body == {"error": "invalid_code"}
+    assert mh_endpoint.pending_apple_login is None
+
+
+def test_post_apple_verify_authenticates_on_success(server):
+    _set_pending()
+
+    with patch.object(mh_endpoint.pypush_gsa_icloud, "submit_second_factor_code"), \
+            patch.object(mh_endpoint.pypush_gsa_icloud, "gsa_authenticate", return_value={"adsid": "a-1"}), \
+            patch.object(mh_endpoint.pypush_gsa_icloud, "register_mobileme",
+                          return_value={"dsid": "d-1", "searchPartyToken": "spt-1"}):
+        status, body = _post(server, '/auth/apple/verify', {"code": "654321"})
+
+    assert status == 200
+    assert body == {"status": "authenticated"}
+    assert mh_endpoint.pending_apple_login is None
+
+
+def test_post_apple_verify_keeps_pending_state_on_network_error(server):
+    _set_pending()
+
+    with patch.object(mh_endpoint.pypush_gsa_icloud, "submit_second_factor_code",
+                       side_effect=requests.exceptions.ConnectTimeout()):
+        status, body = _post(server, '/auth/apple/verify', {"code": "654321"})
+
+    assert status == 502
+    assert mh_endpoint.pending_apple_login is not None
