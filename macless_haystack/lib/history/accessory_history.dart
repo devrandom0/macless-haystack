@@ -173,14 +173,12 @@ class _AccessoryHistoryState extends State<AccessoryHistory> {
                                   size: isPointLayerVisible
                                       ? calculateSize(entry)
                                       : 0,
+                                  // indicatorColor was white in light theme,
+                                  // invisible against the tiles; it was fine
+                                  // in dark, but primary reads well in both.
                                   color: entry == popupEntry
                                       ? Colors.red
-                                      : Theme.of(context)
-                                              .tabBarTheme
-                                              .indicatorColor ??
-                                          Theme.of(context)
-                                              .colorScheme
-                                              .secondary,
+                                      : Theme.of(context).colorScheme.primary,
                                 ),
                               ),
                             ))
