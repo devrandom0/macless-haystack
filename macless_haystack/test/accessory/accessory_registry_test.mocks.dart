@@ -454,6 +454,33 @@ class MockFlutterSecureStorage extends _i1.Mock
       ) as _i8.Future<void>);
 
   @override
+  _i8.Future<_i4.SecureStorageUpgradeStatus> checkUpgradeStatus({
+    _i4.AppleOptions? iOptions,
+    _i4.AndroidOptions? aOptions,
+    _i4.LinuxOptions? lOptions,
+    _i4.WebOptions? webOptions,
+    _i4.AppleOptions? mOptions,
+    _i4.WindowsOptions? wOptions,
+  }) =>
+      (super.noSuchMethod(
+        Invocation.method(
+          #checkUpgradeStatus,
+          [],
+          {
+            #iOptions: iOptions,
+            #aOptions: aOptions,
+            #lOptions: lOptions,
+            #webOptions: webOptions,
+            #mOptions: mOptions,
+            #wOptions: wOptions,
+          },
+        ),
+        returnValue: _i8.Future<_i4.SecureStorageUpgradeStatus>.value(
+          _i4.SecureStorageUpgradeStatus.unsupported,
+        ),
+      ) as _i8.Future<_i4.SecureStorageUpgradeStatus>);
+
+  @override
   _i8.Future<Map<String, String>> readAll({
     _i4.AppleOptions? iOptions,
     _i4.AndroidOptions? aOptions,

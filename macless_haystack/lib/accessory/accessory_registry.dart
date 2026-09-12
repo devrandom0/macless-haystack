@@ -1,6 +1,7 @@
 import 'dart:collection';
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:logger/logger.dart';
 import 'package:macless_haystack/accessory/accessory_model.dart';
@@ -78,7 +79,17 @@ class AccessoryRegistry extends ChangeNotifier {
   /// separately from [loadAccessories], since for this app a lost private
   /// key means the accessory becomes permanently untrackable.
   Future<SecureStorageUpgradeStatus> checkStorageUpgradeStatus() async {
-    final status = await _storage.checkUpgradeStatus();
+    SecureStorageUpgradeStatus status;
+    try {
+      status = await _storage.checkUpgradeStatus();
+    } on PlatformException catch (e) {
+      // The plugin's own MissingPluginException handling already covers an
+      // unimplemented platform; this is for everything else a native side
+      // can throw (e.g. a failed keystore read) so it becomes a logged
+      // failure instead of an unhandled zone error.
+      logger.w('Could not check secure storage upgrade status: $e');
+      status = SecureStorageUpgradeStatus.unsupported;
+    }
     storageUpgradeStatus = status;
     final warning = secureStorageUpgradeWarning(status);
     if (warning != null) {
