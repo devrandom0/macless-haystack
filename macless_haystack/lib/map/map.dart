@@ -137,6 +137,17 @@ class _AccessoryMapState extends State<AccessoryMap> {
         fitToContent(accessories, locationModel.here);
       }
       var selected = selectedAccessory(accessories, _selectedAccessoryId);
+      if (_selectedAccessoryId != null && selected == null) {
+        // The accessory was deactivated or lost its location, so its id
+        // must be cleared too - otherwise the popup would silently
+        // reappear if that same accessory becomes selectable again later.
+        // setState can't run mid-build, so defer it to after this frame.
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            setState(() => _selectedAccessoryId = null);
+          }
+        });
+      }
 
       return FlutterMap(
         mapController: _mapController,
@@ -155,7 +166,11 @@ class _AccessoryMapState extends State<AccessoryMap> {
                     InteractiveFlag.flingAnimation |
                     InteractiveFlag.pinchMove |
                     InteractiveFlag.pinchZoom),
-            onTap: (_, _) => setState(() => _selectedAccessoryId = null)),
+            onTap: (_, _) {
+              if (_selectedAccessoryId != null) {
+                setState(() => _selectedAccessoryId = null);
+              }
+            }),
         children: [
           TileLayer(
             tileProvider: NetworkTileProvider(),
