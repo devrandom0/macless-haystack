@@ -38,12 +38,11 @@ class LocationModel extends ChangeNotifier {
 
     permissionGranted = await location.requestPermission();
     if (permissionGranted == PermissionStatus.denied) {
+      // A soft denial can still be reversed by asking again; deniedForever
+      // and every other status fall straight through to the check below.
       permissionGranted = await location.requestPermission();
-      if (!isLocationPermissionGranted(permissionGranted)) {
-        return false;
-      }
     }
-    return true;
+    return isLocationPermissionGranted(permissionGranted);
   }
 
   /// Requests location updates from the platform.
