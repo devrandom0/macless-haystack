@@ -167,7 +167,7 @@ class Accessory {
   }
 
   /// The display icon of the accessory.
-  setIcon(String icon) {
+  void setIcon(String icon) {
     _icon = icon;
   }
 

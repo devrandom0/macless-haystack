@@ -240,7 +240,7 @@ class _AccessoryHistoryState extends State<AccessoryHistory> {
     return min(d * 10, 40); // 4 steps is enough
   }
 
-  mapReady() {
+  void mapReady() {
     List<Pair<dynamic, dynamic>> filteredEntries = filterHistoryEntries();
     if (filteredEntries.isNotEmpty) {
       var historicLocations =
@@ -250,7 +250,7 @@ class _AccessoryHistoryState extends State<AccessoryHistory> {
     }
   }
 
-  mapReadyInit() {
+  void mapReadyInit() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       mapReady();
     });

@@ -65,7 +65,7 @@ dependencies:
 
 
   flutter_settings_screens: ^0.3.4
-  latlong2: ^0.9.1
+  latlong2: ^0.10.1
   intl: ^0.20.2
   package_info_plus: ^9.0.0
   logger: ^2.6.2
