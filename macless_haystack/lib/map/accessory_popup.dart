@@ -41,7 +41,16 @@ class AccessoryPopup extends Marker {
             padding: const EdgeInsets.only(bottom: 35),
             child: Align(
               alignment: Alignment.bottomCenter,
+              // Keyed by accessory id, not the enclosing Marker - flutter_map
+              // repeats each Marker across every visible world copy at low
+              // zoom, all as sibling Positioned widgets in one Stack, so a
+              // key on the Marker itself becomes a duplicate-key crash on
+              // any viewport wide enough to show more than one world. Keying
+              // this inner subtree instead still remounts (and replays the
+              // entrance animation) when the selected accessory changes,
+              // without the Marker-level key that collides across worlds.
               child: _PopupContent(
+                key: ValueKey(accessory.id),
                 accessory: accessory,
                 onNavigate: onNavigate,
                 onHistory: onHistory,
@@ -59,6 +68,7 @@ class _PopupContent extends StatelessWidget {
   final VoidCallback onShare;
 
   const _PopupContent({
+    super.key,
     required this.accessory,
     required this.onNavigate,
     required this.onHistory,
@@ -71,9 +81,9 @@ class _PopupContent extends StatelessWidget {
 
     // Scales and fades in from the marker's point rather than just
     // appearing, so a brand-new selection reads as connected to the tap
-    // that triggered it. Runs once per mount - map.dart keys this widget
-    // by accessory id, so switching to a different marker replays it, but
-    // a live location update for the SAME selected accessory does not.
+    // that triggered it. Runs once per mount - this widget is keyed by
+    // accessory id above, so switching to a different marker replays it,
+    // but a live location update for the SAME selected accessory does not.
     return TweenAnimationBuilder<double>(
       tween: Tween(begin: 0, end: 1),
       duration: const Duration(milliseconds: 180),

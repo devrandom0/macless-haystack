@@ -279,11 +279,6 @@ class _AccessoryMapState extends State<AccessoryMap> {
           MarkerLayer(markers: [
             if (selected != null)
               AccessoryPopup(
-                // Keyed by accessory id so switching to a different marker
-                // remounts the popup and replays its entrance animation,
-                // while a live location update for the same accessory
-                // reuses the same element and does not.
-                key: ValueKey(selected.id),
                 accessory: selected,
                 onNavigate: () => navigateToAccessory(selected),
                 onHistory: () => openAccessoryHistory(context, selected),
