@@ -10,10 +10,10 @@ import 'package:macless_haystack/util/theme_mode.dart';
 import 'package:flutter_settings_screens/flutter_settings_screens.dart';
 import 'package:intl/date_symbol_data_local.dart';
 
-void main() async {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Settings.init();
-  initializeDateFormatting();
+  await initializeDateFormatting();
   var initialThemeMode = themeModeFromString(
       Settings.getValue<String>(themeModeKey, defaultValue: themeModeSystemValue));
   runApp(MyApp(initialThemeMode: initialThemeMode));
