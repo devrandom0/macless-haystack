@@ -25,12 +25,15 @@ String passwordFieldTitle(String storedPassword) {
 /// set ([hadExistingPassword]).
 ///
 /// The edit field never shows or is pre-filled with the real stored
-/// password (only a fixed placeholder when one is set), so an empty
+/// password (only a fixed placeholder when one is set), so a blank
 /// submission is far more likely to mean "I didn't mean to change it"
 /// than "clear my password" - it's treated as "keep the current value"
 /// (a null result) rather than overwriting it with an empty string.
+/// Checked via [String.trim] so an accidental space-bar press in the
+/// obscured field can't silently replace a real password either; a
+/// literal whitespace password is still settable when none existed yet.
 String? resolvePasswordEdit(String submittedValue, bool hadExistingPassword) {
-  if (submittedValue.isEmpty && hadExistingPassword) {
+  if (submittedValue.trim().isEmpty && hadExistingPassword) {
     return null;
   }
   return submittedValue;
@@ -188,17 +191,31 @@ class _PreferencesPageState extends State<PreferencesPage> {
       builder: (context, value, onChanged) {
         return ListTile(
           title: Text(passwordFieldTitle(value)),
+          trailing: const Icon(Icons.edit),
           onTap: () async {
-            var submitted = await showDialog<String>(
+            var submitted = await showDialog<(String, bool)>(
               context: context,
               builder: (context) =>
                   _PasswordEditDialog(hasExistingPassword: value.isNotEmpty),
             );
-            if (submitted != null) {
-              var resolved =
-                  resolvePasswordEdit(submitted, value.isNotEmpty);
-              if (resolved != null) {
-                onChanged(resolved);
+            if (submitted == null) return;
+            var (text, clear) = submitted;
+            if (clear) {
+              onChanged('');
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Password cleared')),
+                );
+              }
+              return;
+            }
+            var resolved = resolvePasswordEdit(text, value.isNotEmpty);
+            if (resolved != null) {
+              onChanged(resolved);
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Password updated')),
+                );
               }
             }
           },
@@ -503,6 +520,10 @@ class _PasswordEditDialogState extends State<_PasswordEditDialog> {
         controller: _controller,
         obscureText: true,
         autofocus: true,
+        autocorrect: false,
+        enableSuggestions: false,
+        keyboardType: TextInputType.visiblePassword,
+        onSubmitted: (text) => Navigator.pop(context, (text, false)),
         decoration: InputDecoration(
           hintText: widget.hasExistingPassword ? '••••' : null,
           helperText: widget.hasExistingPassword
@@ -511,12 +532,17 @@ class _PasswordEditDialogState extends State<_PasswordEditDialog> {
         ),
       ),
       actions: [
+        if (widget.hasExistingPassword)
+          TextButton(
+            onPressed: () => Navigator.pop(context, ('', true)),
+            child: const Text('Clear'),
+          ),
         TextButton(
           onPressed: () => Navigator.pop(context),
           child: const Text('Cancel'),
         ),
         TextButton(
-          onPressed: () => Navigator.pop(context, _controller.text),
+          onPressed: () => Navigator.pop(context, (_controller.text, false)),
           child: const Text('Save'),
         ),
       ],

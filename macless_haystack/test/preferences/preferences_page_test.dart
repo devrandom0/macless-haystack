@@ -35,5 +35,17 @@ void main() {
     test('an empty submission with no existing password stays empty', () {
       expect(resolvePasswordEdit('', false), '');
     });
+
+    test(
+        'treats a whitespace-only submission the same as empty when a '
+        'password already exists, so an accidental space bar press does '
+        'not silently replace it', () {
+      expect(resolvePasswordEdit('   ', true), isNull);
+    });
+
+    test('a literal whitespace password is still settable when none existed',
+        () {
+      expect(resolvePasswordEdit('   ', false), '   ');
+    });
   });
 }
