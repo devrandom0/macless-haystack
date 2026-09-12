@@ -123,3 +123,38 @@ def test_trusted_device_second_factor_resends_when_code_not_entered_in_time():
         "https://gsa.apple.com/auth/verify/trusteddevice",
         "https://gsa.apple.com/grandslam/GsService2/validate",
     ]
+
+
+def test_request_trusted_device_code_returns_headers_for_submission():
+    trigger_resp = _mock_response()
+
+    with patch.object(gsa, "generate_anisette_headers", return_value={"X-Anisette": "1"}), \
+            patch.object(gsa.requests, "get", return_value=trigger_resp) as mock_get:
+        headers = gsa.request_trusted_device_code("dsid-1", "token-1")
+
+    mock_get.assert_called_once()
+    assert mock_get.call_args.args[0] == "https://gsa.apple.com/auth/verify/trusteddevice"
+    assert headers["Content-Type"] == "text/x-xml-plist"
+    assert headers["X-Anisette"] == "1"
+
+
+def test_submit_trusted_device_code_posts_security_code():
+    submit_resp = _mock_response()
+
+    with patch.object(gsa, "generate_anisette_headers", return_value={}), \
+            patch.object(gsa.requests, "get", return_value=submit_resp) as mock_get:
+        gsa.submit_trusted_device_code({"X-Apple-Identity-Token": "id-1"}, "654321")
+
+    mock_get.assert_called_once()
+    assert mock_get.call_args.args[0] == "https://gsa.apple.com/grandslam/GsService2/validate"
+    assert mock_get.call_args.kwargs["headers"]["security-code"] == "654321"
+
+
+def test_submit_trusted_device_code_raises_on_server_error():
+    submit_resp = _mock_response(status_code=500, ok=False)
+    submit_resp.raise_for_status.side_effect = requests.HTTPError("500 Server Error")
+
+    with patch.object(gsa, "generate_anisette_headers", return_value={}), \
+            patch.object(gsa.requests, "get", return_value=submit_resp):
+        with pytest.raises(requests.HTTPError):
+            gsa.submit_trusted_device_code({}, "000000")

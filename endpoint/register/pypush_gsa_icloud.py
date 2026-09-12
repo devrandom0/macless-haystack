@@ -386,38 +386,29 @@ def sms_second_factor(dsid, idms_token):
             "2FA unsuccessful. Maybe wrong code or wrong number. Check your account details.")
 
 
-def trusted_device_second_factor(dsid, idms_token):
+def request_trusted_device_code(dsid, idms_token):
     headers = _common_2fa_headers(dsid, idms_token)
     headers["Content-Type"] = "text/x-xml-plist"
     headers["Accept"] = "text/x-xml-plist"
 
-    def request_trusted_device_code():
-        # Apple's 2FA endpoints are known to answer with a non-2xx here even though the
-        # push still went out, so only a server error is treated as a real failure.
-        with requests.get(
-                "https://gsa.apple.com/auth/verify/trusteddevice",
-                headers=headers,
-                verify=False,
-                timeout=10,
-        ) as resp:
-            if resp.status_code >= 500:
-                resp.raise_for_status()
-            logger.debug(f"Trusted-device code request returned HTTP {resp.status_code}")
-        logger.info("Requested trusted-device 2FA code")
+    # Apple's 2FA endpoints are known to answer with a non-2xx here even though the
+    # push still went out, so only a server error is treated as a real failure.
+    with requests.get(
+            "https://gsa.apple.com/auth/verify/trusteddevice",
+            headers=headers,
+            verify=False,
+            timeout=10,
+    ) as resp:
+        if resp.status_code >= 500:
+            resp.raise_for_status()
+        logger.debug(f"Trusted-device code request returned HTTP {resp.status_code}")
+    logger.info("Requested trusted-device 2FA code")
+    return headers
 
-    def resend():
-        request_trusted_device_code()
-        return input("Enter the 2FA code shown on your trusted device: ")
 
-    request_trusted_device_code()
-
-    code = _prompt_for_code(
-        f"Enter the 2FA code shown on your trusted device (If you do not see it, wait {WAITING_TIME}s and press Enter. An attempt will be made to resend it.): ",
-        resend,
-    )
-
-    # Anisette metadata is meant to be single-use; the trigger/wait/resend round trip above
-    # can stretch well past that, so regenerate it right before the request that matters.
+def submit_trusted_device_code(headers, code):
+    # Anisette metadata is meant to be single-use; the trigger/wait/resend round trip
+    # before this can stretch well past that, so regenerate it right before submitting.
     submit_headers = dict(headers)
     submit_headers.update(generate_anisette_headers())
     submit_headers["security-code"] = code
@@ -437,6 +428,21 @@ def trusted_device_second_factor(dsid, idms_token):
     # Unlike the SMS endpoint, this one hasn't been confirmed to signal a wrong code via
     # its response, so success is left for the caller's re-authentication attempt to prove.
     logger.info("Trusted-device code submitted, re-authenticating to confirm.")
+
+
+def trusted_device_second_factor(dsid, idms_token):
+    headers = request_trusted_device_code(dsid, idms_token)
+
+    def resend():
+        request_trusted_device_code(dsid, idms_token)
+        return input("Enter the 2FA code shown on your trusted device: ")
+
+    code = _prompt_for_code(
+        f"Enter the 2FA code shown on your trusted device (If you do not see it, wait {WAITING_TIME}s and press Enter. An attempt will be made to resend it.): ",
+        resend,
+    )
+
+    submit_trusted_device_code(headers, code)
 
 
 def request_code(headers,sms_id):
