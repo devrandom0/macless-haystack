@@ -214,6 +214,10 @@ class _AccessoryListState extends State<AccessoryList> {
                     onPressed: (context) async {
                       await widget.loadLocationUpdates(accessory);
                     },
+                    // flutter_slidable defaults backgroundColor to a hardcoded
+                    // white, which the dark-theme primary color is invisible on.
+                    backgroundColor:
+                        Theme.of(context).colorScheme.surfaceContainerHighest,
                     foregroundColor: Theme.of(context).colorScheme.primary,
                     icon: Icons.refresh,
                     label: 'Refresh',
@@ -231,6 +235,8 @@ class _AccessoryListState extends State<AccessoryList> {
                       loc.latitude, loc.longitude, accessory.name);
                 }
               },
+              backgroundColor:
+                  Theme.of(context).colorScheme.surfaceContainerHighest,
               foregroundColor: Theme.of(context).colorScheme.primary,
               icon: Icons.directions,
               label: 'Navigate',
@@ -258,6 +264,8 @@ class _AccessoryListState extends State<AccessoryList> {
                       loc.latitude, loc.longitude));
                 }
               },
+              backgroundColor:
+                  Theme.of(context).colorScheme.surfaceContainerHighest,
               foregroundColor: Theme.of(context).colorScheme.primary,
               icon: Icons.share,
               label: 'Share',
