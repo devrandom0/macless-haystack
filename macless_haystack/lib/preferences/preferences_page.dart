@@ -7,6 +7,15 @@ import 'package:macless_haystack/location/location_model.dart';
 import 'package:macless_haystack/preferences/user_preferences_model.dart';
 import 'package:macless_haystack/util/time_format.dart';
 import 'package:flutter_settings_screens/flutter_settings_screens.dart';
+import 'package:package_info_plus/package_info_plus.dart';
+
+/// Title for the endpoint password field, indicating whether a password is
+/// currently stored without ever revealing its value.
+String passwordFieldTitle(String storedPassword) {
+  return storedPassword.isEmpty
+      ? 'Password for endpoint'
+      : 'Password for endpoint (set)';
+}
 
 class PreferencesPage extends StatefulWidget {
   /// Displays this preferences page with information about the app.
@@ -54,10 +63,11 @@ class _PreferencesPageState extends State<PreferencesPage> {
     );
   }
 
-  getLocationTile() {
+  Widget getLocationTile() {
     return SwitchSettingsTile(
       settingKey: locationAccessWantedKey,
       title: 'Show this devices location',
+      activeColor: Theme.of(context).colorScheme.onPrimary,
       onChange: (showLocation) {
         var locationModel = Provider.of<LocationModel>(context, listen: false);
         if (showLocation) {
@@ -69,7 +79,7 @@ class _PreferencesPageState extends State<PreferencesPage> {
     );
   }
 
-  getNumberofDaysTile() {
+  Widget getNumberofDaysTile() {
     return const DropDownSettingsTile<int>(
       title: 'Number of days to fetch location',
       settingKey: numberOfDaysToFetch,
@@ -87,7 +97,7 @@ class _PreferencesPageState extends State<PreferencesPage> {
     );
   }
 
-  getTimeFormatTile() {
+  Widget getTimeFormatTile() {
     return const DropDownSettingsTile<String>(
       title: 'Time format',
       settingKey: timeFormatKey,
@@ -100,7 +110,7 @@ class _PreferencesPageState extends State<PreferencesPage> {
     );
   }
 
-  getUrlTile() {
+  Widget getUrlTile() {
     return TextInputSettingsTile(
       initialValue: 'http://localhost:6176',
       settingKey: endpointUrl,
@@ -115,7 +125,7 @@ class _PreferencesPageState extends State<PreferencesPage> {
     );
   }
 
-  getUserTile() {
+  Widget getUserTile() {
     return const TextInputSettingsTile(
       initialValue: '',
       settingKey: endpointUser,
@@ -123,16 +133,22 @@ class _PreferencesPageState extends State<PreferencesPage> {
     );
   }
 
-  getPassTile() {
-    return const TextInputSettingsTile(
-      obscureText: true,
-      initialValue: '',
-      settingKey: endpointPass,
-      title: 'Password for endpoint',
+  Widget getPassTile() {
+    return ValueChangeObserver<String>(
+      cacheKey: endpointPass,
+      defaultValue: '',
+      builder: (context, value, onChanged) {
+        return TextInputSettingsTile(
+          obscureText: true,
+          initialValue: '',
+          settingKey: endpointPass,
+          title: passwordFieldTitle(value),
+        );
+      },
     );
   }
 
-  getAbout() {
+  Widget getAbout() {
     return TextButton(
         style: ButtonStyle(
             padding:
@@ -148,16 +164,25 @@ class _PreferencesPageState extends State<PreferencesPage> {
               },
             )),
         child: const Text('About'),
-        onPressed: () => showAboutDialog(
-              context: context,
-            ));
+        onPressed: () async {
+          var packageInfo = await PackageInfo.fromPlatform();
+          if (!mounted) return;
+          showAboutDialog(
+            context: context,
+            applicationName: packageInfo.appName,
+            applicationVersion: packageInfo.buildNumber.isEmpty
+                ? packageInfo.version
+                : '${packageInfo.version}+${packageInfo.buildNumber}',
+          );
+        });
   }
 
-  getFetchOnStartupTile() {
+  Widget getFetchOnStartupTile() {
     return SwitchSettingsTile(
       settingKey: fetchLocationOnStartupKey,
       defaultValue: true,
       title: 'Fetch locations on startup',
+      activeColor: Theme.of(context).colorScheme.onPrimary,
     );
   }
 
@@ -251,7 +276,7 @@ class _PreferencesPageState extends State<PreferencesPage> {
     }
   }
 
-  getArchiveAllTile() {
+  Widget getArchiveAllTile() {
     return SwitchListTile(
       value: _archivingAllEnabled,
       title: const Text('Archive all devices on server'),

@@ -3,8 +3,10 @@ services:
     image: dadoum/anisette-v3-server
     container_name: anisette
     restart: always
-    ports:
-      - "6969:6969"
+    # No `ports:` mapping: only macless-haystack talks to this service, over the
+    # compose-internal network at http://anisette:6969. Publishing 6969 to the
+    # host would expose an unauthenticated anisette server to the LAN/WAN for
+    # no functional benefit.
     volumes:
       - anisette-v3_data:/home/Alcoholic/.config/anisette-v3
 
