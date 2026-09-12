@@ -6,16 +6,42 @@ from history.registry import TrackedDeviceStore
 
 
 def test_migrating_from_pre_intervals_schema_adds_columns_without_error(tmp_path):
+    # Build a real pre-migration database by hand (the old 6-column schema,
+    # no poll_interval_hours/retention_days) rather than via TrackedDeviceStore,
+    # which always creates the current schema - this must exercise the actual
+    # ALTER TABLE path against a file that predates these columns.
     db_path = str(tmp_path / "devices.db")
+    raw = sqlite3.connect(db_path)
+    raw.execute(
+        "CREATE TABLE tracked_devices ("
+        "hashed_public_key TEXT PRIMARY KEY, "
+        "name TEXT NOT NULL, "
+        "accessory_id TEXT, "
+        "encrypted_private_key BLOB NOT NULL, "
+        "enabled INTEGER NOT NULL, "
+        "updated_at INTEGER NOT NULL)"
+    )
+    raw.execute(
+        "INSERT INTO tracked_devices "
+        "(hashed_public_key, name, accessory_id, encrypted_private_key, enabled, updated_at) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        ("hash-a", "A", None, b"a", 1, 1000),
+    )
+    raw.commit()
+    raw.close()
+
     store = TrackedDeviceStore(db_path)
-    store.upsert("hash-a", "A", None, b"a", enabled=True)
+    devices = store.list_devices()
+
+    assert devices == [{
+        "hashedPublicKey": "hash-a", "name": "A", "accessoryId": None, "enabled": True,
+        "pollIntervalHours": 4, "retentionDays": 30,
+    }]
+
+    # Reopening again (columns already present) must stay idempotent.
     del store
-
     reopened = TrackedDeviceStore(db_path)
-    devices = reopened.list_devices()
-
-    assert devices[0]["pollIntervalHours"] == 4
-    assert devices[0]["retentionDays"] == 30
+    assert reopened.list_devices() == devices
 
 
 def test_is_empty_true_for_new_store():
@@ -153,3 +179,11 @@ def test_enabled_devices_with_intervals_reflects_latest_toggle():
 
     store.upsert("hash-a", "A", None, b"a", enabled=False)
     assert store.enabled_devices_with_intervals() == []
+
+
+def test_all_devices_with_retention_includes_disabled_devices():
+    store = TrackedDeviceStore(":memory:")
+    store.upsert("hash-a", "A", None, b"a", enabled=True, retention_days=10)
+    store.upsert("hash-b", "B", None, b"b", enabled=False, retention_days=20)
+
+    assert sorted(store.all_devices_with_retention()) == [("hash-a", 10), ("hash-b", 20)]

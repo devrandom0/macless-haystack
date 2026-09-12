@@ -132,6 +132,67 @@ def test_post_history_devices_retention_days_below_one_returns_400(server):
     assert "error" in body
 
 
+def test_post_history_devices_infinite_poll_interval_returns_400(server):
+    status, body = _post(server, '/history/devices', {
+        "devices": [
+            {"hashedPublicKey": "hash-a", "privateKey": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ==",
+             "name": "Keys", "accessoryId": None, "enabled": True, "pollIntervalHours": float("inf")},
+        ]
+    })
+    assert status == 400
+    assert "error" in body
+
+
+def test_post_history_devices_infinite_retention_days_returns_400(server):
+    status, body = _post(server, '/history/devices', {
+        "devices": [
+            {"hashedPublicKey": "hash-a", "privateKey": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ==",
+             "name": "Keys", "accessoryId": None, "enabled": True, "retentionDays": float("inf")},
+        ]
+    })
+    assert status == 400
+    assert "error" in body
+
+
+def test_post_history_devices_bool_poll_interval_returns_400(server):
+    status, body = _post(server, '/history/devices', {
+        "devices": [
+            {"hashedPublicKey": "hash-a", "privateKey": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ==",
+             "name": "Keys", "accessoryId": None, "enabled": True, "pollIntervalHours": True},
+        ]
+    })
+    assert status == 400
+    assert "error" in body
+
+
+def test_post_history_devices_omitting_overrides_preserves_existing_values(server):
+    _post(server, '/history/devices', {
+        "devices": [
+            {"hashedPublicKey": "hash-a", "privateKey": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ==",
+             "name": "Keys", "accessoryId": None, "enabled": True,
+             "pollIntervalHours": 8, "retentionDays": 90},
+        ]
+    })
+
+    # A later save that only flips "enabled" and omits the interval/retention
+    # fields entirely must not reset them back to the 4/30 defaults.
+    status, _ = _post(server, '/history/devices', {
+        "devices": [
+            {"hashedPublicKey": "hash-a", "privateKey": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ==",
+             "name": "Keys", "accessoryId": None, "enabled": False},
+        ]
+    })
+    assert status == 200
+
+    _, body = _get(server, '/history/devices')
+    assert body == {"devices": [
+        {
+            "hashedPublicKey": "hash-a", "name": "Keys", "accessoryId": None, "enabled": False,
+            "pollIntervalHours": 8, "retentionDays": 90,
+        },
+    ]}
+
+
 def test_post_history_devices_lowering_retention_deletes_out_of_range_reports(server):
     mh_endpoint.history_store = HistoryStore(":memory:")
     _post(server, '/history/devices', {

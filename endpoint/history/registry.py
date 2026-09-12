@@ -92,6 +92,16 @@ class TrackedDeviceStore:
             ).fetchall()
         return [(row[0], row[1], row[2]) for row in rows]
 
+    def all_devices_with_retention(self):
+        # Unlike enabled_devices_with_intervals, this includes disabled
+        # devices too - retention must still purge their old history even
+        # while archiving is off for them.
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT hashed_public_key, retention_days FROM tracked_devices"
+            ).fetchall()
+        return [(row[0], row[1]) for row in rows]
+
     def is_empty(self):
         with self._lock:
             row = self._conn.execute("SELECT COUNT(*) FROM tracked_devices").fetchone()

@@ -225,12 +225,22 @@ class _StopLoop(Exception):
 
 
 class _FakeTrackedDeviceStore:
-    def __init__(self, devices):
+    def __init__(self, devices, all_devices=None):
         # devices: [(hashed_key, poll_interval_hours, retention_days), ...]
+        # all_devices (optional): same shape as enabled_devices_with_retention
+        # would need, defaults to mirroring `devices` when every device is
+        # enabled - pass explicitly to simulate a disabled device.
         self._devices = devices
+        self._all_devices = (
+            all_devices if all_devices is not None
+            else [(key, retention) for key, _, retention in devices]
+        )
 
     def enabled_devices_with_intervals(self):
         return self._devices
+
+    def all_devices_with_retention(self):
+        return self._all_devices
 
 
 def test_run_archiver_loop_fetches_and_stores_due_devices():
@@ -390,6 +400,79 @@ def test_run_archiver_loop_continues_after_fetch_failure():
         )
     # Reaching sleep_fn (and raising _StopLoop from it) proves the exception
     # from fetch_from_apple was caught rather than propagating out of the loop.
+
+
+def test_run_archiver_loop_marks_failed_fetch_as_polled_to_avoid_retry_storm():
+    # A failed fetch must still back off to the device's own interval,
+    # not retry on the very next tick - otherwise a persistent Apple
+    # outage means every due device is retried every tick_interval_seconds
+    # regardless of its configured poll interval, defeating the point of
+    # the 1-hour minimum floor meant to protect against rate limiting.
+    store = HistoryStore(":memory:")
+    tracked = _FakeTrackedDeviceStore([("key-a", 4, 30)])
+    fetch_from_apple = MagicMock(side_effect=Exception("network error"))
+    call_count = {"n": 0}
+
+    def sleep_and_stop_after_two(_seconds):
+        call_count["n"] += 1
+        if call_count["n"] >= 2:
+            raise _StopLoop()
+
+    with pytest.raises(_StopLoop):
+        run_archiver_loop(
+            tracked_device_store=tracked, store=store,
+            fetch_from_apple=fetch_from_apple, sleep_fn=sleep_and_stop_after_two,
+        )
+
+    # Only the first tick should have attempted a fetch - the second tick
+    # must see the device as not-yet-due, since the first tick's failure
+    # was recorded as an attempt.
+    assert fetch_from_apple.call_count == 1
+
+
+def test_run_archiver_loop_enforces_retention_even_when_fetch_fails():
+    store = HistoryStore(":memory:")
+    now = int(time.time())
+    old_entry = _entry(now - (40 * 86400), id_="key-a")
+    new_entry = _entry(now - 86400, id_="key-a")
+    store.record_reports("key-a", [old_entry, new_entry])
+    store.mark_polled("key-a", when=now - (5 * 3600))  # due for a 4h-interval device
+    tracked = _FakeTrackedDeviceStore([("key-a", 4, 30)])
+    fetch_from_apple = MagicMock(side_effect=Exception("network error"))
+
+    def sleep_and_stop(_seconds):
+        raise _StopLoop()
+
+    with pytest.raises(_StopLoop):
+        run_archiver_loop(
+            tracked_device_store=tracked, store=store,
+            fetch_from_apple=fetch_from_apple, sleep_fn=sleep_and_stop,
+        )
+
+    # Retention enforcement is independent of whether the fetch succeeded.
+    assert store.get_reports(["key-a"], since=0) == [new_entry]
+
+
+def test_run_archiver_loop_enforces_retention_for_disabled_devices():
+    store = HistoryStore(":memory:")
+    now = int(time.time())
+    old_entry = _entry(now - (40 * 86400), id_="key-disabled")
+    new_entry = _entry(now - 86400, id_="key-disabled")
+    store.record_reports("key-disabled", [old_entry, new_entry])
+    # No enabled devices at all, but a disabled one still has 30-day retention.
+    tracked = _FakeTrackedDeviceStore([], all_devices=[("key-disabled", 30)])
+    fetch_from_apple = MagicMock()
+
+    def sleep_and_stop(_seconds):
+        raise _StopLoop()
+
+    with pytest.raises(_StopLoop):
+        run_archiver_loop(
+            tracked_device_store=tracked, store=store,
+            fetch_from_apple=fetch_from_apple, sleep_fn=sleep_and_stop,
+        )
+
+    assert store.get_reports(["key-disabled"], since=0) == [new_entry]
 
 
 def test_run_archiver_loop_uses_tick_interval_for_sleep():

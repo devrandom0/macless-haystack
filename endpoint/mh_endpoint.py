@@ -3,6 +3,7 @@
 import base64
 import json
 import logging
+import math
 import os
 import ssl
 import sys
@@ -196,12 +197,17 @@ class ServerHandler(BaseHTTPRequestHandler):
                 accessory_id = device.get('accessoryId')
                 if accessory_id is not None and not isinstance(accessory_id, str):
                     raise TypeError("'accessoryId' must be a string or null")
-                poll_interval_hours = device.get('pollIntervalHours', 4)
-                if not isinstance(poll_interval_hours, (int, float)) or poll_interval_hours < 1:
+                previous = tracked_device_store.get_device(hashed_public_key)
+                default_poll_interval_hours = previous["pollIntervalHours"] if previous is not None else 4
+                default_retention_days = previous["retentionDays"] if previous is not None else 30
+                poll_interval_hours = device.get('pollIntervalHours', default_poll_interval_hours)
+                if (not isinstance(poll_interval_hours, (int, float)) or isinstance(poll_interval_hours, bool)
+                        or not math.isfinite(poll_interval_hours) or poll_interval_hours < 1):
                     raise ValueError(
                         "'pollIntervalHours' must be at least 1 to avoid triggering Apple's rate limits")
-                retention_days = device.get('retentionDays', 30)
-                if (not isinstance(retention_days, (int, float)) or retention_days < 1
+                retention_days = device.get('retentionDays', default_retention_days)
+                if (not isinstance(retention_days, (int, float)) or isinstance(retention_days, bool)
+                        or not math.isfinite(retention_days) or retention_days < 1
                         or retention_days != int(retention_days)):
                     raise ValueError("'retentionDays' must be at least 1")
                 parsed.append((
@@ -212,6 +218,7 @@ class ServerHandler(BaseHTTPRequestHandler):
                     bool(device['enabled']),
                     poll_interval_hours,
                     int(retention_days),
+                    previous,
                 ))
         except (KeyError, ValueError, TypeError) as e:
             self.send_response(400)
@@ -221,8 +228,8 @@ class ServerHandler(BaseHTTPRequestHandler):
             return
 
         try:
-            for hashed_public_key, private_key, name, accessory_id, enabled, poll_interval_hours, retention_days in parsed:
-                previous = tracked_device_store.get_device(hashed_public_key)
+            for (hashed_public_key, private_key, name, accessory_id, enabled, poll_interval_hours,
+                 retention_days, previous) in parsed:
                 encrypted = crypto.encrypt(history_encryption_key, private_key)
                 tracked_device_store.upsert(
                     hashed_public_key, name, accessory_id, encrypted, enabled,
