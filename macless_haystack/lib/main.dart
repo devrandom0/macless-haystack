@@ -7,6 +7,7 @@ import 'package:macless_haystack/location/location_model.dart';
 import 'package:macless_haystack/preferences/theme_model.dart';
 import 'package:macless_haystack/preferences/user_preferences_model.dart';
 import 'package:macless_haystack/splashscreen.dart';
+import 'package:macless_haystack/theme/app_theme.dart';
 import 'package:macless_haystack/util/theme_mode.dart';
 import 'package:flutter_settings_screens/flutter_settings_screens.dart';
 import 'package:intl/date_symbol_data_local.dart';
@@ -38,8 +39,8 @@ class MyApp extends StatelessWidget {
         builder: (context, themeModel, child) {
           return MaterialApp(
             title: 'Macless Haystack',
-            theme: ThemeData(primarySwatch: Colors.blue),
-            darkTheme: ThemeData.dark(),
+            theme: AppTheme.light,
+            darkTheme: AppTheme.dark,
             themeMode: themeModel.mode,
             home: const AppLayout(),
           );
