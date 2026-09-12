@@ -10,11 +10,21 @@ subprojects {
     project.buildDir = "${rootProject.buildDir}/${project.name}"
 }
 subprojects {
-    afterEvaluate { project ->
-        if (project.plugins.hasPlugin("com.android.application") ||
-                project.plugins.hasPlugin("com.android.library")) {
-            project.android {
-                compileSdkVersion 36
+    // Plugin modules (e.g. android_file_picker) read the "flutter" extension
+    // that :app's FlutterPlugin vends to every plugin project, and it's only
+    // created once :app itself evaluates - so :app must evaluate first.
+    // Skip the compileSdk override below for :app itself: forcing it to
+    // evaluate here means it is already evaluated by the time this loop
+    // reaches it, and Gradle refuses to register an afterEvaluate hook on a
+    // project that has already evaluated. :app sets its own compileSdk
+    // directly, so it doesn't need this override anyway.
+    if (project.name != 'app') {
+        afterEvaluate { project ->
+            if (project.plugins.hasPlugin("com.android.application") ||
+                    project.plugins.hasPlugin("com.android.library")) {
+                project.android {
+                    compileSdkVersion 36
+                }
             }
         }
     }
