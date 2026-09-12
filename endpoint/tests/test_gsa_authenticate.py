@@ -1,3 +1,4 @@
+import logging
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -137,3 +138,51 @@ def test_register_mobileme_raises_on_non_zero_status():
             patch.object(gsa.plist, "loads", return_value=mobileme_plist):
         with pytest.raises(gsa.AppleAuthError, match="Account is blocking"):
             gsa.register_mobileme(g, "user@example.com")
+
+
+def test_register_mobileme_does_not_log_search_party_token(caplog):
+    secret_token = "super-secret-search-party-token-value"
+    mobileme_plist = {
+        "dsid": "dsid-1",
+        "delegates": {"com.apple.mobileme": {
+            "status": 0,
+            "service-data": {"tokens": {"searchPartyToken": secret_token}},
+        }},
+    }
+    g = {"t": {"com.apple.gs.idms.pet": {"token": "pet-1"}}, "adsid": "adsid-1"}
+    resp = MagicMock()
+    resp.content = b"<plist/>"
+    resp.status_code = 200
+    # A real response body would contain the token in cleartext - simulate
+    # that here to prove the logging call never includes resp.text.
+    resp.text = f"<plist><key>searchPartyToken</key><string>{secret_token}</string></plist>"
+    resp.raise_for_status = MagicMock()
+    resp.__enter__.return_value = resp
+    resp.__exit__.return_value = False
+
+    with caplog.at_level(logging.DEBUG), \
+            patch.object(gsa, "generate_anisette_headers", return_value={}), \
+            patch.object(gsa.requests, "post", return_value=resp), \
+            patch.object(gsa.plist, "loads", return_value=mobileme_plist):
+        gsa.register_mobileme(g, "user@example.com")
+
+    assert secret_token not in caplog.text
+
+
+def test_gsa_authenticated_request_does_not_log_raw_response_body(caplog):
+    secret_marker = "secret-session-proof-value-should-never-be-logged"
+    resp = MagicMock()
+    resp.content = b"<plist/>"
+    resp.status_code = 200
+    resp.text = f"<plist><key>M2</key><string>{secret_marker}</string></plist>"
+    resp.raise_for_status = MagicMock()
+    resp.__enter__.return_value = resp
+    resp.__exit__.return_value = False
+
+    with caplog.at_level(logging.DEBUG), \
+            patch.object(gsa.requests, "post", return_value=resp), \
+            patch.object(gsa, "generate_anisette_headers", return_value={}), \
+            patch.object(gsa.plist, "loads", return_value={"Response": {"ok": True}}):
+        gsa.gsa_authenticated_request({"o": "init"})
+
+    assert secret_marker not in caplog.text

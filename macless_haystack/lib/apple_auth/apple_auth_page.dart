@@ -9,11 +9,17 @@ class AppleAuthPage extends StatefulWidget {
   final String endpointUser;
   final String endpointPass;
 
+  /// Whether the server currently reports a valid Apple session, per the
+  /// caller's own status check. Purely cosmetic - only used to show a
+  /// placeholder hint in the credentials fields, never affects behavior.
+  final bool initialLoggedIn;
+
   const AppleAuthPage({
     super.key,
     required this.endpointUrl,
     required this.endpointUser,
     required this.endpointPass,
+    this.initialLoggedIn = false,
   });
 
   @override
@@ -31,7 +37,20 @@ class _AppleAuthPageState extends State<AppleAuthPage> {
   _AppleAuthStep _step = _AppleAuthStep.credentials;
   AppleAuthMethod? _method;
   bool _submitting = false;
+  bool _loggingOut = false;
   String? _error;
+  late bool _showLoggedInHint;
+  // Distinct from _showLoggedInHint: that flips to false the moment you log
+  // out, but the caller (Preferences) still needs to know something
+  // happened at all when you back out, whether that was a login or a
+  // logout - this is what the back button's pop result reports.
+  bool _statusChanged = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _showLoggedInHint = widget.initialLoggedIn;
+  }
 
   @override
   void dispose() {
@@ -39,6 +58,33 @@ class _AppleAuthPageState extends State<AppleAuthPage> {
     _passwordController.dispose();
     _codeController.dispose();
     super.dispose();
+  }
+
+  Future<void> _logout() async {
+    setState(() {
+      _loggingOut = true;
+      _error = null;
+    });
+    try {
+      await AppleAuthService.logout(widget.endpointUrl, widget.endpointUser, widget.endpointPass);
+      if (!mounted) return;
+      setState(() {
+        _showLoggedInHint = false;
+        _statusChanged = true;
+        _loggingOut = false;
+        _usernameController.clear();
+        _passwordController.clear();
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Logged out')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = _describeError(e);
+        _loggingOut = false;
+      });
+    }
   }
 
   String _describeError(Object e) {
@@ -130,7 +176,10 @@ class _AppleAuthPageState extends State<AppleAuthPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Log in to Apple ID')),
+      appBar: AppBar(
+        title: const Text('Log in to Apple ID'),
+        leading: BackButton(onPressed: () => Navigator.of(context).pop(_statusChanged)),
+      ),
       body: Padding(
         padding: const EdgeInsets.all(16),
         child: _step == _AppleAuthStep.credentials
@@ -143,15 +192,29 @@ class _AppleAuthPageState extends State<AppleAuthPage> {
                       Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
                       const SizedBox(height: 8),
                     ],
+                    if (_showLoggedInHint) ...[
+                      Text(
+                        'Already logged in. Log in again to switch accounts or test the login flow, '
+                        'or log out below.',
+                        style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
+                      ),
+                      const SizedBox(height: 8),
+                    ],
                     TextFormField(
                       controller: _usernameController,
-                      decoration: const InputDecoration(labelText: 'Apple ID'),
+                      decoration: InputDecoration(
+                        labelText: 'Apple ID',
+                        hintText: _showLoggedInHint ? 'Already logged in' : null,
+                      ),
                       keyboardType: TextInputType.emailAddress,
                       validator: (v) => (v == null || v.trim().isEmpty) ? 'Enter your Apple ID' : null,
                     ),
                     TextFormField(
                       controller: _passwordController,
-                      decoration: const InputDecoration(labelText: 'Password'),
+                      decoration: InputDecoration(
+                        labelText: 'Password',
+                        hintText: _showLoggedInHint ? '••••••••' : null,
+                      ),
                       obscureText: true,
                       validator: (v) => (v == null || v.isEmpty) ? 'Enter your password' : null,
                     ),
@@ -163,6 +226,16 @@ class _AppleAuthPageState extends State<AppleAuthPage> {
                               height: 16, width: 16, child: CircularProgressIndicator(strokeWidth: 2))
                           : const Text('Log in'),
                     ),
+                    if (_showLoggedInHint) ...[
+                      const SizedBox(height: 8),
+                      OutlinedButton(
+                        onPressed: _loggingOut ? null : _logout,
+                        child: _loggingOut
+                            ? const SizedBox(
+                                height: 16, width: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                            : const Text('Log out'),
+                      ),
+                    ],
                   ],
                 ),
               )

@@ -93,8 +93,10 @@ def register_mobileme(g, username):
             verify=False,
     ) as resp:
         resp.raise_for_status()
-    response = f"HTTP-Code: {resp.status_code}\n{resp.text}"
-    logger.debug(response)
+    # Never log the raw response body here - it's the mobileme registration
+    # response, which carries the searchPartyToken in cleartext (the actual
+    # bearer credential used for every subsequent location fetch).
+    logger.debug(f"HTTP-Code: {resp.status_code} with {len(resp.text)} bytes")
     mobileme = plist.loads(resp.content)
 
     status = mobileme['delegates']['com.apple.mobileme']['status']
@@ -219,8 +221,9 @@ def gsa_authenticated_request(parameters):
     ) as resp:
         resp.raise_for_status()
 
-    response = f"HTTP-Code: {resp.status_code}\n{resp.text}"
-    logger.debug(response)
+    # Never log the raw response body - the "complete" step's response
+    # carries SRP session-proof material (M2, encrypted spd).
+    logger.debug(f"HTTP-Code: {resp.status_code} with {len(resp.text)} bytes")
 
     return plist.loads(resp.content)["Response"]
 
@@ -435,7 +438,10 @@ def submit_trusted_device_code(headers, code):
         header_string = "Headers:\n"
         for header, value in resp.headers.items():
             header_string += f"{header}: {value}\n"
-        logger.debug(f"HTTP-Code: {resp.status_code} with {len(resp.text)} bytes\n{header_string}{resp.text}")
+        # Never log the raw response body here - its contents aren't
+        # documented (see the comment below), so it can't be assumed safe.
+        logger.debug(f"HTTP-Code: {resp.status_code} with {len(resp.text)} bytes")
+        logger.debug(header_string)
 
     # Unlike the SMS endpoint, this one hasn't been confirmed to signal a wrong code via
     # its response, so success is left for the caller's re-authentication attempt to prove.
@@ -461,7 +467,7 @@ def request_code(headers,sms_id):
     # This will send the 2FA code to the user's phone over SMS
     # We don't care about the response, it's just some HTML with a form for entering the code
     # Easier to just use a text prompt
-    logger.debug(headers)
+    # (headers is never logged here - it carries X-Apple-Identity-Token, a live session token)
     body = {"phoneNumber": {"id": sms_id}, "mode": "sms"}
     logger.info(f"Sending SMS via id {sms_id}")
     with requests.put(

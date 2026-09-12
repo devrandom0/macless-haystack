@@ -149,6 +149,14 @@ class AppleAuthService {
     await _post(url, '/auth/apple/verify', endpointUser, endpointPass, {'code': code}, client: client);
   }
 
+  /// Ends the server's current Apple session (deletes its saved session
+  /// file) so the next login starts fresh. Does not enforce HTTPS - no
+  /// credential is sent.
+  static Future<void> logout(String url, String endpointUser, String endpointPass,
+      {http.Client? client}) async {
+    await _post(url, '/auth/apple/logout', endpointUser, endpointPass, {}, client: client);
+  }
+
   /// Fetches whether the server currently has a valid Apple session, and
   /// whether a login is mid-flow. Does not enforce HTTPS - the response
   /// carries no credential.

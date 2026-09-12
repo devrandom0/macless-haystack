@@ -1,4 +1,5 @@
 import base64
+import logging
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -158,6 +159,30 @@ def test_submit_trusted_device_code_raises_on_server_error():
             patch.object(gsa.requests, "get", return_value=submit_resp):
         with pytest.raises(requests.HTTPError):
             gsa.submit_trusted_device_code({}, "000000")
+
+
+def test_submit_trusted_device_code_does_not_log_response_body(caplog):
+    secret_marker = "secret-validate-response-body-should-never-be-logged"
+    submit_resp = _mock_response(text=secret_marker)
+
+    with caplog.at_level(logging.DEBUG), \
+            patch.object(gsa, "generate_anisette_headers", return_value={}), \
+            patch.object(gsa.requests, "get", return_value=submit_resp):
+        gsa.submit_trusted_device_code({}, "654321")
+
+    assert secret_marker not in caplog.text
+
+
+def test_request_code_does_not_log_headers(caplog):
+    secret_token = "secret-identity-token-should-never-be-logged"
+    put_resp = _mock_response()
+
+    with caplog.at_level(logging.DEBUG), \
+            patch.object(gsa.requests, "put", return_value=put_resp), \
+            patch("builtins.input", return_value="123456"):
+        gsa.request_code({"X-Apple-Identity-Token": secret_token}, 7)
+
+    assert secret_token not in caplog.text
 
 
 def test_request_sms_code_extracts_phone_id_from_boot_args():

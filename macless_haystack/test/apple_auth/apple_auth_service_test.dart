@@ -118,4 +118,33 @@ void main() {
       throwsException,
     );
   });
+
+  test('logout posts to /auth/apple/logout with basic auth', () async {
+    String? authHeader;
+    var client = MockClient((request) async {
+      expect(request.url.toString(), '$httpUrl/auth/apple/logout');
+      expect(request.method, 'POST');
+      authHeader = request.headers['Authorization'];
+      return http.Response('{"status":"logged_out"}', 200);
+    });
+
+    await AppleAuthService.logout(httpUrl, 'user', 'pass', client: client);
+
+    expect(authHeader, 'Basic ${base64.encode(utf8.encode('user:pass'))}');
+  });
+
+  test('logout does not require https', () async {
+    var client = MockClient((request) async => http.Response('{"status":"logged_out"}', 200));
+
+    await AppleAuthService.logout(httpUrl, '', '', client: client);
+  });
+
+  test('logout throws AppleAuthException on a non-200 response', () async {
+    var client = MockClient((request) async => http.Response('{"error":"logout_failed"}', 500));
+
+    expect(
+      () => AppleAuthService.logout(httpUrl, '', '', client: client),
+      throwsA(predicate((e) => e is AppleAuthException && e.errorCode == 'logout_failed')),
+    );
+  });
 }

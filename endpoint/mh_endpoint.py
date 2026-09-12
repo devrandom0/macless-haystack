@@ -178,6 +178,10 @@ class ServerHandler(BaseHTTPRequestHandler):
             self._handle_post_auth_apple_verify(body)
             return
 
+        if path == '/auth/apple/logout':
+            self._handle_post_auth_apple_logout()
+            return
+
         logger.debug('Getting with post: ' + str(post_body))
         body = json.loads(post_body)
 
@@ -420,6 +424,14 @@ class ServerHandler(BaseHTTPRequestHandler):
         _expire_pending_login_if_stale()
         logged_in = os.path.exists(mh_config.getConfigFile()) and not apple_session_stale
         self._send_json(200, {"loggedIn": logged_in, "pending": pending_apple_login is not None})
+
+    def _handle_post_auth_apple_logout(self):
+        global apple_session_stale, pending_apple_login
+        if os.path.exists(mh_config.getConfigFile()):
+            os.remove(mh_config.getConfigFile())
+        apple_session_stale = False
+        pending_apple_login = None
+        self._send_json(200, {"status": "logged_out"})
 
     def getCurrentTimes(self):
         clientTime = datetime.now(timezone.utc).replace(microsecond=0).isoformat() + 'Z'

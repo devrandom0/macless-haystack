@@ -305,3 +305,33 @@ def test_raise_for_status_marking_stale_leaves_flag_alone_on_server_error():
         mh_endpoint._raise_for_status_marking_stale(response)
 
     assert mh_endpoint.apple_session_stale is False
+
+
+def test_post_apple_logout_removes_auth_json_and_clears_state(server, tmp_path):
+    (tmp_path / "auth.json").write_text('{"dsid": "d-1", "searchPartyToken": "t-1"}')
+    mh_endpoint.apple_session_stale = True
+    _set_pending()
+
+    status, body = _post(server, '/auth/apple/logout', {})
+
+    assert status == 200
+    assert body == {"status": "logged_out"}
+    assert not (tmp_path / "auth.json").exists()
+    assert mh_endpoint.apple_session_stale is False
+    assert mh_endpoint.pending_apple_login is None
+
+
+def test_post_apple_logout_is_idempotent_when_not_logged_in(server):
+    status, body = _post(server, '/auth/apple/logout', {})
+
+    assert status == 200
+    assert body == {"status": "logged_out"}
+
+
+def test_post_apple_logout_requires_basic_auth_when_endpoint_credentials_configured(server, monkeypatch):
+    monkeypatch.setattr(mh_config, "getEndpointUser", lambda: "simo")
+    monkeypatch.setattr(mh_config, "getEndpointPass", lambda: "secret")
+
+    status, body = _post(server, '/auth/apple/logout', {})
+
+    assert status == 401

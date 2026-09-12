@@ -378,12 +378,17 @@ class _PreferencesPageState extends State<PreferencesPage> {
         var url = Settings.getValue<String>(endpointUrl, defaultValue: 'http://localhost:6176')!;
         var user = Settings.getValue<String>(endpointUser, defaultValue: '')!;
         var pass = Settings.getValue<String>(endpointPass, defaultValue: '')!;
-        var loggedIn = await Navigator.of(context).push<bool>(
+        var statusChanged = await Navigator.of(context).push<bool>(
           MaterialPageRoute(
-            builder: (context) => AppleAuthPage(endpointUrl: url, endpointUser: user, endpointPass: pass),
+            builder: (context) => AppleAuthPage(
+              endpointUrl: url,
+              endpointUser: user,
+              endpointPass: pass,
+              initialLoggedIn: _appleAuthStatus?.loggedIn ?? false,
+            ),
           ),
         );
-        if (loggedIn == true) {
+        if (statusChanged == true) {
           _loadAppleAuthStatus();
         }
       },
