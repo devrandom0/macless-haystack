@@ -58,8 +58,11 @@ class AccessoryIconSelector extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      decoration: const BoxDecoration(
-        color: Color.fromARGB(255, 200, 200, 200),
+      decoration: BoxDecoration(
+        // surfaceContainerHighest is the M3 token designed to pair with the
+        // IconButton's default onSurfaceVariant foreground; the previous
+        // hardcoded grey left the icon invisible in the dark theme.
+        color: Theme.of(context).colorScheme.surfaceContainerHighest,
         shape: BoxShape.circle,
       ),
       child: IconButton(

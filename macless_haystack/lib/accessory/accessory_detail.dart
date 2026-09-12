@@ -336,8 +336,12 @@ class _AccessoryDetailState extends State<AccessoryDetail> {
                       child: Padding(
                         padding: const EdgeInsets.all(10.0),
                         child: Container(
-                          decoration: const BoxDecoration(
-                            color: Color.fromARGB(255, 200, 200, 200),
+                          decoration: BoxDecoration(
+                            // Pairs with the edit icon's colorScheme.primary; the
+                            // previous hardcoded grey left it invisible in dark theme.
+                            color: Theme.of(context)
+                                .colorScheme
+                                .surfaceContainerHighest,
                             shape: BoxShape.circle,
                           ),
                           child: IconButton(
@@ -368,7 +372,7 @@ class _AccessoryDetailState extends State<AccessoryDetail> {
                             },
                             icon: Icon(
                               Icons.edit,
-                              color: Theme.of(context).primaryColor,
+                              color: Theme.of(context).colorScheme.primary,
                             ),
                           ),
                         ),

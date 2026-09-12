@@ -12,7 +12,9 @@ class LoadingSpinner extends StatelessWidget {
       children: [Padding(
         padding: const EdgeInsets.only(top: 20),
         child: CircularProgressIndicator(
-          color: Theme.of(context).primaryColor,
+          // primaryColor resolves to colorScheme.surface in the dark theme,
+          // the same as the scaffold background, making the spinner invisible.
+          color: Theme.of(context).colorScheme.primary,
           semanticsLabel: 'Loading. Please wait.',
         ),
       )],
