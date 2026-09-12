@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:macless_haystack/accessory/accessory_model.dart';
 import 'package:macless_haystack/accessory/accessory_registry.dart';
+import 'package:macless_haystack/history/archive_settings_validation.dart';
 import 'package:macless_haystack/history/history_archive_service.dart';
 import 'package:macless_haystack/location/location_model.dart';
 import 'package:macless_haystack/preferences/theme_model.dart';
@@ -32,11 +33,21 @@ class PreferencesPage extends StatefulWidget {
 class _PreferencesPageState extends State<PreferencesPage> {
   bool _archivingLoading = true;
   bool _archivingAllEnabled = false;
+  final _archiveDefaultsFormKey = GlobalKey<FormState>();
+  final _defaultPollIntervalController = TextEditingController();
+  final _defaultRetentionDaysController = TextEditingController();
 
   @override
   void initState() {
     super.initState();
     _loadArchivingStatus();
+  }
+
+  @override
+  void dispose() {
+    _defaultPollIntervalController.dispose();
+    _defaultRetentionDaysController.dispose();
+    super.dispose();
   }
 
   @override
@@ -56,6 +67,7 @@ class _PreferencesPageState extends State<PreferencesPage> {
             getNumberofDaysTile(),
             getTimeFormatTile(),
             getThemeModeTile(),
+            getArchiveDefaultsSection(),
             getArchiveAllTile(),
             ListTile(
               title: getAbout(),
@@ -242,6 +254,35 @@ class _PreferencesPageState extends State<PreferencesPage> {
     }
   }
 
+  /// Builds the [HistoryDeviceEntry] list for [accessory]'s main key and any
+  /// additional keys, shared by every place that pushes an archiving state
+  /// (or setting) to the server for that accessory.
+  Future<List<HistoryDeviceEntry>> _deviceEntriesFor(Accessory accessory, bool enabled,
+      {int? pollIntervalHours, int? retentionDays}) async {
+    var additionalPrivateKeys = await accessory.getAdditionalPrivateKeys();
+    return [
+      HistoryDeviceEntry(
+        hashedPublicKey: accessory.hashedPublicKey,
+        privateKey: await accessory.getPrivateKey(),
+        name: accessory.name,
+        accessoryId: accessory.id,
+        enabled: enabled,
+        pollIntervalHours: pollIntervalHours,
+        retentionDays: retentionDays,
+      ),
+      for (var i = 0; i < accessory.additionalKeys.length; i++)
+        HistoryDeviceEntry(
+          hashedPublicKey: accessory.additionalKeys[i],
+          privateKey: additionalPrivateKeys[i],
+          name: '${accessory.name} (extra key)',
+          accessoryId: accessory.id,
+          enabled: enabled,
+          pollIntervalHours: pollIntervalHours,
+          retentionDays: retentionDays,
+        ),
+    ];
+  }
+
   Future<void> _setArchivingAll(bool enabled) async {
     var accessories = Provider.of<AccessoryRegistry>(context, listen: false).accessories;
     if (accessories.isEmpty) {
@@ -262,23 +303,7 @@ class _PreferencesPageState extends State<PreferencesPage> {
 
       List<HistoryDeviceEntry> devices = [];
       for (var accessory in accessories) {
-        var additionalPrivateKeys = await accessory.getAdditionalPrivateKeys();
-        devices.add(HistoryDeviceEntry(
-          hashedPublicKey: accessory.hashedPublicKey,
-          privateKey: await accessory.getPrivateKey(),
-          name: accessory.name,
-          accessoryId: accessory.id,
-          enabled: enabled,
-        ));
-        for (var i = 0; i < accessory.additionalKeys.length; i++) {
-          devices.add(HistoryDeviceEntry(
-            hashedPublicKey: accessory.additionalKeys[i],
-            privateKey: additionalPrivateKeys[i],
-            name: '${accessory.name} (extra key)',
-            accessoryId: accessory.id,
-            enabled: enabled,
-          ));
-        }
+        devices.addAll(await _deviceEntriesFor(accessory, enabled));
       }
 
       if (devices.isNotEmpty) {
@@ -294,6 +319,134 @@ class _PreferencesPageState extends State<PreferencesPage> {
         );
       }
     }
+  }
+
+  /// Same range checks as [validatePollIntervalHours], but an empty field is
+  /// valid here since leaving it blank means "keep each device's own value".
+  String? _validateOptionalPollIntervalHours(String? input) {
+    if (input == null || input.trim().isEmpty) {
+      return null;
+    }
+    return validatePollIntervalHours(input);
+  }
+
+  /// Same range checks as [validateRetentionDays], but an empty field is
+  /// valid here since leaving it blank means "keep each device's own value".
+  String? _validateOptionalRetentionDays(String? input) {
+    if (input == null || input.trim().isEmpty) {
+      return null;
+    }
+    return validateRetentionDays(input);
+  }
+
+  /// Applies the entered poll interval/retention to every device that is
+  /// currently archived on the server. This only updates those settings -
+  /// it never enables archiving for a device that's currently off, and
+  /// never touches the "Archive all devices on server" switch.
+  Future<void> _applyDefaultsToAll() async {
+    if (_archiveDefaultsFormKey.currentState?.validate() != true) {
+      return;
+    }
+    var accessories = Provider.of<AccessoryRegistry>(context, listen: false).accessories;
+    if (accessories.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No devices to update')),
+      );
+      return;
+    }
+
+    var pollIntervalText = _defaultPollIntervalController.text.trim();
+    var retentionText = _defaultRetentionDaysController.text.trim();
+    int? pollIntervalHours;
+    if (pollIntervalText.isNotEmpty) {
+      pollIntervalHours = double.parse(pollIntervalText).round();
+      _defaultPollIntervalController.text = pollIntervalHours.toString();
+    }
+    var retentionDays = retentionText.isEmpty ? null : int.parse(retentionText);
+
+    try {
+      var url = Settings.getValue<String>(endpointUrl, defaultValue: 'http://localhost:6176')!;
+      var user = Settings.getValue<String>(endpointUser, defaultValue: '')!;
+      var pass = Settings.getValue<String>(endpointPass, defaultValue: '')!;
+
+      var currentDevices = await HistoryArchiveService.getArchivedDevices(url, user, pass);
+      var enabledKeys = currentDevices.where((d) => d.enabled).map((d) => d.hashedPublicKey).toSet();
+
+      List<HistoryDeviceEntry> devices = [];
+      for (var accessory in accessories) {
+        var entries = await _deviceEntriesFor(accessory, true,
+            pollIntervalHours: pollIntervalHours, retentionDays: retentionDays);
+        devices.addAll(entries.where((e) => enabledKeys.contains(e.hashedPublicKey)));
+      }
+
+      if (devices.isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('No devices are currently archived on the server')),
+          );
+        }
+        return;
+      }
+
+      await HistoryArchiveService.setDevicesArchiving(url, user, pass, devices);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Archive settings applied to all archived devices')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not update archive settings: $e')),
+        );
+      }
+    }
+  }
+
+  Widget getArchiveDefaultsSection() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16.0),
+      child: Form(
+        key: _archiveDefaultsFormKey,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Padding(
+              padding: EdgeInsets.only(top: 8),
+              child: Text(
+                'Poll interval and retention for devices already archived on '
+                "the server. Leave a field blank to keep each device's "
+                'existing value. Tap Apply to push these to every currently '
+                'archived device - devices not currently archived are not '
+                'affected or turned on.',
+                style: TextStyle(fontSize: 12),
+              ),
+            ),
+            TextFormField(
+              controller: _defaultPollIntervalController,
+              decoration:
+                  const InputDecoration(labelText: 'Default poll interval (hours)'),
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              validator: _validateOptionalPollIntervalHours,
+            ),
+            TextFormField(
+              controller: _defaultRetentionDaysController,
+              decoration:
+                  const InputDecoration(labelText: 'Default retention (days)'),
+              keyboardType: TextInputType.number,
+              validator: _validateOptionalRetentionDays,
+            ),
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton(
+                onPressed: _applyDefaultsToAll,
+                child: const Text('Apply to archived devices'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   Widget getArchiveAllTile() {
