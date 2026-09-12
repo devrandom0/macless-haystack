@@ -75,7 +75,10 @@ class ServerHandler(BaseHTTPRequestHandler):
     def authenticate(self):
         endpoint_user = mh_config.getEndpointUser()
         endpoint_pass = mh_config.getEndpointPass()
-        if (endpoint_user is None or endpoint_user == "") and (endpoint_pass is None or endpoint_pass == ""):
+        basic_auth_users = mh_config.getBasicAuthUsers()
+        has_legacy_pair = not (
+            (endpoint_user is None or endpoint_user == "") and (endpoint_pass is None or endpoint_pass == ""))
+        if not has_legacy_pair and not basic_auth_users:
             return True
 
         auth_header = self.headers.get('authorization')
@@ -84,7 +87,9 @@ class ServerHandler(BaseHTTPRequestHandler):
             if auth_type.lower() == 'basic':
                 auth_decoded = base64.b64decode(auth_encoded).decode('utf-8')
                 username, password = auth_decoded.split(':', 1)
-                if username == endpoint_user and password == endpoint_pass:
+                if has_legacy_pair and username == endpoint_user and password == endpoint_pass:
+                    return True
+                if username in basic_auth_users and password == basic_auth_users[username]:
                     return True
 
         return False

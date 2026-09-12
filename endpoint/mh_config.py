@@ -60,6 +60,16 @@ def getEndpointPass():
     return config.get('Settings', 'endpoint_pass', fallback=None)
 
 
+def getBasicAuthUsers():
+    """Additional Basic Auth users beyond the single legacy endpoint_user/
+    endpoint_pass pair, as {username: password}. Configured via a
+    [BasicAuthUsers] section in config.ini, one `username = password` line
+    per user."""
+    if config.has_section('BasicAuthUsers'):
+        return dict(config.items('BasicAuthUsers'))
+    return {}
+
+
 def getHistoryDevicesFile():
     return config.get('Settings', 'history_devices_file', fallback='devices.json')
 
