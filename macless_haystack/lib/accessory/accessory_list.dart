@@ -69,6 +69,10 @@ class AccessoryList extends StatefulWidget {
 }
 
 class _AccessoryListState extends State<AccessoryList> {
+  // Per-session UI state only, not persisted - a fresh build always starts
+  // with both groups expanded.
+  final Set<String> _collapsedGroups = {};
+
   @override
   Widget build(BuildContext context) {
     return Consumer2<AccessoryRegistry, LocationModel>(
@@ -145,49 +149,75 @@ class _AccessoryListState extends State<AccessoryList> {
     required List<Accessory> allAccessories,
     required LocationModel locationModel,
   }) {
+    final isCollapsed = _collapsedGroups.contains(keyPrefix);
     return [
       SliverToBoxAdapter(
         key: ValueKey('$keyPrefix-header'),
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-          child: Text(title, style: Theme.of(context).textTheme.labelLarge),
+        child: InkWell(
+          onTap: () {
+            setState(() {
+              if (isCollapsed) {
+                _collapsedGroups.remove(keyPrefix);
+              } else {
+                _collapsedGroups.add(keyPrefix);
+              }
+            });
+          },
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+            child: Row(
+              children: [
+                Text(title, style: Theme.of(context).textTheme.labelLarge),
+                const SizedBox(width: 4),
+                // expand_more starts pointing down (collapsed) and rotates
+                // to point up (expanded), matching ExpansionTile's convention.
+                AnimatedRotation(
+                  turns: isCollapsed ? 0 : 0.5,
+                  duration: const Duration(milliseconds: 200),
+                  child: const Icon(Icons.expand_more),
+                ),
+              ],
+            ),
+          ),
         ),
       ),
-      SliverReorderableList(
-        key: ValueKey('$keyPrefix-list'),
-        itemCount: group.length,
-        itemBuilder: (context, index) {
-          final accessory = group[index];
-          return ReorderableDelayedDragStartListener(
-            key: ValueKey(accessory),
-            index: index,
-            child: _buildAccessoryTile(accessory, locationModel),
-          );
-        },
-        onReorderItem: (int oldIndex, int newIndex) {
-          var copiedGroup = List<Accessory>.from(group);
-          copiedGroup.insert(newIndex, copiedGroup.removeAt(oldIndex));
-          widget.saveOrderUpdatesCallback(mergedOrderAfterGroupReorder(
-            allAccessories: allAccessories,
-            reorderedGroup: copiedGroup,
-            reorderedGroupIsActive: groupIsActive,
-          ));
-        },
-        // Unlike ReorderableListView, SliverReorderableList has no default
-        // proxyDecorator - without one, the lifted item has no Material
-        // ancestor once reparented into the overlay during a drag.
-        proxyDecorator: (Widget child, int index, Animation<double> animation) {
-          return AnimatedBuilder(
-            animation: animation,
-            builder: (context, child) {
-              final elevation =
-                  lerpDouble(0, 6, Curves.easeInOut.transform(animation.value))!;
-              return Material(elevation: elevation, child: child);
-            },
-            child: child,
-          );
-        },
-      ),
+      if (!isCollapsed)
+        SliverReorderableList(
+          key: ValueKey('$keyPrefix-list'),
+          itemCount: group.length,
+          itemBuilder: (context, index) {
+            final accessory = group[index];
+            return ReorderableDelayedDragStartListener(
+              key: ValueKey(accessory),
+              index: index,
+              child: _buildAccessoryTile(accessory, locationModel),
+            );
+          },
+          onReorderItem: (int oldIndex, int newIndex) {
+            var copiedGroup = List<Accessory>.from(group);
+            copiedGroup.insert(newIndex, copiedGroup.removeAt(oldIndex));
+            widget.saveOrderUpdatesCallback(mergedOrderAfterGroupReorder(
+              allAccessories: allAccessories,
+              reorderedGroup: copiedGroup,
+              reorderedGroupIsActive: groupIsActive,
+            ));
+          },
+          // Unlike ReorderableListView, SliverReorderableList has no default
+          // proxyDecorator - without one, the lifted item has no Material
+          // ancestor once reparented into the overlay during a drag.
+          proxyDecorator:
+              (Widget child, int index, Animation<double> animation) {
+            return AnimatedBuilder(
+              animation: animation,
+              builder: (context, child) {
+                final elevation = lerpDouble(
+                    0, 6, Curves.easeInOut.transform(animation.value))!;
+                return Material(elevation: elevation, child: child);
+              },
+              child: child,
+            );
+          },
+        ),
     ];
   }
 
