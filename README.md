@@ -56,6 +56,22 @@ In this section, you will find a step-by-step guide on how to set up your own Ma
 
 ## Server setup
 
+The repository includes a `Makefile` and a `docker-compose.yaml` that wrap the manual steps below. From the repo root:
+
+```bash
+make up
+```
+
+This creates the shared network and volumes automatically and starts both the Anisette server and the Macless-Haystack endpoint in the background. Check `make logs` (or `docker compose logs -f`) to follow along.
+
+###### For the first run, the endpoint needs an interactive terminal to ask for your Apple-ID, password and 2FA code. If the logs show it retrying instead of prompting you, restart it in interactive mode the same way as for a normal re-registration (see the [FAQ](FAQ.md#restart-the-registrationchange-account)): `docker stop macless-haystack` then `docker start -ai macless-haystack`. Once you see `serving at port 6176 over HTTP`, detach with Ctrl-C and bring it back up in the background with `make up`.
+
+Run `make help` to see the other available targets (`down`, `clean`, `logs`, `test`, `analyze`, `build`).
+
+<details><summary>Alternative: manual docker commands</summary>
+
+If you'd rather not use `docker compose`, you can start each container yourself:
+
 1. Create a new docker network
 
 ```bash
@@ -81,6 +97,8 @@ docker run -it --restart unless-stopped --name macless-haystack -p 6176:6176 --v
 ```bash
 docker restart macless-haystack
 ```
+
+</details>
 
 ---
 

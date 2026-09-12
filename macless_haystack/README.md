@@ -11,7 +11,6 @@ This project is written in [Dart](https://dart.dev/), using the cross platform d
 To develop and build the project the following tools are needed and should be installed.
 
 - [Flutter SDK](https://docs.flutter.dev/get-started/install)
-- [Xcode](https://developer.apple.com/xcode/) (for iOS)
 - [Android SDK / Studio](https://developer.android.com/studio/) (for Android)
 - (optional) IDE Plugin (e.g. for [VS Code](https://marketplace.visualstudio.com/items?itemName=Dart-Code.flutter))
 
@@ -24,7 +23,7 @@ First the necessary dependencies need to be installed. The IDE plugin may take c
 $ flutter pub get
 ```
 
-Then set the location proxy server URL in [reports_fetcher.dart](lib/findMy/reports_fetcher.dart) (replace `https://add-your-proxy-server-here/getLocationReports` with your custom URL).
+The endpoint URL is no longer hardcoded in source; it's read from the app's settings at runtime (see [user_preferences_model.dart](lib/preferences/user_preferences_model.dart)), so you can point the running app at your own endpoint from its Settings screen instead of editing the code.
 
 To run the debug version of the app start a supported emulator and run
 ```bash
@@ -41,12 +40,10 @@ The business logic for accessing and decrypting the location reports is separate
 
 ## Building
 This project currently supports Android, Linux and web targets.
-If you are building the project for the first time, you need to run
-```bash
-$ flutter pub run flutter_launcher_icons:main 
-```
-to create the icons and then, to create a distributable application package run
+The launcher icons are already generated and checked in, so to create a distributable application package just run
 ```bash
 $ flutter build [linux|apk|web]
 ```
 The resulting build artifacts can be found in the `build` folder. To deploy the artifacts to a device consult the platform specific documentation.
+
+Alternatively, `make build` (from the repo root) builds the server image and the Android APK; the APK build still needs a local Flutter SDK, since Docker can't produce a signed/installable APK.
