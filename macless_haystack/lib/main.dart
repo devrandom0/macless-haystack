@@ -3,20 +3,26 @@ import 'package:macless_haystack/dashboard/dashboard.dart';
 import 'package:provider/provider.dart';
 import 'package:macless_haystack/accessory/accessory_registry.dart';
 import 'package:macless_haystack/location/location_model.dart';
+import 'package:macless_haystack/preferences/theme_model.dart';
 import 'package:macless_haystack/preferences/user_preferences_model.dart';
 import 'package:macless_haystack/splashscreen.dart';
 import 'package:macless_haystack/util/theme_mode.dart';
 import 'package:flutter_settings_screens/flutter_settings_screens.dart';
 import 'package:intl/date_symbol_data_local.dart';
 
-void main() {
-  Settings.init();
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await Settings.init();
   initializeDateFormatting();
-  runApp(const MyApp());
+  var initialThemeMode = themeModeFromString(
+      Settings.getValue<String>(themeModeKey, defaultValue: themeModeSystemValue));
+  runApp(MyApp(initialThemeMode: initialThemeMode));
 }
 
 class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+  final ThemeMode initialThemeMode;
+
+  const MyApp({super.key, required this.initialThemeMode});
 
   @override
   Widget build(BuildContext context) {
@@ -25,16 +31,15 @@ class MyApp extends StatelessWidget {
         ChangeNotifierProvider(create: (ctx) => AccessoryRegistry()),
         ChangeNotifierProvider(create: (ctx) => UserPreferences()),
         ChangeNotifierProvider(create: (ctx) => LocationModel()),
+        ChangeNotifierProvider(create: (ctx) => ThemeModel(initialThemeMode)),
       ],
-      child: ValueChangeObserver<String>(
-        cacheKey: themeModeKey,
-        defaultValue: themeModeSystemValue,
-        builder: (context, value, onChanged) {
+      child: Consumer<ThemeModel>(
+        builder: (context, themeModel, child) {
           return MaterialApp(
             title: 'Macless Haystack',
             theme: ThemeData(primarySwatch: Colors.blue),
             darkTheme: ThemeData.dark(),
-            themeMode: themeModeFromString(value),
+            themeMode: themeModel.mode,
             home: const AppLayout(),
           );
         },

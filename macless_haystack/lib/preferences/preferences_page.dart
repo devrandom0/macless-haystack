@@ -4,6 +4,7 @@ import 'package:macless_haystack/accessory/accessory_model.dart';
 import 'package:macless_haystack/accessory/accessory_registry.dart';
 import 'package:macless_haystack/history/history_archive_service.dart';
 import 'package:macless_haystack/location/location_model.dart';
+import 'package:macless_haystack/preferences/theme_model.dart';
 import 'package:macless_haystack/preferences/user_preferences_model.dart';
 import 'package:macless_haystack/util/theme_mode.dart';
 import 'package:macless_haystack/util/time_format.dart';
@@ -113,15 +114,19 @@ class _PreferencesPageState extends State<PreferencesPage> {
   }
 
   Widget getThemeModeTile() {
-    return const DropDownSettingsTile<String>(
+    return DropDownSettingsTile<String>(
       title: 'Theme',
       settingKey: themeModeKey,
-      values: <String, String>{
+      values: const <String, String>{
         themeModeSystemValue: 'System default',
         themeModeLightValue: 'Light',
         themeModeDarkValue: 'Dark',
       },
       selected: themeModeSystemValue,
+      onChange: (value) {
+        var themeModel = Provider.of<ThemeModel>(context, listen: false);
+        themeModel.setMode(themeModeFromString(value));
+      },
     );
   }
 
