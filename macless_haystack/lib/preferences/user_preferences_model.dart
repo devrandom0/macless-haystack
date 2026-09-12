@@ -10,6 +10,7 @@ const String endpointUser = 'HAYSTACK_USER';
 const String endpointPass = 'HAYSTACK_PASS';
 const String numberOfDaysToFetch = 'NUMBER_OF_DAYS';
 const String timeFormatKey = 'TIME_FORMAT';
+const String themeModeKey = 'THEME_MODE';
 
 class UserPreferences extends ChangeNotifier {
   /// If these settings are initialized.

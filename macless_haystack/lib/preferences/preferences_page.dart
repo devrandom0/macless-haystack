@@ -5,6 +5,7 @@ import 'package:macless_haystack/accessory/accessory_registry.dart';
 import 'package:macless_haystack/history/history_archive_service.dart';
 import 'package:macless_haystack/location/location_model.dart';
 import 'package:macless_haystack/preferences/user_preferences_model.dart';
+import 'package:macless_haystack/util/theme_mode.dart';
 import 'package:macless_haystack/util/time_format.dart';
 import 'package:flutter_settings_screens/flutter_settings_screens.dart';
 import 'package:package_info_plus/package_info_plus.dart';
@@ -53,6 +54,7 @@ class _PreferencesPageState extends State<PreferencesPage> {
             getPassTile(),
             getNumberofDaysTile(),
             getTimeFormatTile(),
+            getThemeModeTile(),
             getArchiveAllTile(),
             ListTile(
               title: getAbout(),
@@ -107,6 +109,19 @@ class _PreferencesPageState extends State<PreferencesPage> {
         timeFormatH24Value: '24-hour',
       },
       selected: timeFormatSystemValue,
+    );
+  }
+
+  Widget getThemeModeTile() {
+    return const DropDownSettingsTile<String>(
+      title: 'Theme',
+      settingKey: themeModeKey,
+      values: <String, String>{
+        themeModeSystemValue: 'System default',
+        themeModeLightValue: 'Light',
+        themeModeDarkValue: 'Dark',
+      },
+      selected: themeModeSystemValue,
     );
   }
 
