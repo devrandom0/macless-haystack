@@ -6,6 +6,7 @@ import 'package:macless_haystack/accessory/accessory_icon.dart';
 import 'package:macless_haystack/accessory/accessory_icon_selector.dart';
 import 'package:macless_haystack/accessory/accessory_model.dart';
 import 'package:macless_haystack/accessory/accessory_registry.dart';
+import 'package:macless_haystack/history/archive_settings_validation.dart';
 import 'package:macless_haystack/history/history_archive_service.dart';
 import 'package:macless_haystack/item_management/accessory_name_input.dart';
 import 'package:macless_haystack/preferences/user_preferences_model.dart';
@@ -35,8 +36,11 @@ class _AccessoryDetailState extends State<AccessoryDetail> {
   // An accessory storing the changed values.
   late Accessory newAccessory;
   final _formKey = GlobalKey<FormState>();
+  final _archiveSettingsFormKey = GlobalKey<FormState>();
   bool _archivingLoading = true;
   bool _archivingEnabled = false;
+  final _pollIntervalController = TextEditingController();
+  final _retentionDaysController = TextEditingController();
 
   @override
   void initState() {
@@ -44,6 +48,13 @@ class _AccessoryDetailState extends State<AccessoryDetail> {
     newAccessory = widget.accessory.clone();
     super.initState();
     _loadArchivingStatus();
+  }
+
+  @override
+  void dispose() {
+    _pollIntervalController.dispose();
+    _retentionDaysController.dispose();
+    super.dispose();
   }
 
   Future<void> _loadArchivingStatus() async {
@@ -58,12 +69,23 @@ class _AccessoryDetailState extends State<AccessoryDetail> {
         widget.accessory.hashedPublicKey,
         ...widget.accessory.additionalKeys
       };
-      var enabled = devices
-          .any((d) => relevantKeys.contains(d.hashedPublicKey) && d.enabled);
+      ArchivedDeviceStatus? enabledDevice;
+      for (var d in devices) {
+        if (relevantKeys.contains(d.hashedPublicKey) && d.enabled) {
+          enabledDevice = d;
+          break;
+        }
+      }
       if (mounted) {
         setState(() {
-          _archivingEnabled = enabled;
+          _archivingEnabled = enabledDevice != null;
           _archivingLoading = false;
+          if (enabledDevice != null) {
+            _pollIntervalController.text =
+                enabledDevice.pollIntervalHours.toString();
+            _retentionDaysController.text =
+                enabledDevice.retentionDays.toString();
+          }
         });
       }
     } catch (e) {
@@ -73,6 +95,36 @@ class _AccessoryDetailState extends State<AccessoryDetail> {
         });
       }
     }
+  }
+
+  /// Builds the [HistoryDeviceEntry] list for this accessory's main key and
+  /// any additional keys, shared by every place that pushes an archiving
+  /// state (or setting) to the server for this accessory.
+  Future<List<HistoryDeviceEntry>> _buildDeviceEntries(bool enabled,
+      {int? pollIntervalHours, int? retentionDays}) async {
+    var accessory = widget.accessory;
+    var additionalPrivateKeys = await accessory.getAdditionalPrivateKeys();
+    return [
+      HistoryDeviceEntry(
+        hashedPublicKey: accessory.hashedPublicKey,
+        privateKey: await accessory.getPrivateKey(),
+        name: accessory.name,
+        accessoryId: accessory.id,
+        enabled: enabled,
+        pollIntervalHours: pollIntervalHours,
+        retentionDays: retentionDays,
+      ),
+      for (var i = 0; i < accessory.additionalKeys.length; i++)
+        HistoryDeviceEntry(
+          hashedPublicKey: accessory.additionalKeys[i],
+          privateKey: additionalPrivateKeys[i],
+          name: '${accessory.name} (extra key)',
+          accessoryId: accessory.id,
+          enabled: enabled,
+          pollIntervalHours: pollIntervalHours,
+          retentionDays: retentionDays,
+        ),
+    ];
   }
 
   Future<void> _setArchiving(bool enabled) async {
@@ -86,28 +138,18 @@ class _AccessoryDetailState extends State<AccessoryDetail> {
       var user = Settings.getValue<String>(endpointUser, defaultValue: '')!;
       var pass = Settings.getValue<String>(endpointPass, defaultValue: '')!;
 
-      var accessory = widget.accessory;
-      var additionalPrivateKeys = await accessory.getAdditionalPrivateKeys();
-      List<HistoryDeviceEntry> devices = [
-        HistoryDeviceEntry(
-          hashedPublicKey: accessory.hashedPublicKey,
-          privateKey: await accessory.getPrivateKey(),
-          name: accessory.name,
-          accessoryId: accessory.id,
-          enabled: enabled,
-        ),
-        for (var i = 0; i < accessory.additionalKeys.length; i++)
-          HistoryDeviceEntry(
-            hashedPublicKey: accessory.additionalKeys[i],
-            privateKey: additionalPrivateKeys[i],
-            name: '${accessory.name} (extra key)',
-            accessoryId: accessory.id,
-            enabled: enabled,
-          ),
-      ];
+      var devices = await _buildDeviceEntries(enabled);
 
       await HistoryArchiveService.setDevicesArchiving(
           url, user, pass, devices);
+
+      // Refresh the interval/retention fields from the server so, when
+      // enabling, they show the server-applied values (its default for a
+      // brand-new device, or the device's preserved existing value)
+      // instead of sitting empty until the screen is reopened.
+      if (enabled) {
+        await _loadArchivingStatus();
+      }
     } catch (e) {
       if (mounted) {
         setState(() {
@@ -118,6 +160,101 @@ class _AccessoryDetailState extends State<AccessoryDetail> {
         );
       }
     }
+  }
+
+  /// Best-effort disabling of server-side archiving when this accessory is
+  /// deactivated. Failures are swallowed - this is a secondary side effect
+  /// of the Is Active toggle, which must keep working even if this fails.
+  Future<void> _disableArchivingBestEffort() async {
+    try {
+      var url = Settings.getValue<String>(endpointUrl,
+          defaultValue: 'http://localhost:6176')!;
+      var user = Settings.getValue<String>(endpointUser, defaultValue: '')!;
+      var pass = Settings.getValue<String>(endpointPass, defaultValue: '')!;
+
+      var devices = await _buildDeviceEntries(false);
+      await HistoryArchiveService.setDevicesArchiving(
+          url, user, pass, devices);
+      if (mounted) {
+        setState(() {
+          _archivingEnabled = false;
+        });
+      }
+    } catch (e) {
+      // Best-effort: ignore failures, the Is Active toggle already
+      // committed locally and must not be blocked by this.
+    }
+  }
+
+  Future<void> _updateArchiveSettings() async {
+    if (_archiveSettingsFormKey.currentState?.validate() != true) {
+      return;
+    }
+    try {
+      var url = Settings.getValue<String>(endpointUrl,
+          defaultValue: 'http://localhost:6176')!;
+      var user = Settings.getValue<String>(endpointUser, defaultValue: '')!;
+      var pass = Settings.getValue<String>(endpointPass, defaultValue: '')!;
+
+      // pollIntervalHours accepts fractional hours in the field, but the
+      // stored/sent value is a whole number of hours - reflect the rounding
+      // back into the field so it never silently differs from what's sent.
+      var pollIntervalHours =
+          double.parse(_pollIntervalController.text).round();
+      _pollIntervalController.text = pollIntervalHours.toString();
+      var retentionDays = int.parse(_retentionDaysController.text);
+
+      var devices = await _buildDeviceEntries(true,
+          pollIntervalHours: pollIntervalHours, retentionDays: retentionDays);
+      await HistoryArchiveService.setDevicesArchiving(
+          url, user, pass, devices);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Archive settings updated')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not update archive settings: $e')),
+        );
+      }
+    }
+  }
+
+  Widget _buildArchiveSettingsForm() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+      child: Form(
+        key: _archiveSettingsFormKey,
+        child: Column(
+          children: [
+            TextFormField(
+              controller: _pollIntervalController,
+              decoration:
+                  const InputDecoration(labelText: 'Poll interval (hours)'),
+              keyboardType:
+                  const TextInputType.numberWithOptions(decimal: true),
+              validator: validatePollIntervalHours,
+            ),
+            TextFormField(
+              controller: _retentionDaysController,
+              decoration:
+                  const InputDecoration(labelText: 'Retention (days)'),
+              keyboardType: TextInputType.number,
+              validator: validateRetentionDays,
+            ),
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton(
+                onPressed: _updateArchiveSettings,
+                child: const Text('Update'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   @override
@@ -213,6 +350,10 @@ class _AccessoryDetailState extends State<AccessoryDetail> {
                   updatedAccessory.isActive = checked;
                   accessoryRegistry.editAccessory(
                       widget.accessory, updatedAccessory);
+
+                  if (!checked && _archivingEnabled) {
+                    _disableArchivingBestEffort();
+                  }
                 },
               ),
               SwitchListTile(
@@ -222,6 +363,7 @@ class _AccessoryDetailState extends State<AccessoryDetail> {
                     _archivingLoading ? const Text('Loading status…') : null,
                 onChanged: _archivingLoading ? null : _setArchiving,
               ),
+              if (_archivingEnabled) _buildArchiveSettingsForm(),
               ListTile(
                 title: OutlinedButton(
                   onPressed: _formKey.currentState == null ||
