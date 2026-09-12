@@ -95,7 +95,7 @@ class _DeploymentInstructionsState extends State<DeploymentInstructions> {
                       children: <Widget>[
                         const ListTile(
                           title: Text(
-                              'For this firmware you need a nRF51822 platform '
+                              'For this firmware you need an nRF51822 platform '
                               'microcontroller. The provided firmware will send out '
                               'the created key so it can be found by Apple\'s Find My '
                               'network.'),
@@ -203,7 +203,7 @@ class _DeploymentInstructionsState extends State<DeploymentInstructions> {
                           title: Text(
                               'This method only requires a Bluetooth enabled '
                               'Linux device. Using the hcitool and a provided script '
-                              'the devices advertises the created key so it can be '
+                              'the device advertises the created key so it can be '
                               'found by Apple\'s Find My network.'),
                         ),
                        const  ListTile(

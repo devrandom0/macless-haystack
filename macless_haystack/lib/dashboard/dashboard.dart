@@ -98,7 +98,7 @@ class _DashboardState extends State<Dashboard> {
           SnackBar(
             backgroundColor: Theme.of(context).colorScheme.primary,
             content: Text(
-              'Fetched $count location(s).${inactive > 0 ? ' $inactive inactive accessories skipped' : ''}',
+              'Fetched $count location(s).${inactive > 0 ? ' $inactive inactive ${inactive == 1 ? 'accessory' : 'accessories'} skipped' : ''}',
               style: TextStyle(
                 color: Theme.of(context).colorScheme.onPrimary,
               ),

@@ -375,7 +375,7 @@ class _PreferencesPageState extends State<PreferencesPage> {
   /// Applies the entered poll interval/retention to every device that is
   /// currently archived on the server. This only updates those settings -
   /// it never enables archiving for a device that's currently off, and
-  /// never touches the "Archive all devices on server" switch.
+  /// never touches the "Archive all accessories on endpoint" switch.
   Future<void> _applyDefaultsToAll() async {
     if (_archiveDefaultsFormKey.currentState?.validate() != true) {
       return;

@@ -107,7 +107,7 @@ class _ItemFileImportState extends State<ItemFileImport> {
     if (nrOfImports > 0) {
       var snackbar = SnackBar(
         content: Text(
-            'Successfully imported ${nrOfImports.toString()} accessories.'),
+            'Successfully imported $nrOfImports ${nrOfImports == 1 ? 'accessory' : 'accessories'}.'),
       );
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(snackbar);

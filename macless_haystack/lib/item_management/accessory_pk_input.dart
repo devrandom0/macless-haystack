@@ -29,7 +29,7 @@ class AccessoryPrivateKeyInput extends StatelessWidget {
               .replaceAll('\\', '').replaceAll('\n', '');
             base64Decode(removeEscaping);
           } catch (e) {
-            return 'Value must be a valid Base64 key.';
+            return 'Private key must be a valid Base64 key.';
           }
           return null;
         },
