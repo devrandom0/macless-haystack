@@ -11,6 +11,8 @@ class HistoryDeviceEntry {
   final String name;
   final String? accessoryId;
   final bool enabled;
+  final int? pollIntervalHours;
+  final int? retentionDays;
 
   const HistoryDeviceEntry({
     required this.hashedPublicKey,
@@ -18,6 +20,8 @@ class HistoryDeviceEntry {
     required this.name,
     required this.accessoryId,
     required this.enabled,
+    this.pollIntervalHours,
+    this.retentionDays,
   });
 
   Map<String, dynamic> toJson() => {
@@ -26,6 +30,8 @@ class HistoryDeviceEntry {
         'name': name,
         'accessoryId': accessoryId,
         'enabled': enabled,
+        if (pollIntervalHours != null) 'pollIntervalHours': pollIntervalHours,
+        if (retentionDays != null) 'retentionDays': retentionDays,
       };
 }
 
@@ -34,12 +40,16 @@ class ArchivedDeviceStatus {
   final String name;
   final String? accessoryId;
   final bool enabled;
+  final int pollIntervalHours;
+  final int retentionDays;
 
   const ArchivedDeviceStatus({
     required this.hashedPublicKey,
     required this.name,
     required this.accessoryId,
     required this.enabled,
+    required this.pollIntervalHours,
+    required this.retentionDays,
   });
 
   static ArchivedDeviceStatus fromJson(Map<String, dynamic> json) {
@@ -48,6 +58,11 @@ class ArchivedDeviceStatus {
       name: json['name'],
       accessoryId: json['accessoryId'],
       enabled: json['enabled'],
+      // The server stores pollIntervalHours uncoerced (it can be
+      // fractional), so a fractional hour value comes back as a double -
+      // round rather than cast straight to int, or this throws.
+      pollIntervalHours: (json['pollIntervalHours'] as num).round(),
+      retentionDays: (json['retentionDays'] as num).round(),
     );
   }
 }

@@ -88,7 +88,14 @@ void main() {
       return http.Response(
         jsonEncode({
           'devices': [
-            {'hashedPublicKey': 'hash-a', 'name': 'Keys', 'accessoryId': 'acc-1', 'enabled': true},
+            {
+              'hashedPublicKey': 'hash-a',
+              'name': 'Keys',
+              'accessoryId': 'acc-1',
+              'enabled': true,
+              'pollIntervalHours': 4,
+              'retentionDays': 30,
+            },
           ]
         }),
         200,
@@ -111,5 +118,90 @@ void main() {
       () => HistoryArchiveService.getArchivedDevices(url, '', '', client: client),
       throwsException,
     );
+  });
+
+  test('HistoryDeviceEntry omits pollIntervalHours and retentionDays when null', () {
+    expect(device.toJson().containsKey('pollIntervalHours'), false);
+    expect(device.toJson().containsKey('retentionDays'), false);
+  });
+
+  test('HistoryDeviceEntry includes pollIntervalHours and retentionDays when set', () {
+    const withOverrides = HistoryDeviceEntry(
+      hashedPublicKey: 'hash-a',
+      privateKey: 'AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ==',
+      name: 'Keys',
+      accessoryId: 'acc-1',
+      enabled: true,
+      pollIntervalHours: 12,
+      retentionDays: 60,
+    );
+
+    expect(withOverrides.toJson()['pollIntervalHours'], 12);
+    expect(withOverrides.toJson()['retentionDays'], 60);
+  });
+
+  test('setDevicesArchiving omits pollIntervalHours/retentionDays from the request body when null', () async {
+    Map<String, dynamic>? capturedBody;
+    var client = MockClient((request) async {
+      capturedBody = jsonDecode(request.body);
+      return http.Response('{"status":"ok"}', 200);
+    });
+
+    await HistoryArchiveService.setDevicesArchiving(url, '', '', [device], client: client);
+
+    var sentDevice = capturedBody!['devices'][0] as Map<String, dynamic>;
+    expect(sentDevice.containsKey('pollIntervalHours'), false);
+    expect(sentDevice.containsKey('retentionDays'), false);
+  });
+
+  test('ArchivedDeviceStatus.fromJson reads pollIntervalHours and retentionDays', () async {
+    var client = MockClient((request) async {
+      return http.Response(
+        jsonEncode({
+          'devices': [
+            {
+              'hashedPublicKey': 'hash-a',
+              'name': 'Keys',
+              'accessoryId': 'acc-1',
+              'enabled': true,
+              'pollIntervalHours': 8,
+              'retentionDays': 90,
+            },
+          ]
+        }),
+        200,
+      );
+    });
+
+    var devices = await HistoryArchiveService.getArchivedDevices(url, '', '', client: client);
+
+    expect(devices.first.pollIntervalHours, 8);
+    expect(devices.first.retentionDays, 90);
+  });
+
+  test('ArchivedDeviceStatus.fromJson rounds a fractional pollIntervalHours from the server', () async {
+    // The server stores pollIntervalHours uncoerced, so a fractional hour
+    // value (e.g. saved as 1.5) comes back as a JSON float, not an int.
+    var client = MockClient((request) async {
+      return http.Response(
+        jsonEncode({
+          'devices': [
+            {
+              'hashedPublicKey': 'hash-a',
+              'name': 'Keys',
+              'accessoryId': 'acc-1',
+              'enabled': true,
+              'pollIntervalHours': 1.5,
+              'retentionDays': 90,
+            },
+          ]
+        }),
+        200,
+      );
+    });
+
+    var devices = await HistoryArchiveService.getArchivedDevices(url, '', '', client: client);
+
+    expect(devices.first.pollIntervalHours, 2);
   });
 }
