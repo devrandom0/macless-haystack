@@ -3,7 +3,7 @@ import threading
 import time
 from http.client import HTTPConnection
 from http.server import HTTPServer
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 import requests
@@ -212,3 +212,60 @@ def test_post_apple_verify_keeps_pending_state_on_network_error(server):
 
     assert status == 502
     assert mh_endpoint.pending_apple_login is not None
+
+
+def test_get_apple_status_reports_not_logged_in_when_no_auth_json(server):
+    status, body = _get(server, '/auth/apple/status')
+
+    assert status == 200
+    assert body == {"loggedIn": False, "pending": False}
+
+
+def test_get_apple_status_reports_logged_in_when_auth_json_exists(server, tmp_path):
+    (tmp_path / "auth.json").write_text('{"dsid": "d-1", "searchPartyToken": "t-1"}')
+
+    status, body = _get(server, '/auth/apple/status')
+
+    assert status == 200
+    assert body == {"loggedIn": True, "pending": False}
+
+
+def test_get_apple_status_reports_not_logged_in_when_session_marked_stale(server, tmp_path):
+    (tmp_path / "auth.json").write_text('{"dsid": "d-1", "searchPartyToken": "t-1"}')
+    mh_endpoint.apple_session_stale = True
+
+    status, body = _get(server, '/auth/apple/status')
+
+    assert body == {"loggedIn": False, "pending": False}
+
+
+def test_get_apple_status_reports_pending_during_login(server):
+    _set_pending()
+
+    status, body = _get(server, '/auth/apple/status')
+
+    assert body["pending"] is True
+
+
+def test_raise_for_status_marking_stale_sets_flag_on_401():
+    mh_endpoint.apple_session_stale = False
+    response = MagicMock()
+    response.status_code = 401
+    response.raise_for_status.side_effect = requests.exceptions.HTTPError("401")
+
+    with pytest.raises(requests.exceptions.HTTPError):
+        mh_endpoint._raise_for_status_marking_stale(response)
+
+    assert mh_endpoint.apple_session_stale is True
+
+
+def test_raise_for_status_marking_stale_leaves_flag_alone_on_server_error():
+    mh_endpoint.apple_session_stale = False
+    response = MagicMock()
+    response.status_code = 500
+    response.raise_for_status.side_effect = requests.exceptions.HTTPError("500")
+
+    with pytest.raises(requests.exceptions.HTTPError):
+        mh_endpoint._raise_for_status_marking_stale(response)
+
+    assert mh_endpoint.apple_session_stale is False

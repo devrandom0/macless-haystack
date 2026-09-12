@@ -117,6 +117,10 @@ class ServerHandler(BaseHTTPRequestHandler):
             self.wfile.write(json.dumps({"devices": tracked_device_store.list_devices()}).encode())
             return
 
+        if path == '/auth/apple/status':
+            self._handle_get_auth_apple_status()
+            return
+
         self.send_response(200)
         self.addCORSHeaders()
         self.send_header('Content-type', 'text/plain')
@@ -188,7 +192,7 @@ class ServerHandler(BaseHTTPRequestHandler):
                                 auth=getAuth(regenerate=False, second_factor='sms'),
                                 headers=pypush_gsa_icloud.generate_anisette_headers(),
                                 json=data) as r:
-                r.raise_for_status()
+                _raise_for_status_marking_stale(r)
             return json.loads(r.content.decode())['results']
 
         try:
@@ -409,6 +413,10 @@ class ServerHandler(BaseHTTPRequestHandler):
         pending_apple_login = None
         self._send_json(200, {"status": "authenticated"})
 
+    def _handle_get_auth_apple_status(self):
+        logged_in = os.path.exists(mh_config.getConfigFile()) and not apple_session_stale
+        self._send_json(200, {"loggedIn": logged_in, "pending": pending_apple_login is not None})
+
     def getCurrentTimes(self):
         clientTime = datetime.now(timezone.utc).replace(microsecond=0).isoformat() + 'Z'
         clientTimestamp = int(datetime.now().strftime('%s'))
@@ -430,6 +438,16 @@ def _complete_apple_login(g, username):
     with open(mh_config.getConfigFile(), "w") as f:
         json.dump(j, f)
     apple_session_stale = False
+
+
+def _raise_for_status_marking_stale(response):
+    global apple_session_stale
+    try:
+        response.raise_for_status()
+    except requests.exceptions.HTTPError:
+        if response.status_code in (401, 403):
+            apple_session_stale = True
+        raise
 
 
 def getAuth(regenerate=False, second_factor='sms'):
@@ -473,7 +491,7 @@ if __name__ == "__main__":
                             auth=getAuth(regenerate=False, second_factor='sms'),
                             headers=pypush_gsa_icloud.generate_anisette_headers(),
                             json=data) as r:
-            r.raise_for_status()
+            _raise_for_status_marking_stale(r)
         return json.loads(r.content.decode())['results']
 
     try:
