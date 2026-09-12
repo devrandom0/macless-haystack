@@ -39,6 +39,12 @@ class _AccessoryDetailState extends State<AccessoryDetail> {
   final _archiveSettingsFormKey = GlobalKey<FormState>();
   bool _archivingLoading = true;
   bool _archivingEnabled = false;
+  // Guards against overlapping archive requests (e.g. rapidly re-toggling
+  // the switch): while true, the switch and the settings form are disabled,
+  // so at most one _setArchiving/_disableArchivingBestEffort/
+  // _updateArchiveSettings call (including its own follow-up reload) is
+  // ever in flight at a time.
+  bool _archivingUpdating = false;
   final _pollIntervalController = TextEditingController();
   final _retentionDaysController = TextEditingController();
 
@@ -57,7 +63,11 @@ class _AccessoryDetailState extends State<AccessoryDetail> {
     super.dispose();
   }
 
-  Future<void> _loadArchivingStatus() async {
+  /// Loads the current archiving status from the server. If
+  /// [onlyIfBlank] is true, the interval/retention fields are only
+  /// populated when currently empty, so this never overwrites a value
+  /// the user may already be editing.
+  Future<void> _loadArchivingStatus({bool onlyIfBlank = false}) async {
     try {
       var url = Settings.getValue<String>(endpointUrl,
           defaultValue: 'http://localhost:6176')!;
@@ -81,10 +91,14 @@ class _AccessoryDetailState extends State<AccessoryDetail> {
           _archivingEnabled = enabledDevice != null;
           _archivingLoading = false;
           if (enabledDevice != null) {
-            _pollIntervalController.text =
-                enabledDevice.pollIntervalHours.toString();
-            _retentionDaysController.text =
-                enabledDevice.retentionDays.toString();
+            if (!onlyIfBlank || _pollIntervalController.text.isEmpty) {
+              _pollIntervalController.text =
+                  enabledDevice.pollIntervalHours.toString();
+            }
+            if (!onlyIfBlank || _retentionDaysController.text.isEmpty) {
+              _retentionDaysController.text =
+                  enabledDevice.retentionDays.toString();
+            }
           }
         });
       }
@@ -131,6 +145,7 @@ class _AccessoryDetailState extends State<AccessoryDetail> {
     var previous = _archivingEnabled;
     setState(() {
       _archivingEnabled = enabled;
+      _archivingUpdating = true;
     });
     try {
       var url = Settings.getValue<String>(endpointUrl,
@@ -146,9 +161,11 @@ class _AccessoryDetailState extends State<AccessoryDetail> {
       // Refresh the interval/retention fields from the server so, when
       // enabling, they show the server-applied values (its default for a
       // brand-new device, or the device's preserved existing value)
-      // instead of sitting empty until the screen is reopened.
+      // instead of sitting empty until the screen is reopened. Only fill
+      // in blank fields, in case the user started typing while this was
+      // in flight.
       if (enabled) {
-        await _loadArchivingStatus();
+        await _loadArchivingStatus(onlyIfBlank: true);
       }
     } catch (e) {
       if (mounted) {
@@ -159,6 +176,12 @@ class _AccessoryDetailState extends State<AccessoryDetail> {
           SnackBar(content: Text('Could not update server-side archiving: $e')),
         );
       }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _archivingUpdating = false;
+        });
+      }
     }
   }
 
@@ -166,6 +189,11 @@ class _AccessoryDetailState extends State<AccessoryDetail> {
   /// deactivated. Failures are swallowed - this is a secondary side effect
   /// of the Is Active toggle, which must keep working even if this fails.
   Future<void> _disableArchivingBestEffort() async {
+    if (mounted) {
+      setState(() {
+        _archivingUpdating = true;
+      });
+    }
     try {
       var url = Settings.getValue<String>(endpointUrl,
           defaultValue: 'http://localhost:6176')!;
@@ -183,6 +211,12 @@ class _AccessoryDetailState extends State<AccessoryDetail> {
     } catch (e) {
       // Best-effort: ignore failures, the Is Active toggle already
       // committed locally and must not be blocked by this.
+    } finally {
+      if (mounted) {
+        setState(() {
+          _archivingUpdating = false;
+        });
+      }
     }
   }
 
@@ -190,18 +224,16 @@ class _AccessoryDetailState extends State<AccessoryDetail> {
     if (_archiveSettingsFormKey.currentState?.validate() != true) {
       return;
     }
+    setState(() {
+      _archivingUpdating = true;
+    });
     try {
       var url = Settings.getValue<String>(endpointUrl,
           defaultValue: 'http://localhost:6176')!;
       var user = Settings.getValue<String>(endpointUser, defaultValue: '')!;
       var pass = Settings.getValue<String>(endpointPass, defaultValue: '')!;
 
-      // pollIntervalHours accepts fractional hours in the field, but the
-      // stored/sent value is a whole number of hours - reflect the rounding
-      // back into the field so it never silently differs from what's sent.
-      var pollIntervalHours =
-          double.parse(_pollIntervalController.text).round();
-      _pollIntervalController.text = pollIntervalHours.toString();
+      var pollIntervalHours = int.parse(_pollIntervalController.text);
       var retentionDays = int.parse(_retentionDaysController.text);
 
       var devices = await _buildDeviceEntries(true,
@@ -219,6 +251,12 @@ class _AccessoryDetailState extends State<AccessoryDetail> {
           SnackBar(content: Text('Could not update archive settings: $e')),
         );
       }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _archivingUpdating = false;
+        });
+      }
     }
   }
 
@@ -233,8 +271,7 @@ class _AccessoryDetailState extends State<AccessoryDetail> {
               controller: _pollIntervalController,
               decoration:
                   const InputDecoration(labelText: 'Poll interval (hours)'),
-              keyboardType:
-                  const TextInputType.numberWithOptions(decimal: true),
+              keyboardType: TextInputType.number,
               validator: validatePollIntervalHours,
             ),
             TextFormField(
@@ -247,7 +284,7 @@ class _AccessoryDetailState extends State<AccessoryDetail> {
             Align(
               alignment: Alignment.centerRight,
               child: TextButton(
-                onPressed: _updateArchiveSettings,
+                onPressed: _archivingUpdating ? null : _updateArchiveSettings,
                 child: const Text('Update'),
               ),
             ),
@@ -361,7 +398,9 @@ class _AccessoryDetailState extends State<AccessoryDetail> {
                 title: const Text('Archive location history on server'),
                 subtitle:
                     _archivingLoading ? const Text('Loading status…') : null,
-                onChanged: _archivingLoading ? null : _setArchiving,
+                onChanged: (_archivingLoading || _archivingUpdating)
+                    ? null
+                    : _setArchiving,
               ),
               if (_archivingEnabled) _buildArchiveSettingsForm(),
               ListTile(

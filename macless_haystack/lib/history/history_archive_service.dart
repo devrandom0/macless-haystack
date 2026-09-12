@@ -60,9 +60,12 @@ class ArchivedDeviceStatus {
       enabled: json['enabled'],
       // The server stores pollIntervalHours uncoerced (it can be
       // fractional), so a fractional hour value comes back as a double -
-      // round rather than cast straight to int, or this throws.
-      pollIntervalHours: (json['pollIntervalHours'] as num).round(),
-      retentionDays: (json['retentionDays'] as num).round(),
+      // round rather than cast straight to int, or this throws. Both
+      // fields also default rather than throw if a response is missing
+      // them entirely (e.g. a mismatched server version), since a crash
+      // here would silently disable the whole archiving UI.
+      pollIntervalHours: (json['pollIntervalHours'] as num?)?.round() ?? 4,
+      retentionDays: (json['retentionDays'] as num?)?.round() ?? 30,
     );
   }
 }

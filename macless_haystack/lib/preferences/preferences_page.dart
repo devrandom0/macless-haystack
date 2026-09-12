@@ -323,22 +323,6 @@ class _PreferencesPageState extends State<PreferencesPage> {
 
   /// Same range checks as [validatePollIntervalHours], but an empty field is
   /// valid here since leaving it blank means "keep each device's own value".
-  String? _validateOptionalPollIntervalHours(String? input) {
-    if (input == null || input.trim().isEmpty) {
-      return null;
-    }
-    return validatePollIntervalHours(input);
-  }
-
-  /// Same range checks as [validateRetentionDays], but an empty field is
-  /// valid here since leaving it blank means "keep each device's own value".
-  String? _validateOptionalRetentionDays(String? input) {
-    if (input == null || input.trim().isEmpty) {
-      return null;
-    }
-    return validateRetentionDays(input);
-  }
-
   /// Applies the entered poll interval/retention to every device that is
   /// currently archived on the server. This only updates those settings -
   /// it never enables archiving for a device that's currently off, and
@@ -357,14 +341,19 @@ class _PreferencesPageState extends State<PreferencesPage> {
 
     var pollIntervalText = _defaultPollIntervalController.text.trim();
     var retentionText = _defaultRetentionDaysController.text.trim();
-    int? pollIntervalHours;
-    if (pollIntervalText.isNotEmpty) {
-      pollIntervalHours = double.parse(pollIntervalText).round();
-      _defaultPollIntervalController.text = pollIntervalHours.toString();
+    if (pollIntervalText.isEmpty && retentionText.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Enter a poll interval or retention value first')),
+      );
+      return;
     }
-    var retentionDays = retentionText.isEmpty ? null : int.parse(retentionText);
 
     try {
+      var pollIntervalHours =
+          pollIntervalText.isEmpty ? null : int.parse(pollIntervalText);
+      var retentionDays =
+          retentionText.isEmpty ? null : int.parse(retentionText);
+
       var url = Settings.getValue<String>(endpointUrl, defaultValue: 'http://localhost:6176')!;
       var user = Settings.getValue<String>(endpointUser, defaultValue: '')!;
       var pass = Settings.getValue<String>(endpointPass, defaultValue: '')!;
@@ -427,14 +416,14 @@ class _PreferencesPageState extends State<PreferencesPage> {
               decoration:
                   const InputDecoration(labelText: 'Default poll interval (hours)'),
               keyboardType: const TextInputType.numberWithOptions(decimal: true),
-              validator: _validateOptionalPollIntervalHours,
+              validator: validateOptionalPollIntervalHours,
             ),
             TextFormField(
               controller: _defaultRetentionDaysController,
               decoration:
                   const InputDecoration(labelText: 'Default retention (days)'),
               keyboardType: TextInputType.number,
-              validator: _validateOptionalRetentionDays,
+              validator: validateOptionalRetentionDays,
             ),
             Align(
               alignment: Alignment.centerRight,

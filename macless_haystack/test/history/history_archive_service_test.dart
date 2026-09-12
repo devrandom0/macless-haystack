@@ -204,4 +204,31 @@ void main() {
 
     expect(devices.first.pollIntervalHours, 2);
   });
+
+  test('ArchivedDeviceStatus.fromJson defaults pollIntervalHours and '
+      'retentionDays when a server response omits them', () async {
+    // Guards against a mismatched/older server response shape - this must
+    // not throw, since a crash here silently disables the whole archiving
+    // UI (every read fails, every screen falls back to "archiving off").
+    var client = MockClient((request) async {
+      return http.Response(
+        jsonEncode({
+          'devices': [
+            {
+              'hashedPublicKey': 'hash-a',
+              'name': 'Keys',
+              'accessoryId': 'acc-1',
+              'enabled': true,
+            },
+          ]
+        }),
+        200,
+      );
+    });
+
+    var devices = await HistoryArchiveService.getArchivedDevices(url, '', '', client: client);
+
+    expect(devices.first.pollIntervalHours, 4);
+    expect(devices.first.retentionDays, 30);
+  });
 }

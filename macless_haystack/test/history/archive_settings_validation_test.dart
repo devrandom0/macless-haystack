@@ -19,8 +19,8 @@ void main() {
       expect(validatePollIntervalHours('721'), isNotNull);
     });
 
-    test('accepts a fractional value within range', () {
-      expect(validatePollIntervalHours('4.5'), isNull);
+    test('rejects a fractional value', () {
+      expect(validatePollIntervalHours('4.5'), isNotNull);
     });
 
     test('rejects non-numeric input', () {
