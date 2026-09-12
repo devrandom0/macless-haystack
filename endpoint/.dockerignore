@@ -6,3 +6,6 @@ tests/
 requirements-dev.txt
 Dockerfile*
 .dockerignore
+data/*.json
+data/*.db
+data/*.bin
