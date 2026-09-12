@@ -22,13 +22,13 @@ class AccessoryPopup extends Marker {
           height: 400,
           point: accessory.lastLocation!,
           rotate: true,
-          // alignment: topCenter anchors the point to the marker's top edge
-          // instead of its center, so the 400px height extends downward from
-          // the point rather than being centered on it. The 35px bottom pad
-          // then only needs to clear the 50px marker icon's top half (25px
-          // above the point) plus a 10px gap, and Align(bottomCenter) lets
-          // the card size to its own content within the remaining space
-          // instead of being stretched to fill it.
+          // alignment: topCenter anchors the point to the marker's BOTTOM
+          // edge instead of its center, so the 400px height extends upward
+          // from the point rather than being centered on it. The 35px bottom
+          // pad then only needs to clear the 50px marker icon's top half
+          // (25px above the point) plus a 10px gap, and Align(bottomCenter)
+          // lets the card size to its own content within the remaining
+          // space instead of being stretched to fill it.
           alignment: Alignment.topCenter,
           child: Padding(
             padding: const EdgeInsets.only(bottom: 35),
