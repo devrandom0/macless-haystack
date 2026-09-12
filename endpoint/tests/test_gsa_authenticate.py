@@ -65,6 +65,24 @@ def test_gsa_authenticate_raises_on_failed_challenge():
             gsa.gsa_authenticate("user@example.com", "wrong-password")
 
 
+def test_gsa_authenticate_does_not_log_response_when_m2_missing(caplog):
+    secret_value = "secret-error-payload-value-should-never-be-logged"
+    init_resp = {"sp": "s2k", "s": b"salt", "i": 1024, "B": b"B", "c": "c-token"}
+    complete_resp = {"error-detail": secret_value}
+
+    with caplog.at_level(logging.DEBUG), \
+            patch.object(gsa.srp, "User") as mock_user_cls, \
+            patch.object(gsa, "gsa_authenticated_request", side_effect=[init_resp, complete_resp]):
+        mock_user = _srp_user_mock()
+        mock_user.start_authentication.return_value = (None, "a-value")
+        mock_user_cls.return_value = mock_user
+
+        with pytest.raises(gsa.AppleAuthError):
+            gsa.gsa_authenticate("user@example.com", "hunter2")
+
+    assert secret_value not in caplog.text
+
+
 def test_gsa_authenticate_raises_when_session_verification_fails():
     init_resp = {"sp": "s2k", "s": b"salt", "i": 1024, "B": b"B", "c": "c-token"}
     complete_resp = {"M2": b"m2", "spd": b"encrypted-spd"}

@@ -144,8 +144,11 @@ def gsa_authenticate(username, password):
 
     # Make sure that the server's session key matches our session key (and thus that they are not an imposter)
     if "M2" not in resp:
-        logger.error("Error on authentication")
-        logger.error(resp)
+        # Never log the response itself - on this branch it's whatever
+        # error payload Apple sent back, an undocumented shape that could
+        # carry account-identifying data. Key names only, at ERROR level
+        # (this log call runs with no debug flag needed).
+        logger.error(f"Error on authentication, response keys: {list(resp.keys())}")
         raise AppleAuthError("invalid_credentials")
     usr.verify_session(resp["M2"])
     if not usr.authenticated():
@@ -348,10 +351,14 @@ def request_sms_code(dsid, idms_token):
             try:
                 sms_id = boot_args["direct"]["phoneNumberVerification"]["trustedPhoneNumber"]["id"]
             except KeyError as e:
-                logger.debug(match.group(1).strip())
+                # Never log the raw boot_args - it can carry the account's
+                # (partially masked) trusted phone number.
+                logger.debug(f"boot_args parsed but missing expected keys ({len(match.group(1))} bytes)")
                 logger.error("Key for sms id not found. Using the first phone number")
         else:
-            logger.debug(auth.text)
+            # Never log the raw page - it's undocumented, unauthenticated-
+            # session-adjacent content from an authenticated Apple page.
+            logger.debug(f"boot_args script tag not found in auth page ({len(auth.text)} bytes)")
             logger.error("Script for sms id not found. Using the first phone number")
 
         logger.info(f"Using phone with id {sms_id} for SMS2FA")
@@ -378,10 +385,9 @@ def submit_sms_code(headers, sms_id, code):
 
     response = f"HTTP-Code: {resp.status_code} with {len(resp.text)} bytes"
     logger.debug(response)
-    header_string = "Headers:\n"
-    for header, value in resp.headers.items():
-        header_string += f"{header}: {value}\n"
-    logger.debug(header_string)
+    # Names only, never values - this response can carry session cookies
+    # (e.g. scnt, aasp) alongside the X-Apple-DSID this function checks for.
+    logger.debug(f"Response header names: {list(resp.headers.keys())}")
     # Headers does not include Apple DSID, 2FA failed
     if resp.ok and "X-Apple-DSID" in resp.headers:
         logger.info("2FA successful")
@@ -435,13 +441,12 @@ def submit_trusted_device_code(headers, code):
             timeout=10,
     ) as resp:
         resp.raise_for_status()
-        header_string = "Headers:\n"
-        for header, value in resp.headers.items():
-            header_string += f"{header}: {value}\n"
-        # Never log the raw response body here - its contents aren't
-        # documented (see the comment below), so it can't be assumed safe.
+        # Never log the raw response body - its contents aren't documented
+        # (see the comment below the `with` block), so it can't be assumed
+        # safe. Header names only, never values - this response can carry
+        # session cookies alongside whatever confirms the 2FA outcome.
         logger.debug(f"HTTP-Code: {resp.status_code} with {len(resp.text)} bytes")
-        logger.debug(header_string)
+        logger.debug(f"Response header names: {list(resp.headers.keys())}")
 
     # Unlike the SMS endpoint, this one hasn't been confirmed to signal a wrong code via
     # its response, so success is left for the caller's re-authentication attempt to prove.

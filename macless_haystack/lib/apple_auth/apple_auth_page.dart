@@ -2,8 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:macless_haystack/apple_auth/apple_auth_service.dart';
 
 /// Login wizard for the server's Apple ID session: username/password,
-/// then (if Apple requires it) a 2FA code. Pops `true` on success so the
-/// caller can refresh its own status display.
+/// then (if Apple requires it) a 2FA code, or a log-out action. The caller
+/// is expected to refresh its own status display whenever this page is
+/// popped, by any route (login success, logout, or just navigating back) -
+/// there's no reliable way to distinguish those from the pop alone, since
+/// the system back gesture bypasses any in-page pop-value plumbing.
 class AppleAuthPage extends StatefulWidget {
   final String endpointUrl;
   final String endpointUser;
@@ -40,11 +43,6 @@ class _AppleAuthPageState extends State<AppleAuthPage> {
   bool _loggingOut = false;
   String? _error;
   late bool _showLoggedInHint;
-  // Distinct from _showLoggedInHint: that flips to false the moment you log
-  // out, but the caller (Preferences) still needs to know something
-  // happened at all when you back out, whether that was a login or a
-  // logout - this is what the back button's pop result reports.
-  bool _statusChanged = false;
 
   @override
   void initState() {
@@ -70,7 +68,6 @@ class _AppleAuthPageState extends State<AppleAuthPage> {
       if (!mounted) return;
       setState(() {
         _showLoggedInHint = false;
-        _statusChanged = true;
         _loggingOut = false;
         _usernameController.clear();
         _passwordController.clear();
@@ -124,7 +121,7 @@ class _AppleAuthPageState extends State<AppleAuthPage> {
       );
       if (!mounted) return;
       if (result.authenticated) {
-        Navigator.of(context).pop(true);
+        Navigator.of(context).pop();
         return;
       }
       setState(() {
@@ -153,7 +150,7 @@ class _AppleAuthPageState extends State<AppleAuthPage> {
         _codeController.text.trim(),
       );
       if (!mounted) return;
-      Navigator.of(context).pop(true);
+      Navigator.of(context).pop();
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -176,10 +173,7 @@ class _AppleAuthPageState extends State<AppleAuthPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Log in to Apple ID'),
-        leading: BackButton(onPressed: () => Navigator.of(context).pop(_statusChanged)),
-      ),
+      appBar: AppBar(title: const Text('Log in to Apple ID')),
       body: Padding(
         padding: const EdgeInsets.all(16),
         child: _step == _AppleAuthStep.credentials
@@ -220,7 +214,7 @@ class _AppleAuthPageState extends State<AppleAuthPage> {
                     ),
                     const SizedBox(height: 16),
                     ElevatedButton(
-                      onPressed: _submitting ? null : _submitCredentials,
+                      onPressed: (_submitting || _loggingOut) ? null : _submitCredentials,
                       child: _submitting
                           ? const SizedBox(
                               height: 16, width: 16, child: CircularProgressIndicator(strokeWidth: 2))
@@ -229,7 +223,7 @@ class _AppleAuthPageState extends State<AppleAuthPage> {
                     if (_showLoggedInHint) ...[
                       const SizedBox(height: 8),
                       OutlinedButton(
-                        onPressed: _loggingOut ? null : _logout,
+                        onPressed: (_submitting || _loggingOut) ? null : _logout,
                         child: _loggingOut
                             ? const SizedBox(
                                 height: 16, width: 16, child: CircularProgressIndicator(strokeWidth: 2))
@@ -254,7 +248,7 @@ class _AppleAuthPageState extends State<AppleAuthPage> {
                   ),
                   const SizedBox(height: 16),
                   ElevatedButton(
-                    onPressed: _submitting ? null : _submitCode,
+                    onPressed: (_submitting || _loggingOut) ? null : _submitCode,
                     child: _submitting
                         ? const SizedBox(
                             height: 16, width: 16, child: CircularProgressIndicator(strokeWidth: 2))

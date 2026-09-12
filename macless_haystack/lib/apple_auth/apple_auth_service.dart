@@ -151,7 +151,8 @@ class AppleAuthService {
 
   /// Ends the server's current Apple session (deletes its saved session
   /// file) so the next login starts fresh. Does not enforce HTTPS - no
-  /// credential is sent.
+  /// Apple credential is sent (only the endpoint's own Basic Auth header,
+  /// same as every other call here).
   static Future<void> logout(String url, String endpointUser, String endpointPass,
       {http.Client? client}) async {
     await _post(url, '/auth/apple/logout', endpointUser, endpointPass, {}, client: client);

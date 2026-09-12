@@ -63,6 +63,22 @@ def test_get_auth_regenerates_using_configured_user_and_pass(tmp_path, monkeypat
     assert (dsid, token) == ("dsid-1", "spt-1")
 
 
+def test_get_auth_raises_instead_of_prompting_interactively_when_unconfigured(tmp_path, monkeypatch):
+    # No auth.json (e.g. right after a logout) and no appleid/appleid_pass
+    # configured must never fall through to icloud_login_mobileme's
+    # input()/getpass() prompts - that would block this single-threaded
+    # server indefinitely with no interactive terminal available.
+    monkeypatch.setattr(mh_config, "getConfigFile", lambda: str(tmp_path / "auth.json"))
+    monkeypatch.setattr(mh_config, "getUser", lambda: None)
+    monkeypatch.setattr(mh_config, "getPass", lambda: None)
+
+    with patch.object(mh_endpoint.pypush_gsa_icloud, "icloud_login_mobileme") as mock_login:
+        with pytest.raises(RuntimeError):
+            mh_endpoint.getAuth(regenerate=True)
+
+    mock_login.assert_not_called()
+
+
 def test_complete_apple_login_writes_auth_json_and_clears_stale_flag(tmp_path, monkeypatch):
     monkeypatch.setattr(mh_config, "getConfigFile", lambda: str(tmp_path / "auth.json"))
     mh_endpoint.apple_session_stale = True
@@ -328,10 +344,29 @@ def test_post_apple_logout_is_idempotent_when_not_logged_in(server):
     assert body == {"status": "logged_out"}
 
 
-def test_post_apple_logout_requires_basic_auth_when_endpoint_credentials_configured(server, monkeypatch):
+def test_post_apple_logout_requires_basic_auth_when_endpoint_credentials_configured(server, tmp_path, monkeypatch):
+    (tmp_path / "auth.json").write_text('{"dsid": "d-1", "searchPartyToken": "t-1"}')
     monkeypatch.setattr(mh_config, "getEndpointUser", lambda: "simo")
     monkeypatch.setattr(mh_config, "getEndpointPass", lambda: "secret")
 
     status, body = _post(server, '/auth/apple/logout', {})
 
     assert status == 401
+    # The invariant that actually matters: no session gets deleted without auth.
+    assert (tmp_path / "auth.json").exists()
+
+
+def test_post_apple_logout_returns_500_and_keeps_state_cleared_on_removal_error(server, tmp_path):
+    (tmp_path / "auth.json").write_text('{"dsid": "d-1", "searchPartyToken": "t-1"}')
+    mh_endpoint.apple_session_stale = True
+    _set_pending()
+
+    with patch.object(mh_endpoint.os, "remove", side_effect=PermissionError("denied")):
+        status, body = _post(server, '/auth/apple/logout', {})
+
+    assert status == 500
+    assert body["error"] == "logout_failed"
+    # Cleared regardless of the removal failure, so a failed delete can't
+    # strand a pending login's password in memory.
+    assert mh_endpoint.apple_session_stale is False
+    assert mh_endpoint.pending_apple_login is None

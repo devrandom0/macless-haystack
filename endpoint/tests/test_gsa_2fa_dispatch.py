@@ -173,6 +173,19 @@ def test_submit_trusted_device_code_does_not_log_response_body(caplog):
     assert secret_marker not in caplog.text
 
 
+def test_submit_trusted_device_code_does_not_log_header_values(caplog):
+    secret_cookie = "secret-session-cookie-value-should-never-be-logged"
+    submit_resp = _mock_response(headers={"Set-Cookie": f"aasp={secret_cookie}"})
+
+    with caplog.at_level(logging.DEBUG), \
+            patch.object(gsa, "generate_anisette_headers", return_value={}), \
+            patch.object(gsa.requests, "get", return_value=submit_resp):
+        gsa.submit_trusted_device_code({}, "654321")
+
+    assert secret_cookie not in caplog.text
+    assert "Set-Cookie" in caplog.text
+
+
 def test_request_code_does_not_log_headers(caplog):
     secret_token = "secret-identity-token-should-never-be-logged"
     put_resp = _mock_response()
@@ -231,6 +244,44 @@ def test_submit_sms_code_raises_apple_auth_error_when_dsid_header_missing():
             patch.object(gsa.requests, "post", return_value=submit_resp):
         with pytest.raises(gsa.AppleAuthError, match="invalid_code"):
             gsa.submit_sms_code({}, 7, "000000")
+
+
+def test_submit_sms_code_does_not_log_header_values(caplog):
+    secret_cookie = "secret-session-cookie-value-should-never-be-logged"
+    submit_resp = _mock_response(headers={"X-Apple-DSID": "dsid-1", "Set-Cookie": f"scnt={secret_cookie}"})
+
+    with caplog.at_level(logging.DEBUG), \
+            patch.object(gsa, "generate_anisette_headers", return_value={}), \
+            patch.object(gsa.requests, "post", return_value=submit_resp):
+        gsa.submit_sms_code({}, 7, "654321")
+
+    assert secret_cookie not in caplog.text
+    assert "Set-Cookie" in caplog.text
+
+
+def test_request_sms_code_does_not_log_boot_args_or_page_content_on_missing_key(caplog):
+    secret_marker = "secret-phone-number-payload-should-never-be-logged"
+    boot_args = f'{{"direct": {{"unexpected": "{secret_marker}"}}}}'
+    auth_resp = _mock_response(text=f'<script class="boot_args">{boot_args}</script>')
+
+    with caplog.at_level(logging.DEBUG), \
+            patch.object(gsa, "generate_anisette_headers", return_value={}), \
+            patch.object(gsa.requests, "get", return_value=auth_resp):
+        gsa.request_sms_code("dsid-1", "token-1")
+
+    assert secret_marker not in caplog.text
+
+
+def test_request_sms_code_does_not_log_page_content_when_script_missing(caplog):
+    secret_marker = "secret-page-content-should-never-be-logged"
+    auth_resp = _mock_response(text=f"<html>{secret_marker}</html>")
+
+    with caplog.at_level(logging.DEBUG), \
+            patch.object(gsa, "generate_anisette_headers", return_value={}), \
+            patch.object(gsa.requests, "get", return_value=auth_resp):
+        gsa.request_sms_code("dsid-1", "token-1")
+
+    assert secret_marker not in caplog.text
 
 
 def test_request_second_factor_code_dispatches_trusted_device():

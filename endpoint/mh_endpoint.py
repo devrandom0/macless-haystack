@@ -427,10 +427,17 @@ class ServerHandler(BaseHTTPRequestHandler):
 
     def _handle_post_auth_apple_logout(self):
         global apple_session_stale, pending_apple_login
-        if os.path.exists(mh_config.getConfigFile()):
-            os.remove(mh_config.getConfigFile())
+        # Clear in-memory state first, regardless of what happens below, so
+        # a failed file removal never strands a pending login's password.
         apple_session_stale = False
         pending_apple_login = None
+        try:
+            os.remove(mh_config.getConfigFile())
+        except FileNotFoundError:
+            pass
+        except OSError as e:
+            self._send_json(500, {"error": "logout_failed", "message": str(e)})
+            return
         self._send_json(200, {"status": "logged_out"})
 
     def getCurrentTimes(self):
@@ -477,7 +484,19 @@ def getAuth(regenerate=False, second_factor='sms'):
         with open(mh_config.getConfigFile(), "r") as f:
             j = json.load(f)
     else:
-        j = pypush_gsa_icloud.icloud_login_mobileme(username=mh_config.getUser(), password=mh_config.getPass())
+        user = mh_config.getUser()
+        password = mh_config.getPass()
+        if not user or not password:
+            # This is a server process with no interactive terminal in the
+            # in-app-login workflow - falling through to
+            # icloud_login_mobileme's input()/getpass() prompts here would
+            # block this single-threaded HTTPServer forever (or spin on
+            # EOFError every request if stdin isn't a tty). Log in again via
+            # the app instead of configuring appleid/appleid_pass.
+            raise RuntimeError(
+                "No Apple session available and no appleid/appleid_pass configured in "
+                "config.ini - log in again via the app's in-app Apple ID login.")
+        j = pypush_gsa_icloud.icloud_login_mobileme(username=user, password=password)
         with open(mh_config.getConfigFile(), "w") as f:
             json.dump(j, f)
     return j['dsid'], j['searchPartyToken']

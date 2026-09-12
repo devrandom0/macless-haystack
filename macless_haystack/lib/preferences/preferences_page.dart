@@ -378,7 +378,7 @@ class _PreferencesPageState extends State<PreferencesPage> {
         var url = Settings.getValue<String>(endpointUrl, defaultValue: 'http://localhost:6176')!;
         var user = Settings.getValue<String>(endpointUser, defaultValue: '')!;
         var pass = Settings.getValue<String>(endpointPass, defaultValue: '')!;
-        var statusChanged = await Navigator.of(context).push<bool>(
+        await Navigator.of(context).push(
           MaterialPageRoute(
             builder: (context) => AppleAuthPage(
               endpointUrl: url,
@@ -388,9 +388,12 @@ class _PreferencesPageState extends State<PreferencesPage> {
             ),
           ),
         );
-        if (statusChanged == true) {
-          _loadAppleAuthStatus();
-        }
+        // Always refresh, regardless of how the page was left (login
+        // success, logout, or just navigating back) - there's no reliable
+        // pop value to branch on, since the system back gesture bypasses
+        // any in-page pop-value plumbing. One extra GET on a plain
+        // cancel is a cheap price for never showing stale status.
+        _loadAppleAuthStatus();
       },
     );
   }
