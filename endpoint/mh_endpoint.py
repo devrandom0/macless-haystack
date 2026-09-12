@@ -30,6 +30,16 @@ history_encryption_key = None
 
 class ServerHandler(BaseHTTPRequestHandler):
 
+    def log_message(self, format, *args):
+        # Route the access log through the same `logging` config as the app's own
+        # DEBUG/INFO logs, instead of BaseHTTPRequestHandler's default which writes
+        # straight to stderr with its own timestamp/format, independent of `logging`.
+        message = format % args
+        control_char_table = getattr(self, '_control_char_table', None)
+        if control_char_table is not None:
+            message = message.translate(control_char_table)
+        logger.info("%s - - %s", self.address_string(), message)
+
     def addCORSHeaders(self):
         self.send_header('Access-Control-Allow-Origin', '*')
         self.send_header('Access-Control-Allow-Methods', 'GET, OPTIONS')
