@@ -175,7 +175,12 @@ class _AccessoryHistoryState extends State<AccessoryHistory> {
                                       : 0,
                                   color: entry == popupEntry
                                       ? Colors.red
-                                      : Theme.of(context).indicatorColor,
+                                      : Theme.of(context)
+                                              .tabBarTheme
+                                              .indicatorColor ??
+                                          Theme.of(context)
+                                              .colorScheme
+                                              .secondary,
                                 ),
                               ),
                             ))

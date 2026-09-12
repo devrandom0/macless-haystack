@@ -200,7 +200,8 @@ class _AccessoryMapState extends State<AccessoryMap> {
                       padding: const EdgeInsets.all(5),
                       child: Container(
                         decoration: BoxDecoration(
-                          color: Theme.of(context).indicatorColor,
+                          color: Theme.of(context).tabBarTheme.indicatorColor ??
+                              Theme.of(context).colorScheme.secondary,
                           shape: BoxShape.circle,
                         ),
                       ),

@@ -223,7 +223,7 @@ class Accessory {
         'longitude': _lastLocation?.longitude,
         'isActive': isActive,
         'icon': _icon,
-        'color': color.value.toRadixString(16).padLeft(8, '0'),
+        'color': color.toARGB32().toRadixString(16).padLeft(8, '0'),
         'hashesWithTS': jsonEncode(hashesWithTS),
         'additionalKeys': additionalKeys,
         ...lastBatteryStatus != null
