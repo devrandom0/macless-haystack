@@ -7,6 +7,15 @@ import 'package:macless_haystack/location/location_model.dart';
 import 'package:macless_haystack/preferences/user_preferences_model.dart';
 import 'package:macless_haystack/util/time_format.dart';
 import 'package:flutter_settings_screens/flutter_settings_screens.dart';
+import 'package:package_info_plus/package_info_plus.dart';
+
+/// Title for the endpoint password field, indicating whether a password is
+/// currently stored without ever revealing its value.
+String passwordFieldTitle(String storedPassword) {
+  return storedPassword.isEmpty
+      ? 'Password for endpoint'
+      : 'Password for endpoint (set)';
+}
 
 class PreferencesPage extends StatefulWidget {
   /// Displays this preferences page with information about the app.
@@ -58,6 +67,7 @@ class _PreferencesPageState extends State<PreferencesPage> {
     return SwitchSettingsTile(
       settingKey: locationAccessWantedKey,
       title: 'Show this devices location',
+      activeColor: Theme.of(context).colorScheme.onPrimary,
       onChange: (showLocation) {
         var locationModel = Provider.of<LocationModel>(context, listen: false);
         if (showLocation) {
@@ -124,11 +134,17 @@ class _PreferencesPageState extends State<PreferencesPage> {
   }
 
   getPassTile() {
-    return const TextInputSettingsTile(
-      obscureText: true,
-      initialValue: '',
-      settingKey: endpointPass,
-      title: 'Password for endpoint',
+    return ValueChangeObserver<String>(
+      cacheKey: endpointPass,
+      defaultValue: '',
+      builder: (context, value, onChanged) {
+        return TextInputSettingsTile(
+          obscureText: true,
+          initialValue: '',
+          settingKey: endpointPass,
+          title: passwordFieldTitle(value),
+        );
+      },
     );
   }
 
@@ -148,9 +164,17 @@ class _PreferencesPageState extends State<PreferencesPage> {
               },
             )),
         child: const Text('About'),
-        onPressed: () => showAboutDialog(
-              context: context,
-            ));
+        onPressed: () async {
+          var packageInfo = await PackageInfo.fromPlatform();
+          if (!mounted) return;
+          showAboutDialog(
+            context: context,
+            applicationName: packageInfo.appName,
+            applicationVersion: packageInfo.buildNumber.isEmpty
+                ? packageInfo.version
+                : '${packageInfo.version}+${packageInfo.buildNumber}',
+          );
+        });
   }
 
   getFetchOnStartupTile() {
@@ -158,6 +182,7 @@ class _PreferencesPageState extends State<PreferencesPage> {
       settingKey: fetchLocationOnStartupKey,
       defaultValue: true,
       title: 'Fetch locations on startup',
+      activeColor: Theme.of(context).colorScheme.onPrimary,
     );
   }
 
