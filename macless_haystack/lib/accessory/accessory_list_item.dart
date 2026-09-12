@@ -77,8 +77,7 @@ class AccessoryListItemState extends State<AccessoryListItem> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    widget.accessory.name +
-                        (widget.accessory.isActive ? '' : ' (inactive)'),
+                    widget.accessory.name,
                     style: TextStyle(
                       color: widget.accessory.isActive
                           ? Theme.of(context).colorScheme.onSurface

@@ -326,7 +326,11 @@ class AccessoryRegistry extends ChangeNotifier {
     final Map<Accessory, int> positionMap = {
       for (int i = 0; i < newOrder.length; i++) newOrder[i]: i,
     };
-    _accessories.sort((a, b) => positionMap[a]!.compareTo(positionMap[b]!));
+    // An accessory missing from newOrder (e.g. a registry change racing a
+    // pending reorder) sorts to the end instead of throwing.
+    _accessories.sort((a, b) => (positionMap[a] ?? newOrder.length)
+        .compareTo(positionMap[b] ?? newOrder.length));
     _storeAccessories();
+    notifyListeners();
   }
 }
