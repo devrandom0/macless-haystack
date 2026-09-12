@@ -9,6 +9,7 @@ import ssl
 import sys
 import threading
 import time
+from dataclasses import dataclass
 from datetime import datetime,  timezone
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import urlparse
@@ -27,6 +28,21 @@ logger = logging.getLogger()
 history_store = None
 tracked_device_store = None
 history_encryption_key = None
+
+PENDING_LOGIN_TIMEOUT_SECONDS = 600
+
+
+@dataclass
+class PendingAppleLogin:
+    method: str
+    state: dict
+    username: str
+    password: str
+    started_at: float
+
+
+pending_apple_login = None
+apple_session_stale = False
 
 
 class ServerHandler(BaseHTTPRequestHandler):
@@ -48,6 +64,13 @@ class ServerHandler(BaseHTTPRequestHandler):
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
         self.send_header("Access-Control-Allow-Headers", "Authorization")
         self.send_header("Access-Control-Allow-Private-Network","true")
+
+    def _send_json(self, status, body):
+        self.send_response(status)
+        self.addCORSHeaders()
+        self.send_header('Content-type', 'application/json')
+        self.end_headers()
+        self.wfile.write(json.dumps(body).encode())
 
     def authenticate(self):
         endpoint_user = mh_config.getEndpointUser()
@@ -131,6 +154,15 @@ class ServerHandler(BaseHTTPRequestHandler):
                 self.wfile.write(json.dumps({"error": str(e)}).encode())
                 return
             self._handle_post_history_devices(body)
+            return
+
+        if path == '/auth/apple/login':
+            try:
+                body = json.loads(post_body)
+            except json.JSONDecodeError as e:
+                self._send_json(400, {"error": str(e)})
+                return
+            self._handle_post_auth_apple_login(body)
             return
 
         logger.debug('Getting with post: ' + str(post_body))
@@ -255,10 +287,78 @@ class ServerHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(json.dumps({"status": "ok"}).encode())
 
+    def _handle_post_auth_apple_login(self, body):
+        global pending_apple_login
+
+        try:
+            username = body['username']
+            password = body['password']
+            if not isinstance(username, str) or not isinstance(password, str):
+                raise TypeError("'username' and 'password' must be strings")
+        except (KeyError, TypeError) as e:
+            self._send_json(400, {"error": str(e)})
+            return
+
+        try:
+            result = pypush_gsa_icloud.gsa_authenticate(username, password)
+        except pypush_gsa_icloud.AppleAuthError:
+            pending_apple_login = None
+            self._send_json(401, {"error": "invalid_credentials"})
+            return
+        except requests.exceptions.RequestException:
+            self._send_json(502, {"error": "apple_unreachable"})
+            return
+
+        if isinstance(result, pypush_gsa_icloud.NeedsSecondFactor):
+            try:
+                state = pypush_gsa_icloud.request_second_factor_code(
+                    result.method, result.dsid, result.idms_token)
+            except requests.exceptions.RequestException:
+                self._send_json(502, {"error": "apple_unreachable"})
+                return
+            pending_apple_login = PendingAppleLogin(
+                method=result.method, state=state, username=username, password=password,
+                started_at=time.time(),
+            )
+            self._send_json(200, {
+                "status": "code_required",
+                "method": _SECOND_FACTOR_METHOD_NAMES[result.method],
+            })
+            return
+
+        try:
+            _complete_apple_login(result, username)
+        except pypush_gsa_icloud.AppleAuthError as e:
+            self._send_json(401, {"error": "account_error", "message": str(e)})
+            return
+        except requests.exceptions.RequestException:
+            self._send_json(502, {"error": "apple_unreachable"})
+            return
+
+        pending_apple_login = None
+        self._send_json(200, {"status": "authenticated"})
+
     def getCurrentTimes(self):
         clientTime = datetime.now(timezone.utc).replace(microsecond=0).isoformat() + 'Z'
         clientTimestamp = int(datetime.now().strftime('%s'))
         return clientTime, time.tzname[1], clientTimestamp
+
+
+_SECOND_FACTOR_METHOD_NAMES = {
+    "trustedDeviceSecondaryAuth": "trusted_device",
+    "secondaryAuth": "sms",
+}
+
+
+def _complete_apple_login(g, username):
+    """Finishes a successful GSA login: registers the device with mobileme
+    and writes the resulting session to auth.json. Raises AppleAuthError on
+    a bad account status, or a requests exception on a network failure."""
+    global apple_session_stale
+    j = pypush_gsa_icloud.register_mobileme(g, username)
+    with open(mh_config.getConfigFile(), "w") as f:
+        json.dump(j, f)
+    apple_session_stale = False
 
 
 def getAuth(regenerate=False, second_factor='sms'):
