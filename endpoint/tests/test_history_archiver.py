@@ -430,6 +430,56 @@ def test_run_archiver_loop_marks_failed_fetch_as_polled_to_avoid_retry_storm():
     assert fetch_from_apple.call_count == 1
 
 
+def test_run_archiver_loop_failed_fetch_does_not_poison_the_on_demand_freshness_check():
+    # last_polled_at also drives fetch_reports_with_cache's freshness window
+    # for the app's own on-demand refresh. A failed archiver attempt must
+    # not mark it as freshly polled - otherwise a transient Apple outage
+    # makes the user's manual Refresh button inert for a full poll interval
+    # even though no data was actually fetched.
+    store = HistoryStore(":memory:")
+    tracked = _FakeTrackedDeviceStore([("key-a", 4, 30)])
+    fetch_from_apple = MagicMock(side_effect=Exception("network error"))
+
+    def sleep_and_stop(_seconds):
+        raise _StopLoop()
+
+    with pytest.raises(_StopLoop):
+        run_archiver_loop(
+            tracked_device_store=tracked, store=store,
+            fetch_from_apple=fetch_from_apple, sleep_fn=sleep_and_stop,
+        )
+
+    assert store.last_polled_at("key-a") is None
+
+
+def test_run_archiver_loop_retention_failure_for_one_device_does_not_skip_others():
+    store = HistoryStore(":memory:")
+    now = int(time.time())
+    # key-good's entry is old enough that it MUST be deleted for a passing
+    # assertion to actually prove the loop reached and processed key-good,
+    # rather than merely surviving because retention never ran at all.
+    old_entry = _entry(now - (40 * 86400), id_="key-good")
+    store.record_reports("key-good", [old_entry])
+    store.record_reports("key-bad", [_entry(now - (40 * 86400), id_="key-bad")])
+    tracked = _FakeTrackedDeviceStore(
+        [], all_devices=[("key-bad", "not-a-number"), ("key-good", 30)],
+    )
+    fetch_from_apple = MagicMock()
+
+    def sleep_and_stop(_seconds):
+        raise _StopLoop()
+
+    with pytest.raises(_StopLoop):
+        run_archiver_loop(
+            tracked_device_store=tracked, store=store,
+            fetch_from_apple=fetch_from_apple, sleep_fn=sleep_and_stop,
+        )
+
+    # key-bad's bogus retention_days raises a TypeError computing the
+    # cutoff, but key-good's retention must still run despite it.
+    assert store.get_reports(["key-good"], since=0) == []
+
+
 def test_run_archiver_loop_enforces_retention_even_when_fetch_fails():
     store = HistoryStore(":memory:")
     now = int(time.time())

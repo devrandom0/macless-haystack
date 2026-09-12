@@ -200,16 +200,21 @@ class ServerHandler(BaseHTTPRequestHandler):
                 previous = tracked_device_store.get_device(hashed_public_key)
                 default_poll_interval_hours = previous["pollIntervalHours"] if previous is not None else 4
                 default_retention_days = previous["retentionDays"] if previous is not None else 30
+                # Upper bounds are generous (well past any sane real-world
+                # value) but exist so an absurd input can't overflow SQLite's
+                # integer range in downstream retention-cutoff arithmetic.
                 poll_interval_hours = device.get('pollIntervalHours', default_poll_interval_hours)
                 if (not isinstance(poll_interval_hours, (int, float)) or isinstance(poll_interval_hours, bool)
-                        or not math.isfinite(poll_interval_hours) or poll_interval_hours < 1):
+                        or not math.isfinite(poll_interval_hours)
+                        or not 1 <= poll_interval_hours <= 720):
                     raise ValueError(
-                        "'pollIntervalHours' must be at least 1 to avoid triggering Apple's rate limits")
+                        "'pollIntervalHours' must be between 1 and 720 "
+                        "(to avoid triggering Apple's rate limits and to stay within a sane range)")
                 retention_days = device.get('retentionDays', default_retention_days)
                 if (not isinstance(retention_days, (int, float)) or isinstance(retention_days, bool)
-                        or not math.isfinite(retention_days) or retention_days < 1
-                        or retention_days != int(retention_days)):
-                    raise ValueError("'retentionDays' must be at least 1")
+                        or not math.isfinite(retention_days) or retention_days != int(retention_days)
+                        or not 1 <= retention_days <= 3650):
+                    raise ValueError("'retentionDays' must be a whole number between 1 and 3650")
                 parsed.append((
                     hashed_public_key,
                     private_key,

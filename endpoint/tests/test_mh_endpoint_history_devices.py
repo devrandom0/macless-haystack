@@ -143,6 +143,31 @@ def test_post_history_devices_infinite_poll_interval_returns_400(server):
     assert "error" in body
 
 
+def test_post_history_devices_absurdly_large_poll_interval_returns_400(server):
+    # Not infinite, just large enough to be nonsensical and, more
+    # importantly, large enough to overflow SQLite's integer range once
+    # multiplied out during retention math elsewhere in the system.
+    status, body = _post(server, '/history/devices', {
+        "devices": [
+            {"hashedPublicKey": "hash-a", "privateKey": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ==",
+             "name": "Keys", "accessoryId": None, "enabled": True, "pollIntervalHours": 1e300},
+        ]
+    })
+    assert status == 400
+    assert "error" in body
+
+
+def test_post_history_devices_absurdly_large_retention_days_returns_400(server):
+    status, body = _post(server, '/history/devices', {
+        "devices": [
+            {"hashedPublicKey": "hash-a", "privateKey": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ==",
+             "name": "Keys", "accessoryId": None, "enabled": True, "retentionDays": 1e18},
+        ]
+    })
+    assert status == 400
+    assert "error" in body
+
+
 def test_post_history_devices_infinite_retention_days_returns_400(server):
     status, body = _post(server, '/history/devices', {
         "devices": [

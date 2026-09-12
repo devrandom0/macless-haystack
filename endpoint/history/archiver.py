@@ -117,6 +117,15 @@ def migrate_devices_json_to_registry(devices_file_path, tracked_device_store, en
 
 def run_archiver_loop(tracked_device_store, store, fetch_from_apple, sleep_fn=time.sleep, tick_interval_seconds=300):
     logger.info(f"History archiver started, checking devices every {tick_interval_seconds}s against their own poll interval")
+    # In-memory only, deliberately not persisted: store.last_polled_at also
+    # drives fetch_reports_with_cache's on-demand freshness check, so a
+    # failed archiver attempt must never touch it - that would make the
+    # app's own manual refresh look "fresh" when nothing was actually
+    # fetched. This dict exists purely to back the archiver's own due-check
+    # off to each device's interval after a failure, without polluting the
+    # on-demand path; it resets on process restart, which just costs one
+    # extra retry, not a correctness problem.
+    last_attempt_by_key = {}
     while True:
         now = int(time.time())
 
@@ -127,20 +136,24 @@ def run_archiver_loop(tracked_device_store, store, fetch_from_apple, sleep_fn=ti
             devices = tracked_device_store.enabled_devices_with_intervals()
             due_keys = []
             for hashed_key, poll_interval_hours, _ in devices:
-                last_polled_at = store.last_polled_at(hashed_key)
-                if last_polled_at is None or (now - last_polled_at) >= poll_interval_hours * 3600:
+                last_activity = max(
+                    (t for t in (store.last_polled_at(hashed_key), last_attempt_by_key.get(hashed_key))
+                     if t is not None),
+                    default=None,
+                )
+                if last_activity is None or (now - last_activity) >= poll_interval_hours * 3600:
                     due_keys.append(hashed_key)
             if due_keys:
                 try:
                     entries = fetch_from_apple(due_keys)
                 except Exception as e:
                     logger.error(f"History archiver fetch failed: {e}", exc_info=True)
-                    # Record the attempt anyway, so a persistent outage backs
-                    # off to each device's own interval instead of retrying
-                    # every tick - the 1h minimum floor exists specifically
-                    # to protect against Apple's rate limiting.
+                    # Record the attempt so a persistent outage backs off to
+                    # each device's own interval instead of retrying every
+                    # tick - the 1h minimum floor exists specifically to
+                    # protect against Apple's rate limiting.
                     for hashed_key in due_keys:
-                        store.mark_polled(hashed_key, now)
+                        last_attempt_by_key[hashed_key] = now
                 else:
                     _store_fetched_entries(due_keys, entries, store, now)
             elif not devices:
@@ -148,12 +161,19 @@ def run_archiver_loop(tracked_device_store, store, fetch_from_apple, sleep_fn=ti
         except Exception as e:
             logger.error(f"History archiver poll failed: {e}", exc_info=True)
 
+        # Every tracked device, enabled or not - disabling archiving must
+        # not freeze a device's existing history forever. Each device is
+        # isolated so one bad value can't silently stop cleanup for
+        # everyone else.
         try:
-            # Every tracked device, enabled or not - disabling archiving
-            # must not freeze a device's existing history forever.
-            for hashed_key, retention_days in tracked_device_store.all_devices_with_retention():
-                store.delete_reports_older_than(hashed_key, now - retention_days * 86400)
+            all_devices = tracked_device_store.all_devices_with_retention()
         except Exception as e:
             logger.error(f"History archiver retention cleanup failed: {e}", exc_info=True)
+            all_devices = []
+        for hashed_key, retention_days in all_devices:
+            try:
+                store.delete_reports_older_than(hashed_key, now - retention_days * 86400)
+            except Exception as e:
+                logger.error(f"History archiver retention cleanup failed for a device: {e}", exc_info=True)
 
         sleep_fn(tick_interval_seconds)
