@@ -40,7 +40,7 @@ class DeploymentInstructionsNRF51 extends StatelessWidget {
           content: Column(
             children: [
               const Text('Replace the public_key in main.c (initially '
-                  'OFFLINEFINEINGPUBLICKEYHERE!) with the actual '
+                  'OFFLINEFINDINGPUBLICKEYHERE!) with the actual '
                   'advertisement key. Then execute make to create the '
                   'firmware.'),
               CodeBlock(

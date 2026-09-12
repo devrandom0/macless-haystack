@@ -27,7 +27,7 @@ class AccessoryNameInput extends StatelessWidget {
             return 'Name must be provided.';
           }
           if (value.isEmpty || value.length > 30) {
-            return 'Name must be a non empty string of max length 30.';
+            return 'Name must be between 1 and 30 characters.';
           }
           return null;
         },

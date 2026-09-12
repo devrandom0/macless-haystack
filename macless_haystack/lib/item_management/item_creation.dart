@@ -60,7 +60,7 @@ class _AccessoryGenerationState extends State<AccessoryGeneration> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Create new Accessory'),
+        title: const Text('Create New Accessory'),
       ),
       body: SingleChildScrollView(
         child: Form(
@@ -109,7 +109,7 @@ class _AccessoryGenerationState extends State<AccessoryGeneration> {
               ),
               ListTile(
                 title: OutlinedButton(
-                  child: const Text('Create only'),
+                  child: const Text('Create Only'),
                   onPressed: () async {
                     var created = await createAccessory(context);
                     if (created && context.mounted) {

@@ -75,7 +75,7 @@ class NewKeyAction extends StatelessWidget {
                   },
                 ),
                 ListTile(
-                  title: const Text('Create new Accessory'),
+                  title: const Text('Create New Accessory'),
                   leading: const Icon(Icons.add_box),
                   onTap: () {
                     Navigator.pushReplacement(

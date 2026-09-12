@@ -1,6 +1,6 @@
 class DeploymentEmail {
   static const _mailtoLink =
-      'mailto:?subject=Open%20Haystack%20Deplyoment%20Instructions&body=';
+      'mailto:?subject=Open%20Haystack%20Deployment%20Instructions&body=';
 
   static const _welcomeMessage = 'OpenHaystack Deployment Guide\n\n'
       'This is the deployment guide for your recently created OpenHaystack accessory. '
@@ -23,7 +23,7 @@ class DeploymentEmail {
         'cd openhaystack/Firmware/Microbit_v1\n\n'
         'Build\n'
         'Replace the public_key in main.c (initially '
-        'OFFLINEFINEINGPUBLICKEYHERE!) with the actual advertisement key. '
+        'OFFLINEFINDINGPUBLICKEYHERE!) with the actual advertisement key. '
         'Then execute make to create the firmware. You can export your '
         'advertisement key directly from the OpenHaystack app.\n'
         'static char public_key[28] = $advertisementKey;\n'
@@ -74,7 +74,7 @@ class DeploymentEmail {
     String mailContent = 'Linux HCI Deployment:\n\n'
         'Requirements\n'
         'Install the hcitool software on a Bluetooth Low Energy Linux device, '
-        'for example a Raspberry Pi. Additionally Pyhton 3 needs to be '
+        'for example a Raspberry Pi. Additionally Python 3 needs to be '
         'installed.\n\n'
         'Download\n'
         'Next download the python script that configures the HCI tool to '

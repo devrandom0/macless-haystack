@@ -88,14 +88,14 @@ class _DeploymentInstructionsState extends State<DeploymentInstructions> {
                   ExpansionPanel(
                     headerBuilder: (BuildContext context, bool isExpanded) {
                       return const ListTile(
-                        title: Text('Nordic vRF51'),
+                        title: Text('Nordic nRF51'),
                       );
                     },
                     body: Column(
                       children: <Widget>[
                         const ListTile(
                           title: Text(
-                              'For this firmware you need a nFR51822 platform '
+                              'For this firmware you need a nRF51822 platform '
                               'microcontroller. The provided firmware will send out '
                               'the created key so it can be found by Apple\'s Find My '
                               'network.'),
