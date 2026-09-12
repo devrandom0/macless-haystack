@@ -143,7 +143,12 @@ class ServerHandler(BaseHTTPRequestHandler):
         if hasattr(self.headers, 'getheader'):
             content_len = int(self.headers.getheader('content-length', 0))
         else:
-            content_len = int(self.headers.get('content-length'))
+            # A request with no body at all (e.g. POST /auth/apple/logout)
+            # omits Content-Length entirely, and .get(...) with no default
+            # returns None - int(None) crashes the whole connection with no
+            # HTTP response at all. Matches the same "or 0" guard already
+            # used above for the unauthenticated-request branch.
+            content_len = int(self.headers.get('content-length', 0) or 0)
 
         post_body = self.rfile.read(content_len)
 

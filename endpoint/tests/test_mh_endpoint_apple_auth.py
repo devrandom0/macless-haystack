@@ -344,6 +344,25 @@ def test_post_apple_logout_is_idempotent_when_not_logged_in(server):
     assert body == {"status": "logged_out"}
 
 
+def test_post_apple_logout_works_with_no_content_length_header(server):
+    # A raw POST with no body at all (as curl sends with no -d) omits
+    # Content-Length entirely - this used to crash do_POST outright with
+    # no HTTP response, since int(self.headers.get('content-length'))
+    # raised TypeError on None. HTTPConnection.request() always adds
+    # "Content-Length: 0" itself even with no body, so it can't reproduce
+    # this - putrequest()+endheaders() bypasses that and sends the same
+    # wire shape curl does.
+    conn = HTTPConnection('127.0.0.1', server.server_port)
+    conn.putrequest('POST', '/auth/apple/logout')
+    conn.endheaders()
+    response = conn.getresponse()
+    data = response.read()
+    conn.close()
+
+    assert response.status == 200
+    assert json.loads(data) == {"status": "logged_out"}
+
+
 def test_post_apple_logout_requires_basic_auth_when_endpoint_credentials_configured(server, tmp_path, monkeypatch):
     (tmp_path / "auth.json").write_text('{"dsid": "d-1", "searchPartyToken": "t-1"}')
     monkeypatch.setattr(mh_config, "getEndpointUser", lambda: "simo")
