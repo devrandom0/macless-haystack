@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:macless_haystack/accessory/accessory_model.dart';
 import 'package:macless_haystack/accessory/accessory_registry.dart';
+import 'package:macless_haystack/apple_auth/apple_auth_page.dart';
+import 'package:macless_haystack/apple_auth/apple_auth_service.dart';
 import 'package:macless_haystack/history/archive_settings_validation.dart';
 import 'package:macless_haystack/history/history_archive_service.dart';
 import 'package:macless_haystack/location/location_model.dart';
@@ -55,11 +57,18 @@ class _PreferencesPageState extends State<PreferencesPage> {
   final _archiveDefaultsFormKey = GlobalKey<FormState>();
   final _defaultPollIntervalController = TextEditingController();
   final _defaultRetentionDaysController = TextEditingController();
+  bool _appleAuthEnabled = false;
+  bool _appleAuthStatusLoading = false;
+  AppleAuthStatus? _appleAuthStatus;
 
   @override
   void initState() {
     super.initState();
     _loadArchivingStatus();
+    _appleAuthEnabled = Settings.getValue<bool>(appleAuthEnabledKey, defaultValue: false) ?? false;
+    if (_appleAuthEnabled) {
+      _loadAppleAuthStatus();
+    }
   }
 
   @override
@@ -83,6 +92,8 @@ class _PreferencesPageState extends State<PreferencesPage> {
             getUrlTile(),
             getUserTile(),
             getPassTile(),
+            getAppleAuthTile(),
+            if (_appleAuthEnabled) getAppleAuthAccountTile(),
             getNumberofDaysTile(),
             getTimeFormatTile(),
             getThemeModeTile(),
@@ -303,6 +314,73 @@ class _PreferencesPageState extends State<PreferencesPage> {
         });
       }
     }
+  }
+
+  Future<void> _loadAppleAuthStatus() async {
+    setState(() => _appleAuthStatusLoading = true);
+    try {
+      var url = Settings.getValue<String>(endpointUrl, defaultValue: 'http://localhost:6176')!;
+      var user = Settings.getValue<String>(endpointUser, defaultValue: '')!;
+      var pass = Settings.getValue<String>(endpointPass, defaultValue: '')!;
+      var status = await AppleAuthService.getStatus(url, user, pass);
+      if (mounted) {
+        setState(() {
+          _appleAuthStatus = status;
+          _appleAuthStatusLoading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _appleAuthStatus = null;
+          _appleAuthStatusLoading = false;
+        });
+      }
+    }
+  }
+
+  String _appleAuthStatusLabel() {
+    if (_appleAuthStatusLoading) return 'Checking status…';
+    var status = _appleAuthStatus;
+    if (status == null) return 'Could not reach the endpoint';
+    if (status.pending) return 'Login in progress';
+    return status.loggedIn ? 'Logged in' : 'Needs re-login';
+  }
+
+  Widget getAppleAuthTile() {
+    return SwitchSettingsTile(
+      settingKey: appleAuthEnabledKey,
+      defaultValue: false,
+      title: 'Enable in-app Apple ID login',
+      activeColor: Theme.of(context).colorScheme.onPrimary,
+      onChange: (enabled) {
+        setState(() => _appleAuthEnabled = enabled);
+        if (enabled) {
+          _loadAppleAuthStatus();
+        }
+      },
+    );
+  }
+
+  Widget getAppleAuthAccountTile() {
+    return ListTile(
+      title: const Text('Apple Account'),
+      subtitle: Text(_appleAuthStatusLabel()),
+      trailing: const Icon(Icons.chevron_right),
+      onTap: () async {
+        var url = Settings.getValue<String>(endpointUrl, defaultValue: 'http://localhost:6176')!;
+        var user = Settings.getValue<String>(endpointUser, defaultValue: '')!;
+        var pass = Settings.getValue<String>(endpointPass, defaultValue: '')!;
+        var loggedIn = await Navigator.of(context).push<bool>(
+          MaterialPageRoute(
+            builder: (context) => AppleAuthPage(endpointUrl: url, endpointUser: user, endpointPass: pass),
+          ),
+        );
+        if (loggedIn == true) {
+          _loadAppleAuthStatus();
+        }
+      },
+    );
   }
 
   /// Builds the [HistoryDeviceEntry] list for [accessory]'s main key and any
