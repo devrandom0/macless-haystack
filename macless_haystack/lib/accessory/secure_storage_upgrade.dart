@@ -13,9 +13,26 @@ String? secureStorageUpgradeWarning(SecureStorageUpgradeStatus status) {
     return null;
   }
   final count = status.entryCount;
-  final entries = count == 1 ? 'item' : 'items';
-  return 'Secure storage could not read $count stored $entries after this '
-      'update. Any accessory whose private key was affected can no longer '
+  // entryCount defaults to 0 in the platform interface, so a native side
+  // that omits it should read as "unknown", not "zero".
+  final countPhrase = count > 0
+      ? '$count stored ${count == 1 ? 'item' : 'items'}'
+      : 'some stored items';
+  // legacyDataUnreadable with willDiscardOnNextAccess == false means the
+  // ciphertext is untouched on disk; downgrading can still recover it. Every
+  // other data-loss state (legacyDataDiscarded, or willDiscardOnNextAccess)
+  // means the data is actually gone.
+  final recoverable =
+      status.state == SecureStorageUpgradeState.legacyDataUnreadable &&
+          !status.willDiscardOnNextAccess;
+  if (recoverable) {
+    return 'Secure storage could not read $countPhrase after this update. '
+        'That data has not been deleted yet - downgrading the app can still '
+        'recover it, but avoid using this device to add or remove '
+        'accessories until you decide.';
+  }
+  return 'Secure storage could not read $countPhrase after this update. '
+      'Any accessory whose private key was affected can no longer '
       'be decrypted on this device - re-import it from a backup if you have '
       'one.';
 }

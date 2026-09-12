@@ -11,9 +11,9 @@ void main() {
     expect(secureStorageUpgradeWarning(status), isNull);
   });
 
-  test('warns and names the entry count for unreadable legacy data', () {
+  test('warns and names the entry count for discarded legacy data', () {
     const status = SecureStorageUpgradeStatus(
-      state: SecureStorageUpgradeState.legacyDataUnreadable,
+      state: SecureStorageUpgradeState.legacyDataDiscarded,
       reason: SecureStorageUpgradeReason.removedCipher,
       entryCount: 3,
     );
@@ -32,6 +32,47 @@ void main() {
     );
 
     expect(secureStorageUpgradeWarning(status), isNotNull);
+  });
+
+  test('does not claim decryption is impossible when data is still on disk',
+      () {
+    // legacyDataUnreadable with willDiscardOnNextAccess == false means the
+    // ciphertext has not been touched: downgrading can still recover it.
+    const status = SecureStorageUpgradeStatus(
+      state: SecureStorageUpgradeState.legacyDataUnreadable,
+      reason: SecureStorageUpgradeReason.removedCipher,
+      entryCount: 3,
+      willDiscardOnNextAccess: false,
+    );
+
+    final warning = secureStorageUpgradeWarning(status);
+
+    expect(warning, isNotNull);
+    expect(warning, isNot(contains('can no longer be decrypted')));
+  });
+
+  test('warns that data is unrecoverable once it will be discarded', () {
+    const status = SecureStorageUpgradeStatus(
+      state: SecureStorageUpgradeState.legacyDataUnreadable,
+      reason: SecureStorageUpgradeReason.removedCipher,
+      entryCount: 2,
+      willDiscardOnNextAccess: true,
+    );
+
+    expect(
+      secureStorageUpgradeWarning(status),
+      contains('can no longer be decrypted'),
+    );
+  });
+
+  test('does not print a literal zero when the platform omits entryCount',
+      () {
+    const status = SecureStorageUpgradeStatus(
+      state: SecureStorageUpgradeState.legacyDataDiscarded,
+      reason: SecureStorageUpgradeReason.missingKeyMaterial,
+    );
+
+    expect(secureStorageUpgradeWarning(status), isNot(contains('0 stored')));
   });
 
   test('does not warn when the check itself was inconclusive', () {
