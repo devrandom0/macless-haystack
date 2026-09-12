@@ -20,6 +20,22 @@ String passwordFieldTitle(String storedPassword) {
       : 'Password for endpoint (set)';
 }
 
+/// Resolves what to actually persist after the password edit dialog is
+/// submitted with [submittedValue], given whether a password was already
+/// set ([hadExistingPassword]).
+///
+/// The edit field never shows or is pre-filled with the real stored
+/// password (only a fixed placeholder when one is set), so an empty
+/// submission is far more likely to mean "I didn't mean to change it"
+/// than "clear my password" - it's treated as "keep the current value"
+/// (a null result) rather than overwriting it with an empty string.
+String? resolvePasswordEdit(String submittedValue, bool hadExistingPassword) {
+  if (submittedValue.isEmpty && hadExistingPassword) {
+    return null;
+  }
+  return submittedValue;
+}
+
 class PreferencesPage extends StatefulWidget {
   /// Displays this preferences page with information about the app.
   const PreferencesPage({super.key});
@@ -170,11 +186,22 @@ class _PreferencesPageState extends State<PreferencesPage> {
       cacheKey: endpointPass,
       defaultValue: '',
       builder: (context, value, onChanged) {
-        return TextInputSettingsTile(
-          obscureText: true,
-          initialValue: '',
-          settingKey: endpointPass,
-          title: passwordFieldTitle(value),
+        return ListTile(
+          title: Text(passwordFieldTitle(value)),
+          onTap: () async {
+            var submitted = await showDialog<String>(
+              context: context,
+              builder: (context) =>
+                  _PasswordEditDialog(hasExistingPassword: value.isNotEmpty),
+            );
+            if (submitted != null) {
+              var resolved =
+                  resolvePasswordEdit(submitted, value.isNotEmpty);
+              if (resolved != null) {
+                onChanged(resolved);
+              }
+            }
+          },
         );
       },
     );
@@ -442,6 +469,57 @@ class _PreferencesPageState extends State<PreferencesPage> {
       title: const Text('Archive all devices on server'),
       subtitle: _archivingLoading ? const Text('Loading status…') : null,
       onChanged: _archivingLoading ? null : _setArchivingAll,
+    );
+  }
+}
+
+/// Edits the endpoint password without ever displaying or pre-filling the
+/// real stored value - the field always starts empty, with a fixed-length
+/// placeholder hint (not the real password's length) shown only when one is
+/// already set.
+class _PasswordEditDialog extends StatefulWidget {
+  final bool hasExistingPassword;
+
+  const _PasswordEditDialog({required this.hasExistingPassword});
+
+  @override
+  State<_PasswordEditDialog> createState() => _PasswordEditDialogState();
+}
+
+class _PasswordEditDialogState extends State<_PasswordEditDialog> {
+  final _controller = TextEditingController();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Password for endpoint'),
+      content: TextField(
+        controller: _controller,
+        obscureText: true,
+        autofocus: true,
+        decoration: InputDecoration(
+          hintText: widget.hasExistingPassword ? '••••' : null,
+          helperText: widget.hasExistingPassword
+              ? 'Leave blank to keep the current password'
+              : null,
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        TextButton(
+          onPressed: () => Navigator.pop(context, _controller.text),
+          child: const Text('Save'),
+        ),
+      ],
     );
   }
 }
