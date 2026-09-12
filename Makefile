@@ -25,7 +25,9 @@ logs:
 	docker compose logs -f
 
 test:
-	cd endpoint && pytest
+	cd endpoint && test -d venv || python3 -m venv venv
+	cd endpoint && ./venv/bin/pip install -q -r requirements.txt -r requirements-dev.txt
+	cd endpoint && ./venv/bin/pytest
 	cd macless_haystack && ../scripts/flutter-docker.sh test
 
 analyze:
