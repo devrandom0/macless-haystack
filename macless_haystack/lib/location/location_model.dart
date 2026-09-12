@@ -73,18 +73,14 @@ class LocationModel extends ChangeNotifier {
   /// Additionally updates the current address information to match
   /// the new location.
   void _updateLocation(LocationData locationData) {
-    if (locationData.latitude != null && locationData.longitude != null) {
-      logger.d(
-          'Location here: ${locationData.latitude!}, ${locationData.longitude!}');
-      here = LatLng(locationData.latitude!, locationData.longitude!);
-      initialLocationSet = true;
-      getAddress(here!).then((value) {
-        herePlace = value;
-        notifyListeners();
-      });
-    } else {
-      logger.e('Received invalid location data: $locationData');
-    }
+    logger.d(
+        'Location here: ${locationData.latitude}, ${locationData.longitude}');
+    here = LatLng(locationData.latitude, locationData.longitude);
+    initialLocationSet = true;
+    getAddress(here!).then((value) {
+      herePlace = value;
+      notifyListeners();
+    });
     notifyListeners();
   }
 
@@ -115,9 +111,13 @@ class LocationModel extends ChangeNotifier {
     double lng = location.longitude;
 
     try {
-      if (geocode.GeocodingPlatform.instance != null) {
+      // Constructing Geocoding() itself touches the platform channel, so
+      // guard on the factory instance first rather than catching from the
+      // constructor (keeps this safe to call where no platform is
+      // registered, e.g. plain Dart unit tests).
+      if (geocode.GeocodingPlatformFactory.instance != null) {
         List<geocode.Placemark> placemarks =
-            await geocode.placemarkFromCoordinates(lat, lng);
+            await geocode.Geocoding().placemarkFromCoordinates(lat, lng);
         return placemarks.first;
       }
     } on MissingPluginException {
