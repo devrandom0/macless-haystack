@@ -470,3 +470,23 @@ def request_code(headers,sms_id):
         req.raise_for_status()
     code = input(f"Enter SMS 2FA code:")
     return code
+
+
+def request_second_factor_code(method, dsid, idms_token):
+    if method == "trustedDeviceSecondaryAuth":
+        headers = request_trusted_device_code(dsid, idms_token)
+        return {"headers": headers}
+    elif method == "secondaryAuth":
+        headers, sms_id = request_sms_code(dsid, idms_token)
+        return {"headers": headers, "sms_id": sms_id}
+    else:
+        raise AppleAuthError(f"unknown_auth_value:{method}")
+
+
+def submit_second_factor_code(method, state, code):
+    if method == "trustedDeviceSecondaryAuth":
+        submit_trusted_device_code(state["headers"], code)
+    elif method == "secondaryAuth":
+        submit_sms_code(state["headers"], state["sms_id"], code)
+    else:
+        raise AppleAuthError(f"unknown_auth_value:{method}")

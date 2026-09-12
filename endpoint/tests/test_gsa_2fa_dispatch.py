@@ -203,3 +203,43 @@ def test_submit_sms_code_raises_apple_auth_error_when_dsid_header_missing():
     with patch.object(gsa.requests, "post", return_value=submit_resp):
         with pytest.raises(gsa.AppleAuthError, match="invalid_code"):
             gsa.submit_sms_code({}, 7, "000000")
+
+
+def test_request_second_factor_code_dispatches_trusted_device():
+    with patch.object(gsa, "request_trusted_device_code", return_value={"h": "1"}) as mock_req:
+        state = gsa.request_second_factor_code("trustedDeviceSecondaryAuth", "d-1", "t-1")
+
+    mock_req.assert_called_once_with("d-1", "t-1")
+    assert state == {"headers": {"h": "1"}}
+
+
+def test_request_second_factor_code_dispatches_sms():
+    with patch.object(gsa, "request_sms_code", return_value=({"h": "1"}, 7)) as mock_req:
+        state = gsa.request_second_factor_code("secondaryAuth", "d-1", "t-1")
+
+    mock_req.assert_called_once_with("d-1", "t-1")
+    assert state == {"headers": {"h": "1"}, "sms_id": 7}
+
+
+def test_request_second_factor_code_raises_for_unknown_method():
+    with pytest.raises(gsa.AppleAuthError):
+        gsa.request_second_factor_code("somethingElse", "d-1", "t-1")
+
+
+def test_submit_second_factor_code_dispatches_trusted_device():
+    with patch.object(gsa, "submit_trusted_device_code") as mock_submit:
+        gsa.submit_second_factor_code("trustedDeviceSecondaryAuth", {"headers": {"h": "1"}}, "654321")
+
+    mock_submit.assert_called_once_with({"h": "1"}, "654321")
+
+
+def test_submit_second_factor_code_dispatches_sms():
+    with patch.object(gsa, "submit_sms_code") as mock_submit:
+        gsa.submit_second_factor_code("secondaryAuth", {"headers": {"h": "1"}, "sms_id": 7}, "654321")
+
+    mock_submit.assert_called_once_with({"h": "1"}, 7, "654321")
+
+
+def test_submit_second_factor_code_raises_for_unknown_method():
+    with pytest.raises(gsa.AppleAuthError):
+        gsa.submit_second_factor_code("somethingElse", {}, "654321")
