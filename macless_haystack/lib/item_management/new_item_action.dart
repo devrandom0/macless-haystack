@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:macless_haystack/item_management/item_creation.dart';
@@ -47,7 +49,20 @@ class NewKeyAction extends StatelessWidget {
                     );
 
                     if (result != null) {
-                      var uploadfile = await result.readAsBytes();
+                      Uint8List uploadfile;
+                      try {
+                        uploadfile = await result.readAsBytes();
+                      } catch (e) {
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Could not read the selected '
+                                  'file.'),
+                            ),
+                          );
+                        }
+                        return;
+                      }
                       if (context.mounted) {
                         Navigator.pushReplacement(
                             context,
