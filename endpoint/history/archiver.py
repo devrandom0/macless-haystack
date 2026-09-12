@@ -134,6 +134,11 @@ def run_archiver_loop(tracked_device_store, store, fetch_from_apple, sleep_fn=ti
         # retention failure must not also skip polling.
         try:
             devices = tracked_device_store.enabled_devices_with_intervals()
+            # Drop attempt records for devices no longer tracked/enabled,
+            # so this dict doesn't grow unbounded over the process lifetime.
+            current_keys = {hashed_key for hashed_key, _, _ in devices}
+            for stale_key in last_attempt_by_key.keys() - current_keys:
+                del last_attempt_by_key[stale_key]
             due_keys = []
             for hashed_key, poll_interval_hours, _ in devices:
                 last_activity = max(
@@ -170,8 +175,9 @@ def run_archiver_loop(tracked_device_store, store, fetch_from_apple, sleep_fn=ti
         except Exception as e:
             logger.error(f"History archiver retention cleanup failed: {e}", exc_info=True)
             all_devices = []
-        for hashed_key, retention_days in all_devices:
+        for device in all_devices:
             try:
+                hashed_key, retention_days = device
                 store.delete_reports_older_than(hashed_key, now - retention_days * 86400)
             except Exception as e:
                 logger.error(f"History archiver retention cleanup failed for a device: {e}", exc_info=True)

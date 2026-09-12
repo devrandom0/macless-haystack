@@ -402,7 +402,7 @@ def test_run_archiver_loop_continues_after_fetch_failure():
     # from fetch_from_apple was caught rather than propagating out of the loop.
 
 
-def test_run_archiver_loop_marks_failed_fetch_as_polled_to_avoid_retry_storm():
+def test_run_archiver_loop_backs_off_after_failed_fetch_to_avoid_retry_storm():
     # A failed fetch must still back off to the device's own interval,
     # not retry on the very next tick - otherwise a persistent Apple
     # outage means every due device is retried every tick_interval_seconds
