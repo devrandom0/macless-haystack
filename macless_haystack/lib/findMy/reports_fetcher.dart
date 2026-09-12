@@ -43,7 +43,7 @@ class ReportsFetcher {
             "days": daysToFetch,
           }));
       if (response.statusCode == 401) {
-        throw Exception("Authentication failure. User/password wrong");
+        throw Exception("Authentication failure. Username or password is incorrect.");
       }
       if (response.statusCode == 200) {
         var out = await jsonDecode(response.body)["results"];
@@ -51,7 +51,7 @@ class ReportsFetcher {
         return out;
       } else {
         throw Exception(
-            "Failed to fetch location reports with statusCode:${response.statusCode}\n\n Response:\n$response");
+            "Failed to fetch location reports with status code ${response.statusCode}.\n\nResponse:\n$response");
       }
     } else {
       var httpClient = HttpClient();
@@ -74,7 +74,7 @@ class ReportsFetcher {
       request.write(body);
       final response = await request.close();
       if (response.statusCode == 401) {
-        throw Exception("Authentication failure. User/password wrong");
+        throw Exception("Authentication failure. Username or password is incorrect.");
       }
       if (response.statusCode == 200) {
         String body = await response.transform(utf8.decoder).join();
@@ -82,7 +82,7 @@ class ReportsFetcher {
         return out;
       } else {
         throw Exception(
-            "Failed to fetch location reports with statusCode:${response.statusCode}\n\n Response:\n$response");
+            "Failed to fetch location reports with status code ${response.statusCode}.\n\nResponse:\n$response");
       }
     }
   }

@@ -186,7 +186,7 @@ class ItemExportMenu extends StatelessWidget {
                 Text('Shortened public key sent out over Bluetooth.'),
                 Text('Hashed Advertisement Key:',
                     style: TextStyle(fontWeight: FontWeight.bold)),
-                Text('Used to retrieve location reports from the server'),
+                Text('Used to retrieve location reports from the endpoint.'),
                 Text('Accessory:',
                     style: TextStyle(fontWeight: FontWeight.bold)),
                 Text('A file containing all information about the accessory.'),

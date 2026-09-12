@@ -107,7 +107,7 @@ class _ItemFileImportState extends State<ItemFileImport> {
     if (nrOfImports > 0) {
       var snackbar = SnackBar(
         content: Text(
-            'Successfully imported ${nrOfImports.toString()} accessories.'),
+            'Successfully imported $nrOfImports ${nrOfImports == 1 ? 'accessory' : 'accessories'}.'),
       );
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(snackbar);
@@ -166,13 +166,13 @@ class _ItemFileImportState extends State<ItemFileImport> {
         child: Column(
           children: [
             Text(
-              'An error occured.',
+              'An error occurred.',
               style: Theme.of(context).textTheme.headlineSmall,
             ),
             Padding(
               padding: const EdgeInsets.only(top: 8.0),
               child: Text(
-                  errorText ?? 'An unknown error occured. Please try again.'),
+                  errorText ?? 'An unknown error occurred. Please try again.'),
             ),
           ],
         ),
@@ -220,16 +220,16 @@ class _ItemFileImportState extends State<ItemFileImport> {
                                   accessory.colorComponents.toString()),
                               _buildProperty('Icon', accessory.icon),
                               _buildProperty(
-                                  'privateKey',
+                                  'Private Key',
                                   accessory.privateKey.replaceRange(
                                     4,
                                     accessory.privateKey.length - 4,
                                     '*' * (accessory.privateKey.length - 8),
                                   )),
                               _buildProperty(
-                                  'isActive', accessory.isActive.toString()),
+                                  'Is Active', accessory.isActive.toString()),
                               _buildProperty(
-                                  'additionalKeys',
+                                  'Additional Keys',
                                   accessory.additionalKeys?.length.toString() ??
                                       '0'),
                             ],

@@ -195,7 +195,7 @@ class _AccessoryDetailState extends State<AccessoryDetail> {
           _archivingEnabled = previous;
         });
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Could not update server-side archiving: $e')),
+          SnackBar(content: Text('Could not update endpoint archiving: $e')),
         );
       }
     } finally {
@@ -413,7 +413,7 @@ class _AccessoryDetailState extends State<AccessoryDetail> {
               ),
               SwitchListTile(
                 value: _archivingEnabled,
-                title: const Text('Archive location history on server'),
+                title: const Text('Archive location history on endpoint'),
                 subtitle:
                     _archivingLoading ? const Text('Loading status…') : null,
                 onChanged: (_archivingLoading || _archivingUpdating)

@@ -91,10 +91,10 @@ class HistoryArchiveService {
 
   static void _checkStatus(int statusCode) {
     if (statusCode == 401) {
-      throw Exception("Authentication failure. User/password wrong");
+      throw Exception("Authentication failure. Username or password is incorrect.");
     }
     if (statusCode != 200) {
-      throw Exception("History archiving request failed with statusCode:$statusCode");
+      throw Exception("History archiving request failed with status code $statusCode");
     }
   }
 

@@ -100,7 +100,7 @@ class _PreferencesPageState extends State<PreferencesPage> {
   Widget getLocationTile() {
     return SwitchSettingsTile(
       settingKey: locationAccessWantedKey,
-      title: 'Show this devices location',
+      title: "Show this device's location",
       activeColor: Theme.of(context).colorScheme.onPrimary,
       onChange: (showLocation) {
         var locationModel = Provider.of<LocationModel>(context, listen: false);
@@ -118,7 +118,7 @@ class _PreferencesPageState extends State<PreferencesPage> {
       title: 'Number of days to fetch location',
       settingKey: numberOfDaysToFetch,
       values: <int, String>{
-        0: "latest location only",
+        0: "Latest location only",
         1: "1",
         2: "2",
         3: "3",
@@ -165,13 +165,13 @@ class _PreferencesPageState extends State<PreferencesPage> {
     return TextInputSettingsTile(
       initialValue: 'http://localhost:6176',
       settingKey: endpointUrl,
-      title: 'Url to macless haystack endpoint',
+      title: 'URL to Macless Haystack endpoint',
       validator: (String? url) {
         if (url != null &&
             url.startsWith(RegExp('http[s]?://', caseSensitive: false))) {
           return null;
         }
-        return "Invalid Url";
+        return "Invalid URL";
       },
     );
   }
@@ -338,7 +338,7 @@ class _PreferencesPageState extends State<PreferencesPage> {
     var accessories = Provider.of<AccessoryRegistry>(context, listen: false).accessories;
     if (accessories.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No devices to archive')),
+        const SnackBar(content: Text('No accessories to archive')),
       );
       return;
     }
@@ -366,7 +366,7 @@ class _PreferencesPageState extends State<PreferencesPage> {
           _archivingAllEnabled = previous;
         });
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Could not update server-side archiving: $e')),
+          SnackBar(content: Text('Could not update endpoint archiving: $e')),
         );
       }
     }
@@ -375,7 +375,7 @@ class _PreferencesPageState extends State<PreferencesPage> {
   /// Applies the entered poll interval/retention to every device that is
   /// currently archived on the server. This only updates those settings -
   /// it never enables archiving for a device that's currently off, and
-  /// never touches the "Archive all devices on server" switch.
+  /// never touches the "Archive all accessories on endpoint" switch.
   Future<void> _applyDefaultsToAll() async {
     if (_archiveDefaultsFormKey.currentState?.validate() != true) {
       return;
@@ -383,7 +383,7 @@ class _PreferencesPageState extends State<PreferencesPage> {
     var accessories = Provider.of<AccessoryRegistry>(context, listen: false).accessories;
     if (accessories.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No devices to update')),
+        const SnackBar(content: Text('No accessories to update')),
       );
       return;
     }
@@ -420,7 +420,7 @@ class _PreferencesPageState extends State<PreferencesPage> {
       if (devices.isEmpty) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('No devices are currently archived on the server')),
+            const SnackBar(content: Text('No accessories are currently archived on the endpoint')),
           );
         }
         return;
@@ -429,7 +429,7 @@ class _PreferencesPageState extends State<PreferencesPage> {
       await HistoryArchiveService.setDevicesArchiving(url, user, pass, devices);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Archive settings applied to all archived devices')),
+          const SnackBar(content: Text('Archive settings applied to all archived accessories')),
         );
       }
     } catch (e) {
@@ -452,10 +452,10 @@ class _PreferencesPageState extends State<PreferencesPage> {
             const Padding(
               padding: EdgeInsets.only(top: 8),
               child: Text(
-                'Poll interval and retention for devices already archived on '
-                "the server. Leave a field blank to keep each device's "
+                'Poll interval and retention for accessories already archived on '
+                "the endpoint. Leave a field blank to keep each accessory's "
                 'existing value. Tap Apply to push these to every currently '
-                'archived device - devices not currently archived are not '
+                'archived accessory - accessories not currently archived are not '
                 'affected or turned on.',
                 style: TextStyle(fontSize: 12),
               ),
@@ -478,7 +478,7 @@ class _PreferencesPageState extends State<PreferencesPage> {
               alignment: Alignment.centerRight,
               child: TextButton(
                 onPressed: _applyDefaultsToAll,
-                child: const Text('Apply to archived devices'),
+                child: const Text('Apply to archived accessories'),
               ),
             ),
           ],
@@ -490,7 +490,7 @@ class _PreferencesPageState extends State<PreferencesPage> {
   Widget getArchiveAllTile() {
     return SwitchListTile(
       value: _archivingAllEnabled,
-      title: const Text('Archive all devices on server'),
+      title: const Text('Archive all accessories on endpoint'),
       subtitle: _archivingLoading ? const Text('Loading status…') : null,
       onChanged: _archivingLoading ? null : _setArchivingAll,
     );
