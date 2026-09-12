@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:logger/logger.dart';
 import 'package:macless_haystack/accessory/accessory_model.dart';
+import 'package:macless_haystack/accessory/secure_storage_upgrade.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:macless_haystack/findMy/find_my_controller.dart';
 import 'package:macless_haystack/findMy/models.dart';
@@ -18,6 +19,11 @@ class AccessoryRegistry extends ChangeNotifier {
   List<Accessory> _accessories = [];
   bool loading = false;
   bool initialLoadFinished = false;
+
+  /// Set once [checkStorageUpgradeStatus] has run. A non-null
+  /// [secureStorageUpgradeWarning] means keys were lost to the
+  /// flutter_secure_storage v11 cipher/backend removals.
+  SecureStorageUpgradeStatus? storageUpgradeStatus;
 
   var logger = Logger(
     printer: PrettyPrinter(methodCount: 0),
@@ -65,6 +71,21 @@ class AccessoryRegistry extends ChangeNotifier {
 
   set setStorage(FlutterSecureStorage s) {
     _storage = s;
+  }
+
+  /// Checks whether the flutter_secure_storage v11 upgrade left any stored
+  /// keys unreadable and logs a warning when it did. Run once at startup,
+  /// separately from [loadAccessories], since for this app a lost private
+  /// key means the accessory becomes permanently untrackable.
+  Future<SecureStorageUpgradeStatus> checkStorageUpgradeStatus() async {
+    final status = await _storage.checkUpgradeStatus();
+    storageUpgradeStatus = status;
+    final warning = secureStorageUpgradeWarning(status);
+    if (warning != null) {
+      logger.w(warning);
+    }
+    notifyListeners();
+    return status;
   }
 
   Future<void> loadHistory() async {
