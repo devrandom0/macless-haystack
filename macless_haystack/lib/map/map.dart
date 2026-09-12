@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
+import 'package:macless_haystack/accessory/accessory_actions.dart';
 import 'package:macless_haystack/accessory/accessory_icon.dart';
 import 'package:macless_haystack/accessory/accessory_model.dart';
 import 'package:macless_haystack/accessory/accessory_registry.dart';
 import 'package:macless_haystack/location/location_model.dart';
+import 'package:macless_haystack/map/accessory_popup.dart';
 import 'package:provider/provider.dart';
 
 /// Whether the map should auto-fit its camera to [accessories]' current
@@ -18,6 +20,26 @@ bool shouldFitToAccessoryLocations(
   }
   return accessories
       .any((accessory) => accessory.isActive && accessory.lastLocation != null);
+}
+
+/// The accessory with id [selectedId], restricted to one that is still
+/// active with a known location. The registry streams updates and hands out
+/// new/cloned instances, so holding an id (not the accessory itself) and
+/// resolving it fresh on every build keeps the popup following live
+/// location updates, and makes it disappear on its own once the accessory
+/// is deactivated or its location is cleared, instead of lingering stale.
+Accessory? selectedAccessory(List<Accessory> accessories, String? selectedId) {
+  if (selectedId == null) {
+    return null;
+  }
+  for (var accessory in accessories) {
+    if (accessory.id == selectedId) {
+      return accessory.isActive && accessory.lastLocation != null
+          ? accessory
+          : null;
+    }
+  }
+  return null;
 }
 
 class AccessoryMap extends StatefulWidget {
@@ -40,6 +62,7 @@ class _AccessoryMapState extends State<AccessoryMap> {
   void Function()? cancelLocationUpdates;
   void Function()? cancelAccessoryUpdates;
   bool _hasFittedToAccessories = false;
+  String? _selectedAccessoryId;
 
   @override
   void initState() {
@@ -113,6 +136,18 @@ class _AccessoryMapState extends State<AccessoryMap> {
         _hasFittedToAccessories = true;
         fitToContent(accessories, locationModel.here);
       }
+      var selected = selectedAccessory(accessories, _selectedAccessoryId);
+      if (_selectedAccessoryId != null && selected == null) {
+        // The accessory was deactivated or lost its location, so its id
+        // must be cleared too - otherwise the popup would silently
+        // reappear if that same accessory becomes selectable again later.
+        // setState can't run mid-build, so defer it to after this frame.
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            setState(() => _selectedAccessoryId = null);
+          }
+        });
+      }
 
       return FlutterMap(
         mapController: _mapController,
@@ -130,7 +165,12 @@ class _AccessoryMapState extends State<AccessoryMap> {
                     InteractiveFlag.scrollWheelZoom |
                     InteractiveFlag.flingAnimation |
                     InteractiveFlag.pinchMove |
-                    InteractiveFlag.pinchZoom)),
+                    InteractiveFlag.pinchZoom),
+            onTap: (_, _) {
+              if (_selectedAccessoryId != null) {
+                setState(() => _selectedAccessoryId = null);
+              }
+            }),
         children: [
           TileLayer(
             tileProvider: NetworkTileProvider(),
@@ -177,8 +217,32 @@ class _AccessoryMapState extends State<AccessoryMap> {
                         width: 50,
                         height: 50,
                         point: accessory.lastLocation!,
-                        child: AccessoryIcon(
-                            icon: accessory.icon, color: accessory.color),
+                        child: Semantics(
+                          button: true,
+                          label: accessory.name,
+                          child: GestureDetector(
+                            // opaque so the marker's transparent surround
+                            // (mostly empty space around the icon) is still
+                            // tappable, and so the tap doesn't also fall
+                            // through to MapOptions.onTap and dismiss the
+                            // popup it just opened.
+                            behavior: HitTestBehavior.opaque,
+                            onTap: () {
+                              var isSelecting =
+                                  _selectedAccessoryId != accessory.id;
+                              setState(() {
+                                _selectedAccessoryId =
+                                    isSelecting ? accessory.id : null;
+                              });
+                              if (isSelecting) {
+                                _mapController.move(accessory.lastLocation!,
+                                    _mapController.camera.zoom);
+                              }
+                            },
+                            child: AccessoryIcon(
+                                icon: accessory.icon, color: accessory.color),
+                          ),
+                        ),
                       )),
             ],
           ),
@@ -210,6 +274,15 @@ class _AccessoryMapState extends State<AccessoryMap> {
                     ),
                   ],
                 ),
+              ),
+          ]),
+          MarkerLayer(markers: [
+            if (selected != null)
+              AccessoryPopup(
+                accessory: selected,
+                onNavigate: () => navigateToAccessory(selected),
+                onHistory: () => openAccessoryHistory(context, selected),
+                onShare: () => shareAccessoryLocation(selected),
               ),
           ]),
         ],

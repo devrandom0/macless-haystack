@@ -3,17 +3,14 @@ import 'dart:ui' show lerpDouble;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_slidable/flutter_slidable.dart';
-import 'package:maps_launcher/maps_launcher.dart';
 import 'package:provider/provider.dart';
 import 'package:latlong2/latlong.dart';
+import 'package:macless_haystack/accessory/accessory_actions.dart';
 import 'package:macless_haystack/accessory/accessory_list_item.dart';
 import 'package:macless_haystack/accessory/accessory_list_item_placeholder.dart';
 import 'package:macless_haystack/accessory/accessory_registry.dart';
 import 'package:macless_haystack/accessory/no_accessories.dart';
-import 'package:macless_haystack/accessory/share_location.dart';
-import 'package:macless_haystack/history/accessory_history.dart';
 import 'package:macless_haystack/location/location_model.dart';
-import 'package:share_plus/share_plus.dart';
 
 import '../callbacks.dart';
 import 'accessory_model.dart';
@@ -291,13 +288,7 @@ class _AccessoryListState extends State<AccessoryList> {
         children: [
           if (accessory.isActive)
             SlidableAction(
-              onPressed: (context) async {
-                if (accessory.lastLocation != null && accessory.isActive) {
-                  var loc = accessory.lastLocation!;
-                  await MapsLauncher.launchCoordinates(
-                      loc.latitude, loc.longitude, accessory.name);
-                }
-              },
+              onPressed: (context) => navigateToAccessory(accessory),
               backgroundColor:
                   Theme.of(context).colorScheme.surfaceContainerHighest,
               foregroundColor: Theme.of(context).colorScheme.primary,
@@ -306,28 +297,14 @@ class _AccessoryListState extends State<AccessoryList> {
             ),
           if (accessory.isActive)
             SlidableAction(
-              onPressed: (context) {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                      builder: (context) =>
-                          AccessoryHistory(accessory: accessory)),
-                );
-              },
+              onPressed: (context) => openAccessoryHistory(context, accessory),
               backgroundColor: Theme.of(context).colorScheme.primary,
               icon: Icons.history,
               label: 'History',
             ),
           if (accessory.isActive)
             SlidableAction(
-              onPressed: (context) {
-                if (accessory.lastLocation != null && accessory.isActive) {
-                  var loc = accessory.lastLocation!;
-                  SharePlus.instance.share(ShareParams(
-                      text: buildLocationShareLink(
-                          loc.latitude, loc.longitude)));
-                }
-              },
+              onPressed: (context) => shareAccessoryLocation(accessory),
               backgroundColor:
                   Theme.of(context).colorScheme.surfaceContainerHighest,
               foregroundColor: Theme.of(context).colorScheme.primary,
