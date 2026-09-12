@@ -99,12 +99,18 @@ class _AccessoryListState extends State<AccessoryList> {
         var inactive = inactiveAccessories(accessories);
 
         // Use pull to refresh method
+        //
+        // A single CustomScrollView with one SliverReorderableList per group
+        // (rather than nesting two independently-scrolling
+        // ReorderableListViews) so drag-to-edge auto-scroll works and the
+        // list stays lazily built - both share this one Scrollable.
         return SlidableAutoCloseBehavior(
           child: Scrollbar(
-            child: ListView(
-              children: [
+            child: CustomScrollView(
+              slivers: [
                 if (active.isNotEmpty)
-                  _buildGroup(
+                  ..._buildGroupSlivers(
+                    keyPrefix: 'active',
                     title: 'Active',
                     group: active,
                     groupIsActive: true,
@@ -112,7 +118,8 @@ class _AccessoryListState extends State<AccessoryList> {
                     locationModel: locationModel,
                   ),
                 if (inactive.isNotEmpty)
-                  _buildGroup(
+                  ..._buildGroupSlivers(
+                    keyPrefix: 'inactive',
                     title: 'Inactive',
                     group: inactive,
                     groupIsActive: false,
@@ -127,46 +134,44 @@ class _AccessoryListState extends State<AccessoryList> {
     );
   }
 
-  Widget _buildGroup({
+  List<Widget> _buildGroupSlivers({
+    required String keyPrefix,
     required String title,
     required List<Accessory> group,
     required bool groupIsActive,
     required List<Accessory> allAccessories,
     required LocationModel locationModel,
   }) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
+    return [
+      SliverToBoxAdapter(
+        key: ValueKey('$keyPrefix-header'),
+        child: Padding(
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
           child: Text(title, style: Theme.of(context).textTheme.labelLarge),
         ),
-        ReorderableListView(
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          onReorder: (int oldIndex, int newIndex) {
-            List<Accessory> copiedGroup = List.from(group);
-            final accessory = copiedGroup.removeAt(oldIndex);
-            if (copiedGroup.length < newIndex) {
-              copiedGroup.add(accessory);
-            } else {
-              copiedGroup.insert(newIndex, accessory);
-            }
-            setState(() {
-              widget.saveOrderUpdatesCallback(mergedOrderAfterGroupReorder(
-                allAccessories: allAccessories,
-                reorderedGroup: copiedGroup,
-                reorderedGroupIsActive: groupIsActive,
-              ));
-            });
-          },
-          children: group
-              .map((accessory) =>
-                  _buildAccessoryTile(accessory, locationModel))
-              .toList(),
-        ),
-      ],
-    );
+      ),
+      SliverReorderableList(
+        key: ValueKey('$keyPrefix-list'),
+        itemCount: group.length,
+        itemBuilder: (context, index) {
+          final accessory = group[index];
+          return ReorderableDelayedDragStartListener(
+            key: ValueKey(accessory),
+            index: index,
+            child: _buildAccessoryTile(accessory, locationModel),
+          );
+        },
+        onReorderItem: (int oldIndex, int newIndex) {
+          var copiedGroup = List<Accessory>.from(group);
+          copiedGroup.insert(newIndex, copiedGroup.removeAt(oldIndex));
+          widget.saveOrderUpdatesCallback(mergedOrderAfterGroupReorder(
+            allAccessories: allAccessories,
+            reorderedGroup: copiedGroup,
+            reorderedGroupIsActive: groupIsActive,
+          ));
+        },
+      ),
+    ];
   }
 
   Widget _buildAccessoryTile(Accessory accessory, LocationModel locationModel) {
@@ -179,7 +184,7 @@ class _AccessoryListState extends State<AccessoryList> {
       trailing = Text('$km km');
     }
     // Get human readable location
-    return Slidable(
+    Widget tile = Slidable(
       key: ValueKey(accessory),
       startActionPane: !accessory.isActive
           ? null
@@ -264,5 +269,12 @@ class _AccessoryListState extends State<AccessoryList> {
         );
       }),
     );
+
+    // The Active/Inactive grouping conveys this visually, but a screen
+    // reader has no other way to know - the greyed-out name is color-only.
+    if (!accessory.isActive) {
+      tile = Semantics(label: 'Inactive', child: tile);
+    }
+    return tile;
   }
 }

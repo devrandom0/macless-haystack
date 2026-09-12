@@ -258,6 +258,35 @@ void main() {
     expect(locationHistory.elementAt(3).start, DateTime(2024, 1, 2, 8, 0, 0));
     expect(locationHistory.elementAt(3).end, DateTime(2024, 1, 2, 8, 0, 0));
   });
+
+  test(
+      'saveOrderUpdates does not throw when an accessory is missing from '
+      'the new order', () {
+    var a = Accessory(
+        id: 'a',
+        name: 'a',
+        hashedPublicKey: 'hash-a',
+        datePublished: null,
+        hashesWithTS: {},
+        locationHistory: [],
+        lastBatteryStatus: null,
+        additionalKeys: List.empty());
+    var b = Accessory(
+        id: 'b',
+        name: 'b',
+        hashedPublicKey: 'hash-b',
+        datePublished: null,
+        hashesWithTS: {},
+        locationHistory: [],
+        lastBatteryStatus: null,
+        additionalKeys: List.empty());
+    registry.addAccessory(a);
+    registry.addAccessory(b);
+
+    // b is missing from the new order - e.g. it was added by a concurrent
+    // registry change while a reorder was in flight.
+    expect(() => registry.saveOrderUpdates([a]), returnsNormally);
+  });
 }
 
 ///
