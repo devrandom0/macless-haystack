@@ -36,7 +36,6 @@ class _DashboardState extends State<Dashboard> {
   /// via IndexedStack, see its field doc.
   late final List<Map<String, dynamic>> _tabs = [
     {
-      'title': 'My Accessories',
       'icon': Icons.place,
       'label': 'Map',
       'actionButton': (ctx) => RefreshAction(
@@ -46,7 +45,6 @@ class _DashboardState extends State<Dashboard> {
           ),
     },
     {
-      'title': 'My Accessories',
       'icon': Icons.style,
       'label': 'Accessories',
       'actionButton': (ctx) => const NewKeyAction(),

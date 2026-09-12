@@ -97,6 +97,10 @@ class _AccessoryListState extends State<AccessoryList> {
             }
             return Scrollbar(
               child: ListView(
+                // Both tabs stay mounted via IndexedStack, so this and the
+                // Accessories tab's list would otherwise fight over the
+                // shared PrimaryScrollController.
+                primary: false,
                 children: placeholderList,
               ),
             );
@@ -124,6 +128,10 @@ class _AccessoryListState extends State<AccessoryList> {
         return SlidableAutoCloseBehavior(
           child: Scrollbar(
             child: CustomScrollView(
+              // Both tabs stay mounted via IndexedStack, so this and the
+              // Accessories tab's list would otherwise fight over the
+              // shared PrimaryScrollController.
+              primary: false,
               slivers: [
                 if (active.isNotEmpty)
                   ..._buildGroupSlivers(

@@ -48,7 +48,7 @@ void main() {
       expect(groupHeaderLabel('Active', 3), 'Active (3)');
     });
 
-    test('shows zero rather than omitting the group', () {
+    test('does not special-case a zero count', () {
       expect(groupHeaderLabel('Inactive', 0), 'Inactive (0)');
     });
   });
