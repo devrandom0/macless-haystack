@@ -6,6 +6,7 @@ import 'package:geocoding/geocoding.dart' as geocode;
 import 'package:latlong2/latlong.dart';
 import 'package:location/location.dart';
 import 'package:logger/logger.dart';
+import 'package:macless_haystack/location/location_permission.dart';
 
 class LocationModel extends ChangeNotifier {
   LatLng? here;
@@ -38,7 +39,7 @@ class LocationModel extends ChangeNotifier {
     permissionGranted = await location.requestPermission();
     if (permissionGranted == PermissionStatus.denied) {
       permissionGranted = await location.requestPermission();
-      if (permissionGranted != PermissionStatus.granted) {
+      if (!isLocationPermissionGranted(permissionGranted)) {
         return false;
       }
     }
@@ -77,11 +78,14 @@ class LocationModel extends ChangeNotifier {
         'Location here: ${locationData.latitude}, ${locationData.longitude}');
     here = LatLng(locationData.latitude, locationData.longitude);
     initialLocationSet = true;
+    // Notify immediately so the map moves without waiting on the (slower,
+    // best-effort) address lookup below, then notify again once that
+    // resolves so the address label catches up.
+    notifyListeners();
     getAddress(here!).then((value) {
       herePlace = value;
       notifyListeners();
     });
-    notifyListeners();
   }
 
   /// Cancels the listening for location updates.
