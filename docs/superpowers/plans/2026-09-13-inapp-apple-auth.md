@@ -115,16 +115,11 @@ def _srp_user_mock(session_key_matches=True, challenge_ok=True):
 def test_gsa_authenticate_returns_spd_when_no_second_factor_required():
     init_resp = {"sp": "s2k", "s": b"salt", "i": 1024, "B": b"B", "c": "c-token"}
     complete_resp = {"M2": b"m2", "spd": b"encrypted-spd"}
-    decrypted_plist = (
-        b"<?xml version='1.0' encoding='UTF-8'?>"
-        b"<!DOCTYPE plist PUBLIC '-//Apple//DTD PLIST 1.0//EN' "
-        b"'http://www.apple.com/DTDs/PropertyList-1.0.dtd'>"
-        b"<plist><dict><key>adsid</key><string>adsid-1</string></dict></plist>"
-    )
 
     with patch.object(gsa.srp, "User") as mock_user_cls, \
             patch.object(gsa, "gsa_authenticated_request", side_effect=[init_resp, complete_resp]), \
-            patch.object(gsa, "decrypt_cbc", return_value=decrypted_plist):
+            patch.object(gsa, "decrypt_cbc", return_value=b"decrypted"), \
+            patch.object(gsa.plist, "loads", return_value={"adsid": "adsid-1"}):
         mock_user = _srp_user_mock()
         mock_user.start_authentication.return_value = (None, "a-value")
         mock_user_cls.return_value = mock_user
@@ -140,19 +135,11 @@ def test_gsa_authenticate_returns_needs_second_factor_for_trusted_device():
         "M2": b"m2", "spd": b"encrypted-spd",
         "Status": {"au": "trustedDeviceSecondaryAuth"},
     }
-    decrypted_plist = (
-        b"<?xml version='1.0' encoding='UTF-8'?>"
-        b"<!DOCTYPE plist PUBLIC '-//Apple//DTD PLIST 1.0//EN' "
-        b"'http://www.apple.com/DTDs/PropertyList-1.0.dtd'>"
-        b"<plist><dict>"
-        b"<key>adsid</key><string>adsid-1</string>"
-        b"<key>GsIdmsToken</key><string>token-1</string>"
-        b"</dict></plist>"
-    )
 
     with patch.object(gsa.srp, "User") as mock_user_cls, \
             patch.object(gsa, "gsa_authenticated_request", side_effect=[init_resp, complete_resp]), \
-            patch.object(gsa, "decrypt_cbc", return_value=decrypted_plist):
+            patch.object(gsa, "decrypt_cbc", return_value=b"decrypted"), \
+            patch.object(gsa.plist, "loads", return_value={"adsid": "adsid-1", "GsIdmsToken": "token-1"}):
         mock_user = _srp_user_mock()
         mock_user.start_authentication.return_value = (None, "a-value")
         mock_user_cls.return_value = mock_user
@@ -1940,12 +1927,20 @@ class AppleAuthService {
       };
       var response =
           await effectiveClient.post(Uri.parse('$url$path'), headers: headers, body: jsonEncode(body));
-      var decoded =
-          response.body.isEmpty ? <String, dynamic>{} : jsonDecode(response.body) as Map<String, dynamic>;
       if (response.statusCode != 200) {
-        throw AppleAuthException((decoded['error'] as String?) ?? 'request_failed', decoded['message']);
+        String? errorCode;
+        String? message;
+        try {
+          var decoded = jsonDecode(response.body) as Map<String, dynamic>;
+          errorCode = decoded['error'] as String?;
+          message = decoded['message'] as String?;
+        } catch (_) {
+          // Non-JSON error body (e.g. a proxy's own error page) - fall
+          // back to a generic code instead of crashing on the parse.
+        }
+        throw AppleAuthException(errorCode ?? 'request_failed', message);
       }
-      return decoded;
+      return response.body.isEmpty ? <String, dynamic>{} : jsonDecode(response.body) as Map<String, dynamic>;
     } finally {
       if (client == null) {
         effectiveClient.close();
