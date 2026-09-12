@@ -10,8 +10,10 @@ import 'package:macless_haystack/accessory/accessory_list_item.dart';
 import 'package:macless_haystack/accessory/accessory_list_item_placeholder.dart';
 import 'package:macless_haystack/accessory/accessory_registry.dart';
 import 'package:macless_haystack/accessory/no_accessories.dart';
+import 'package:macless_haystack/accessory/share_location.dart';
 import 'package:macless_haystack/history/accessory_history.dart';
 import 'package:macless_haystack/location/location_model.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../callbacks.dart';
 import 'accessory_model.dart';
@@ -246,6 +248,19 @@ class _AccessoryListState extends State<AccessoryList> {
               backgroundColor: Theme.of(context).primaryColor,
               icon: Icons.history,
               label: 'History',
+            ),
+          if (accessory.isActive)
+            SlidableAction(
+              onPressed: (context) {
+                if (accessory.lastLocation != null && accessory.isActive) {
+                  var loc = accessory.lastLocation!;
+                  Share.share(buildLocationShareLink(
+                      loc.latitude, loc.longitude));
+                }
+              },
+              foregroundColor: Theme.of(context).primaryColor,
+              icon: Icons.share,
+              label: 'Share',
             ),
           if (!accessory.isActive)
             SlidableAction(
