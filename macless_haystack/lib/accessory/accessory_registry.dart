@@ -331,5 +331,6 @@ class AccessoryRegistry extends ChangeNotifier {
     _accessories.sort((a, b) => (positionMap[a] ?? newOrder.length)
         .compareTo(positionMap[b] ?? newOrder.length));
     _storeAccessories();
+    notifyListeners();
   }
 }

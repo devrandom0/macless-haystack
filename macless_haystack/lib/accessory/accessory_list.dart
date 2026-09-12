@@ -1,4 +1,5 @@
 import 'dart:math';
+import 'dart:ui' show lerpDouble;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_slidable/flutter_slidable.dart';
@@ -169,6 +170,20 @@ class _AccessoryListState extends State<AccessoryList> {
             reorderedGroup: copiedGroup,
             reorderedGroupIsActive: groupIsActive,
           ));
+        },
+        // Unlike ReorderableListView, SliverReorderableList has no default
+        // proxyDecorator - without one, the lifted item has no Material
+        // ancestor once reparented into the overlay during a drag.
+        proxyDecorator: (Widget child, int index, Animation<double> animation) {
+          return AnimatedBuilder(
+            animation: animation,
+            builder: (context, child) {
+              final elevation =
+                  lerpDouble(0, 6, Curves.easeInOut.transform(animation.value))!;
+              return Material(elevation: elevation, child: child);
+            },
+            child: child,
+          );
         },
       ),
     ];

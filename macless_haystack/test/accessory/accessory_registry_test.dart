@@ -287,6 +287,26 @@ void main() {
     // registry change while a reorder was in flight.
     expect(() => registry.saveOrderUpdates([a]), returnsNormally);
   });
+
+  test('saveOrderUpdates notifies listeners', () {
+    var a = Accessory(
+        id: 'c',
+        name: 'c',
+        hashedPublicKey: 'hash-c',
+        datePublished: null,
+        hashesWithTS: {},
+        locationHistory: [],
+        lastBatteryStatus: null,
+        additionalKeys: List.empty());
+    registry.addAccessory(a);
+
+    var notified = false;
+    registry.addListener(() => notified = true);
+
+    registry.saveOrderUpdates([a]);
+
+    expect(notified, isTrue);
+  });
 }
 
 ///
