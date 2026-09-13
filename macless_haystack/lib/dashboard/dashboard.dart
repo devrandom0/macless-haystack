@@ -115,16 +115,26 @@ class _DashboardState extends State<Dashboard> {
         );
       }
     } catch (e, stacktrace) {
+      // The exception detail is logged, not shown - a raw exception string
+      // ("SocketException: ...", "FormatException: ...") isn't something a
+      // user can act on, and this same message otherwise fires for a wrong
+      // URL, a wrong password, and a dead network alike.
       logger.e('Error on fetching', error: e, stackTrace: stacktrace);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             backgroundColor: Theme.of(context).colorScheme.error,
             content: Text(
-              'Could not find location reports. Try again later. Error: ${e.toString()}',
+              'Could not reach the endpoint. Check the URL, username, and '
+              'password in Settings, then try again.',
               style: TextStyle(
                 color: Theme.of(context).colorScheme.onError,
               ),
+            ),
+            action: SnackBarAction(
+              label: 'Retry',
+              textColor: Theme.of(context).colorScheme.onError,
+              onPressed: () => loadLocationUpdates(accessory),
             ),
           ),
         );
@@ -146,9 +156,10 @@ class _DashboardState extends State<Dashboard> {
   Widget build(BuildContext context) {
     return Scaffold(
         appBar: AppBar(
-          title: const Text('My Accessories'),
+          title: Text(_tabs[_selectedIndex]['label'] as String),
           actions: <Widget>[
             IconButton(
+              tooltip: 'Settings',
               onPressed: () {
                 Navigator.push(
                   context,
@@ -164,21 +175,22 @@ class _DashboardState extends State<Dashboard> {
           index: _selectedIndex,
           children: _tabBodies,
         ),
-        bottomNavigationBar: BottomNavigationBar(
-          items: _tabs
-              .map((tab) => BottomNavigationBarItem(
+        bottomNavigationBar: NavigationBar(
+          destinations: _tabs
+              .map((tab) => NavigationDestination(
                     icon: Icon(tab['icon']),
                     label: tab['label'],
                   ))
               .toList(),
-          currentIndex: _selectedIndex,
-          // secondaryHeaderColor's blue[50]/grey[700] was nearly invisible against the nav bar.
-          unselectedItemColor: Theme.of(context).colorScheme.outline,
-          onTap: _onItemTapped,
+          selectedIndex: _selectedIndex,
+          onDestinationSelected: _onItemTapped,
         ),
         floatingActionButton:
             _tabs[_selectedIndex]['actionButton']?.call(context),
-        floatingActionButtonLocation: FloatingActionButtonLocation.endDocked);
+        // endDocked is meant to notch into a BottomAppBar; against a plain
+        // bottom nav bar it instead parks the FAB half-sunk on top of the
+        // second tab's own hit area.
+        floatingActionButtonLocation: FloatingActionButtonLocation.endFloat);
   }
 
   Future<void> saveAccessories(List<Accessory> accessories) async {
