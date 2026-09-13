@@ -62,6 +62,9 @@ class _AccessoryMapState extends State<AccessoryMap> {
   void Function()? cancelLocationUpdates;
   void Function()? cancelAccessoryUpdates;
   bool _hasFittedToAccessories = false;
+  // The controller can't move/fit the camera until FlutterMap has actually
+  // mounted - onMapReady is the real signal for that, not a guessed delay.
+  bool _mapReady = false;
   String? _selectedAccessoryId;
 
   @override
@@ -99,9 +102,14 @@ class _AccessoryMapState extends State<AccessoryMap> {
     cancelAccessoryUpdates?.call();
   }
 
-  void fitToContent(List<Accessory> accessories, LatLng? hereLocation) async {
-    // Delay to prevent race conditions
-    await Future.delayed(const Duration(milliseconds: 500));
+  void fitToContent(List<Accessory> accessories, LatLng? hereLocation) {
+    // The camera can't move before FlutterMap has actually mounted and
+    // attached to this controller. onMapReady re-invokes this once that
+    // happens, so an early call here (e.g. from initState) can just skip
+    // itself rather than guess how long mounting takes.
+    if (!_mapReady) {
+      return;
+    }
 
     List<LatLng> points = [];
     if (hereLocation != null) {
@@ -166,6 +174,10 @@ class _AccessoryMapState extends State<AccessoryMap> {
                     InteractiveFlag.flingAnimation |
                     InteractiveFlag.pinchMove |
                     InteractiveFlag.pinchZoom),
+            onMapReady: () {
+              _mapReady = true;
+              fitToContent(accessoryRegistry.accessories, locationModel.here);
+            },
             onTap: (_, _) {
               if (_selectedAccessoryId != null) {
                 setState(() => _selectedAccessoryId = null);
@@ -174,36 +186,15 @@ class _AccessoryMapState extends State<AccessoryMap> {
         children: [
           TileLayer(
             tileProvider: NetworkTileProvider(),
-            tileBuilder: (context, child, tile) {
-              var isDark = (Theme.of(context).brightness == Brightness.dark);
-              return isDark
-                  ? ColorFiltered(
-                      colorFilter: const ColorFilter.matrix([
-                        -1,
-                        0,
-                        0,
-                        0,
-                        255,
-                        0,
-                        -1,
-                        0,
-                        0,
-                        255,
-                        0,
-                        0,
-                        -1,
-                        0,
-                        255,
-                        0,
-                        0,
-                        0,
-                        1,
-                        0,
-                      ]),
-                      child: child,
-                    )
-                  : child;
-            },
+            // A plain RGB invert is a photographic negative: it flips
+            // hue as well as luminance, so amber roads turn blue and
+            // green parks turn magenta. flutter_map's own
+            // darkModeTileBuilder composes the invert with a 180-degree
+            // hue rotation, which restores the original hues at the
+            // flipped luminance instead.
+            tileBuilder: Theme.of(context).brightness == Brightness.dark
+                ? darkModeTileBuilder
+                : null,
             urlTemplate: "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
             userAgentPackageName: 'de.dchristl.headlesshaystack',
           ),
@@ -285,6 +276,12 @@ class _AccessoryMapState extends State<AccessoryMap> {
                 onShare: () => shareAccessoryLocation(selected),
               ),
           ]),
+          RichAttributionWidget(
+            alignment: AttributionAlignment.bottomLeft,
+            attributions: [
+              const TextSourceAttribution('© OpenStreetMap contributors'),
+            ],
+          ),
         ],
       );
     });
