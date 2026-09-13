@@ -73,6 +73,10 @@ the log output should indicate a successful authentication.
 
 The data must, of course, also be entered into the configuration of the frontend.
 
+If more than one person needs their own login, add a `[BasicAuthUsers]` section to config.ini with one
+`username = password` line per person, alongside (or instead of) `endpoint_user`/`endpoint_pass`. Usernames
+are stored lowercase.
+
 #### How can I host my own web-frontend?
 
 You shouldn't do that because there's no reason for it. It's better to use the web frontend

@@ -64,10 +64,19 @@ def getBasicAuthUsers():
     """Additional Basic Auth users beyond the single legacy endpoint_user/
     endpoint_pass pair, as {username: password}. Configured via a
     [BasicAuthUsers] section in config.ini, one `username = password` line
-    per user."""
-    if config.has_section('BasicAuthUsers'):
-        return dict(config.items('BasicAuthUsers'))
-    return {}
+    per user (usernames are stored lowercase by ConfigParser, so use
+    lowercase usernames there).
+
+    config.items(section) would otherwise merge in every [DEFAULT] option
+    (turning e.g. appleid_pass into a working Basic Auth password) and
+    apply % interpolation (a literal % in a password raises
+    InterpolationSyntaxError) - raw=True plus filtering out the defaults
+    avoids both.
+    """
+    if not config.has_section('BasicAuthUsers'):
+        return {}
+    defaults = config.defaults()
+    return {k: v for k, v in config.items('BasicAuthUsers', raw=True) if k not in defaults}
 
 
 def getHistoryDevicesFile():

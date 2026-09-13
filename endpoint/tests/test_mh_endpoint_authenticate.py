@@ -88,14 +88,51 @@ def test_legacy_pair_and_multiple_users_both_work_together(server, monkeypatch):
     assert _get(server, '/auth/apple/status', _basic_auth_header("alice", "wrong")) == 401
 
 
-def test_get_basic_auth_users_returns_empty_dict_when_section_missing(tmp_path, monkeypatch):
-    monkeypatch.setattr(mh_config.config, "has_section", lambda name: False)
+def test_empty_legacy_pair_with_users_rejects_empty_credentials(server, monkeypatch):
+    # This is the shipped config.ini's default shape: endpoint_user/pass
+    # present but blank, once someone has also configured [BasicAuthUsers].
+    # Without the has_legacy_pair guard, Basic base64("":"") would match
+    # username == "" and password == "" and bypass auth entirely.
+    monkeypatch.setattr(mh_config, "getEndpointUser", lambda: "")
+    monkeypatch.setattr(mh_config, "getEndpointPass", lambda: "")
+    monkeypatch.setattr(mh_config, "getBasicAuthUsers", lambda: {"alice": "pass-a"})
+
+    assert _get(server, '/auth/apple/status', _basic_auth_header("", "")) == 401
+    assert _get(server, '/auth/apple/status', _basic_auth_header("alice", "pass-a")) == 200
+
+
+def _config_with(ini_text):
+    import configparser
+    c = configparser.ConfigParser()
+    c.read_string(ini_text)
+    return c
+
+
+def test_get_basic_auth_users_returns_empty_dict_when_section_missing(monkeypatch):
+    monkeypatch.setattr(mh_config, "config", _config_with("[Settings]\nendpoint_user = simo\n"))
 
     assert mh_config.getBasicAuthUsers() == {}
 
 
 def test_get_basic_auth_users_returns_dict_of_configured_users(monkeypatch):
-    monkeypatch.setattr(mh_config.config, "has_section", lambda name: name == "BasicAuthUsers")
-    monkeypatch.setattr(mh_config.config, "items", lambda name: [("alice", "pass-a"), ("bob", "pass-b")])
+    monkeypatch.setattr(mh_config, "config", _config_with(
+        "[BasicAuthUsers]\nalice = pass-a\nbob = pass-b\n"))
 
     assert mh_config.getBasicAuthUsers() == {"alice": "pass-a", "bob": "pass-b"}
+
+
+def test_get_basic_auth_users_excludes_default_section_options(monkeypatch):
+    # config.items(section) merges in [DEFAULT] options - appleid_pass here
+    # must never turn into a working Basic Auth password.
+    monkeypatch.setattr(mh_config, "config", _config_with(
+        "[DEFAULT]\nappleid_pass = topsecret\n[BasicAuthUsers]\nalice = pass-a\n"))
+
+    assert mh_config.getBasicAuthUsers() == {"alice": "pass-a"}
+
+
+def test_get_basic_auth_users_does_not_interpolate_percent_in_password(monkeypatch):
+    # Default ConfigParser interpolation would raise InterpolationSyntaxError
+    # on a literal "%" - getBasicAuthUsers must read it raw.
+    monkeypatch.setattr(mh_config, "config", _config_with("[BasicAuthUsers]\nalice = p%ssw0rd\n"))
+
+    assert mh_config.getBasicAuthUsers() == {"alice": "p%ssw0rd"}
