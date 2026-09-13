@@ -93,20 +93,18 @@ class _ItemFileImportState extends State<ItemFileImport> {
 
     var registry = Provider.of<AccessoryRegistry>(context, listen: false);
 
+    List<Future<bool>> imports = [];
     for (var i = 0; i < accessories!.length; i++) {
       var accessoryDTO = accessories![i];
       var shouldImport = selected?[i] ?? false;
 
       if (shouldImport) {
-        _importAccessory(registry, accessoryDTO);
+        imports.add(_importAccessory(registry, accessoryDTO));
       }
     }
 
-    var nrOfImports = selected?.fold<int>(
-            0,
-            (previousValue, element) =>
-                element ? previousValue + 1 : previousValue) ??
-        0;
+    var results = await Future.wait(imports);
+    var nrOfImports = results.where((succeeded) => succeeded).length;
     if (nrOfImports > 0) {
       var snackbar = SnackBar(
         content: Text(
@@ -118,47 +116,56 @@ class _ItemFileImportState extends State<ItemFileImport> {
     }
   }
 
-  /// Import a specific [accessory] by converting the DTO to the internal representation.
-  void _importAccessory(
+  /// Import a specific [accessory] by converting the DTO to the internal
+  /// representation. Returns whether the import succeeded - a bad key in
+  /// one accessory must not silently claim success or take the whole batch
+  /// down with it.
+  Future<bool> _importAccessory(
       AccessoryRegistry registry, AccessoryDTO accessoryDTO) async {
-    Color color = Colors.grey;
-    if (accessoryDTO.colorComponents.length == 4) {
-      var colors = accessoryDTO.colorComponents;
-      int red = (colors[0] * 255).round();
-      int green = (colors[1] * 255).round();
-      int blue = (colors[2] * 255).round();
-      double opacity = colors[3];
-      color = Color.fromRGBO(red, green, blue, opacity);
+    try {
+      Color color = Colors.grey;
+      if (accessoryDTO.colorComponents.length == 4) {
+        var colors = accessoryDTO.colorComponents;
+        int red = (colors[0] * 255).round();
+        int green = (colors[1] * 255).round();
+        int blue = (colors[2] * 255).round();
+        double opacity = colors[3];
+        color = Color.fromRGBO(red, green, blue, opacity);
+      }
+
+      String icon = 'mappin';
+      if (AccessoryIconModel.icons.contains(accessoryDTO.icon)) {
+        icon = accessoryDTO.icon;
+      }
+
+      List<String> additionalPublicKeys = await Stream.fromIterable(
+              accessoryDTO.additionalKeys as List)
+          .asyncMap((addPrivKey) => FindMyController.importKeyPair(addPrivKey))
+          .map((event) => event.hashedPublicKey)
+          .toList();
+
+      var keyPair =
+          await FindMyController.importKeyPair(accessoryDTO.privateKey);
+
+      Accessory newAccessory = Accessory(
+          datePublished: DateTime(1970),
+          hashedPublicKey: keyPair.hashedPublicKey,
+          id: accessoryDTO.id.toString(),
+          name: accessoryDTO.name,
+          color: color,
+          icon: icon,
+          isActive: accessoryDTO.isActive,
+          lastLocation: null,
+          hashesWithTS: {},
+          locationHistory: [],
+          lastBatteryStatus: null,
+          additionalKeys: additionalPublicKeys);
+
+      registry.addAccessory(newAccessory);
+      return true;
+    } catch (_) {
+      return false;
     }
-
-    String icon = 'mappin';
-    if (AccessoryIconModel.icons.contains(accessoryDTO.icon)) {
-      icon = accessoryDTO.icon;
-    }
-
-    List<String> additionalPublicKeys = await Stream.fromIterable(
-            accessoryDTO.additionalKeys as List)
-        .asyncMap((addPrivKey) => FindMyController.importKeyPair(addPrivKey))
-        .map((event) => event.hashedPublicKey)
-        .toList();
-
-    var keyPair = await FindMyController.importKeyPair(accessoryDTO.privateKey);
-
-    Accessory newAccessory = Accessory(
-        datePublished: DateTime(1970),
-        hashedPublicKey: keyPair.hashedPublicKey,
-        id: accessoryDTO.id.toString(),
-        name: accessoryDTO.name,
-        color: color,
-        icon: icon,
-        isActive: accessoryDTO.isActive,
-        lastLocation: null,
-        hashesWithTS: {},
-        locationHistory: [],
-        lastBatteryStatus: null,
-        additionalKeys: additionalPublicKeys);
-
-    registry.addAccessory(newAccessory);
   }
 
   @override
@@ -181,8 +188,13 @@ class _ItemFileImportState extends State<ItemFileImport> {
             Padding(
               padding: const EdgeInsets.only(top: 16.0),
               child: OutlinedButton(
+                // This screen replaced the file-picker sheet in the nav
+                // stack (pushReplacement), so popping lands on the
+                // dashboard, not back at a picker - "Go back" says what
+                // actually happens instead of promising a re-pick this
+                // screen can't do on its own.
                 onPressed: () => Navigator.pop(context),
-                child: const Text('Choose another file'),
+                child: const Text('Go back'),
               ),
             ),
           ],
