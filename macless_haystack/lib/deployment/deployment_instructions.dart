@@ -34,7 +34,7 @@ class _DeploymentInstructionsState extends State<DeploymentInstructions> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('How to Deploy'),
+        title: const Text('How to deploy'),
       ),
       body: SafeArea(
         child: SingleChildScrollView(
