@@ -5,6 +5,17 @@ import 'package:macless_haystack/accessory/accessory_icon_model.dart';
 
 typedef IconChangeListener = void Function(String? newValue);
 
+String describeAccessoryIconName(String iconName) {
+  var stripped = iconName.endsWith('.fill')
+      ? iconName.substring(0, iconName.length - '.fill'.length)
+      : iconName;
+  var spaced = stripped.replaceAll('.', ' ').replaceAll('_', ' ');
+  spaced = spaced.replaceAllMapped(
+      RegExp(r'([a-z0-9])([A-Z])'), (m) => '${m[1]} ${m[2]}');
+  if (spaced.isEmpty) return spaced;
+  return spaced[0].toUpperCase() + spaced.substring(1).toLowerCase();
+}
+
 class AccessoryIconSelector extends StatelessWidget {
   /// The existing icon used previously.
   final String icon;
@@ -43,10 +54,13 @@ class AccessoryIconSelector extends StatelessWidget {
             crossAxisCount: min((constraints.maxWidth / 80).floor(), 8),
             semanticChildCount: AccessoryIconModel.icons.length,
             children: AccessoryIconModel.icons
-              .map((value) => IconButton(
-                icon: Icon(AccessoryIconModel.mapIcon(value)),
-                color: value == currentIcon ? highlighColor : null,
-                onPressed: () { Navigator.pop(context, value); },
+              .map((value) => Tooltip(
+                message: describeAccessoryIconName(value),
+                child: IconButton(
+                  icon: Icon(AccessoryIconModel.mapIcon(value)),
+                  color: value == currentIcon ? highlighColor : null,
+                  onPressed: () { Navigator.pop(context, value); },
+                ),
               )).toList(),
           ),
         ),
