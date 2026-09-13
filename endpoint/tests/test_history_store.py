@@ -42,6 +42,35 @@ def test_record_reports_dedupes_by_hashed_key_and_timestamp():
     assert results == [second]  # last write wins, no duplicate row
 
 
+def test_record_reports_returns_count_of_new_rows():
+    store = HistoryStore(":memory:")
+    entries = [_entry(1_700_000_000), _entry(1_700_000_100)]
+
+    new_count = store.record_reports("key-a", entries)
+
+    assert new_count == 2
+
+
+def test_record_reports_returns_zero_for_already_known_entries():
+    store = HistoryStore(":memory:")
+    entry = _entry(1_700_000_000)
+    store.record_reports("key-a", [entry])
+
+    new_count = store.record_reports("key-a", [entry])
+
+    assert new_count == 0
+
+
+def test_record_reports_returns_count_of_only_the_genuinely_new_ones():
+    store = HistoryStore(":memory:")
+    known = _entry(1_700_000_000)
+    store.record_reports("key-a", [known])
+
+    new_count = store.record_reports("key-a", [known, _entry(1_700_000_100)])
+
+    assert new_count == 1
+
+
 def test_get_reports_filters_by_since():
     store = HistoryStore(":memory:")
     old_entry = _entry(1_700_000_000)

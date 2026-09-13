@@ -30,10 +30,22 @@ class HistoryStore:
             self._conn.commit()
 
     def record_reports(self, hashed_key, reports):
+        """Stores [reports] for [hashed_key], returning how many of them
+        were not already present (by hashed_key+timestamp) before this
+        call - the signal used to tell a genuinely new fetch from Apple
+        apart from one that just re-confirmed already-known reports.
+        """
         with self._lock:
+            new_count = 0
             try:
                 for entry in reports:
                     timestamp = extract_report_timestamp(entry)
+                    exists = self._conn.execute(
+                        "SELECT 1 FROM reports WHERE hashed_key = ? AND timestamp = ?",
+                        (hashed_key, timestamp),
+                    ).fetchone()
+                    if exists is None:
+                        new_count += 1
                     self._conn.execute(
                         "INSERT OR REPLACE INTO reports (hashed_key, timestamp, entry_json) VALUES (?, ?, ?)",
                         (hashed_key, timestamp, json.dumps(entry)),
@@ -42,6 +54,7 @@ class HistoryStore:
                 self._conn.rollback()
                 raise
             self._conn.commit()
+            return new_count
 
     def get_reports(self, hashed_keys, since):
         if not hashed_keys:
