@@ -52,6 +52,7 @@ class AccessoryList extends StatefulWidget {
   final LoadLocationUpdatesCallback loadLocationUpdates;
   final SaveOrderUpdatesCallback saveOrderUpdatesCallback;
   final void Function(LatLng point)? centerOnPoint;
+  final ScrollController? scrollController;
 
   /// Display a location overview all accessories in a concise list form.
   ///
@@ -62,6 +63,7 @@ class AccessoryList extends StatefulWidget {
     required this.loadLocationUpdates,
     this.centerOnPoint,
     required this.saveOrderUpdatesCallback,
+    this.scrollController,
   });
 
   @override
@@ -98,6 +100,7 @@ class _AccessoryListState extends State<AccessoryList> {
                 // Accessories tab's list would otherwise fight over the
                 // shared PrimaryScrollController.
                 primary: false,
+                controller: widget.scrollController,
                 children: placeholderList,
               ),
             );
@@ -105,7 +108,22 @@ class _AccessoryListState extends State<AccessoryList> {
         }
 
         if (accessories.isEmpty) {
-          return const NoAccessoriesPlaceholder();
+          // A bare (non-scrollable) placeholder would leave a
+          // scrollController passed in from a DraggableScrollableSheet with
+          // nothing to attach to, breaking that sheet's drag-to-resize.
+          return LayoutBuilder(builder: (context, constraints) {
+            return ListView(
+              primary: false,
+              controller: widget.scrollController,
+              physics: const AlwaysScrollableScrollPhysics(),
+              children: [
+                SizedBox(
+                  height: constraints.maxHeight,
+                  child: const NoAccessoriesPlaceholder(),
+                ),
+              ],
+            );
+          });
         }
 
         var active = activeAccessories(accessories);
@@ -129,6 +147,7 @@ class _AccessoryListState extends State<AccessoryList> {
               // Accessories tab's list would otherwise fight over the
               // shared PrimaryScrollController.
               primary: false,
+              controller: widget.scrollController,
               slivers: [
                 if (active.isNotEmpty)
                   ..._buildGroupSlivers(
