@@ -1,7 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-const introductionShownKey = 'INTRODUCTION_SHOWN';
 const locationPreferenceKnownKey = 'LOCATION_PREFERENCE_KNOWN';
 const locationAccessWantedKey = 'LOCATION_PREFERENCE_WANTED';
 const fetchLocationOnStartupKey = 'FETCH_LOCATION_ON_STARTUP';
@@ -34,18 +33,6 @@ class UserPreferences extends ChangeNotifier {
 
     initialized = true;
     notifyListeners();
-  }
-
-  /// Returns if the introduction should be shown.
-  bool? shouldShowIntroduction() {
-    if (_prefs == null) {
-      return null;
-    } else {
-      if (!_prefs!.containsKey(introductionShownKey)) {
-        return true; // Initial start of the app
-      }
-      return _prefs?.getBool(introductionShownKey);
-    }
   }
 
   /// Returns if the user's locaiton preference is known.
