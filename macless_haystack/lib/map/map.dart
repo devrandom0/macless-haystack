@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
+import 'package:flutter_map_marker_cluster/flutter_map_marker_cluster.dart';
 import 'package:flutter_settings_screens/flutter_settings_screens.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:macless_haystack/accessory/accessory_actions.dart';
@@ -45,6 +46,36 @@ Accessory? selectedAccessory(List<Accessory> accessories, String? selectedId) {
       return accessory.isActive && accessory.lastLocation != null
           ? accessory
           : null;
+    }
+  }
+  return null;
+}
+
+/// Whether [mergedMarkers] - markers flutter_map_marker_cluster just grouped
+/// into a cluster on zoom-out - includes the currently selected accessory
+/// (identified by [selectedId] via each marker's ValueKey). A popup anchored
+/// to a count badge instead of the real marker wouldn't make sense, so the
+/// popup should close when this is true.
+bool clusterAbsorbedSelection(List<Marker> mergedMarkers, String? selectedId) {
+  if (selectedId == null) {
+    return false;
+  }
+  return mergedMarkers.any((marker) => marker.key == ValueKey(selectedId));
+}
+
+/// The accessory in [accessories] whose id matches [marker]'s key, or null
+/// if not found. Markers are only ever built from this same accessories
+/// list, so this should always find a match in practice - the null case is
+/// defensive, since tap callbacks can in principle fire after the list has
+/// changed out from under them.
+Accessory? accessoryForMarker(List<Accessory> accessories, Marker marker) {
+  var key = marker.key;
+  if (key is! ValueKey<String>) {
+    return null;
+  }
+  for (var accessory in accessories) {
+    if (accessory.id == key.value) {
+      return accessory;
     }
   }
   return null;
@@ -349,12 +380,32 @@ class _AccessoryMapState extends State<AccessoryMap> {
             subdomains: tileSource.subdomains,
             userAgentPackageName: 'de.dchristl.headlesshaystack',
           ),
-          MarkerLayer(
-            markers: [
-              ...accessories
+          MarkerClusterLayerWidget(
+            options: MarkerClusterLayerOptions(
+              maxClusterRadius: 45,
+              size: const Size(44, 44),
+              // Zoom-to-bounds-on-cluster-tap can't help once already at
+              // the map's own max zoom (18, see MapOptions below) - without
+              // this, two accessories close enough to share a cluster at
+              // that zoom would have no way to ever be shown/tapped
+              // individually. One zoom level of margin below the map's max.
+              // Zoom-to-bounds-on-cluster-tap can't help once already at the
+              // map's own max zoom (18, see MapOptions below) - without
+              // this, two accessories close enough to share a cluster at
+              // that zoom would have no way to ever be shown/tapped
+              // individually. Markers within roughly 20m of each other can
+              // still land in the same cluster right at this boundary
+              // (observed on-device, not fully root-caused - flutter_map_
+              // marker_cluster hasn't had a release in ~11 months and this
+              // may be a library-side edge case) - tapping such a cluster
+              // still zooms in as far as it can, it just doesn't guarantee
+              // full separation for pathologically close pairs.
+              disableClusteringAtZoom: 15,
+              markers: accessories
                   .where((accessory) => accessory.isActive)
                   .where((accessory) => accessory.lastLocation != null)
                   .map((accessory) => Marker(
+                        key: ValueKey(accessory.id),
                         rotate: true,
                         width: 50,
                         height: 50,
@@ -362,31 +413,56 @@ class _AccessoryMapState extends State<AccessoryMap> {
                         child: Semantics(
                           button: true,
                           label: accessory.name,
-                          child: GestureDetector(
-                            // opaque so the marker's transparent surround
-                            // (mostly empty space around the icon) is still
-                            // tappable, and so the tap doesn't also fall
-                            // through to MapOptions.onTap and dismiss the
-                            // popup it just opened.
-                            behavior: HitTestBehavior.opaque,
-                            onTap: () {
-                              var isSelecting =
-                                  _selectedAccessoryId != accessory.id;
-                              setState(() {
-                                _selectedAccessoryId =
-                                    isSelecting ? accessory.id : null;
-                              });
-                              if (isSelecting) {
-                                _mapController.move(accessory.lastLocation!,
-                                    _mapController.camera.zoom);
-                              }
-                            },
-                            child: AccessoryIcon(
-                                icon: accessory.icon, color: accessory.color),
-                          ),
+                          child: AccessoryIcon(
+                              icon: accessory.icon, color: accessory.color),
                         ),
-                      )),
-            ],
+                      ))
+                  .toList(),
+              // Centering is handled by hand below, only when actually
+              // selecting (not deselecting) - the package's own
+              // centerMarkerOnClick would recenter on every tap including a
+              // deselect, which this app's existing tap behavior never did.
+              centerMarkerOnClick: false,
+              onMarkerTap: (marker) {
+                var accessory = accessoryForMarker(accessories, marker);
+                if (accessory == null) {
+                  return;
+                }
+                var isSelecting = _selectedAccessoryId != accessory.id;
+                setState(() {
+                  _selectedAccessoryId = isSelecting ? accessory.id : null;
+                });
+                if (isSelecting) {
+                  _mapController.move(
+                      accessory.lastLocation!, _mapController.camera.zoom);
+                }
+              },
+              // Fires when zooming out merges markers into a cluster - if
+              // the selected accessory is one of them, its popup would be
+              // left pointing at a count badge instead of the real marker.
+              onMarkersClustered: (mergedMarkers) {
+                if (clusterAbsorbedSelection(
+                    mergedMarkers, _selectedAccessoryId)) {
+                  setState(() => _selectedAccessoryId = null);
+                }
+              },
+              builder: (context, markers) {
+                return Container(
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).colorScheme.primary,
+                    shape: BoxShape.circle,
+                  ),
+                  alignment: Alignment.center,
+                  child: Text(
+                    '${markers.length}',
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.onPrimary,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                );
+              },
+            ),
           ),
           MarkerLayer(markers: [
             if (locationModel.here != null)

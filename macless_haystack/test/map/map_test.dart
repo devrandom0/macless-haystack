@@ -1,5 +1,5 @@
-import 'dart:ui';
-
+import 'package:flutter/widgets.dart';
+import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:macless_haystack/accessory/accessory_model.dart';
 import 'package:macless_haystack/map/map.dart';
@@ -232,6 +232,69 @@ void main() {
       );
 
       expect(placement.horizontalAlignment, inInclusiveRange(-1.0, 1.0));
+    });
+  });
+
+  group('clusterAbsorbedSelection', () {
+    Marker markerFor(String id) => Marker(
+          key: ValueKey(id),
+          point: const LatLng(0, 0),
+          child: const SizedBox(),
+        );
+
+    test('is false when nothing is selected', () {
+      var result = clusterAbsorbedSelection([markerFor('a')], null);
+
+      expect(result, isFalse);
+    });
+
+    test('is false when the selected accessory is not in the merged markers',
+        () {
+      var result =
+          clusterAbsorbedSelection([markerFor('a'), markerFor('b')], 'c');
+
+      expect(result, isFalse);
+    });
+
+    test('is true when the selected accessory is among the merged markers',
+        () {
+      var result =
+          clusterAbsorbedSelection([markerFor('a'), markerFor('b')], 'b');
+
+      expect(result, isTrue);
+    });
+  });
+
+  group('accessoryForMarker', () {
+    Marker markerFor(String id) => Marker(
+          key: ValueKey(id),
+          point: const LatLng(0, 0),
+          child: const SizedBox(),
+        );
+
+    test('finds the accessory whose id matches the marker key', () {
+      var accessories = [_accessory(id: 'a'), _accessory(id: 'b')];
+
+      var result = accessoryForMarker(accessories, markerFor('b'));
+
+      expect(result, same(accessories[1]));
+    });
+
+    test('returns null when no accessory matches the marker key', () {
+      var accessories = [_accessory(id: 'a')];
+
+      var result = accessoryForMarker(accessories, markerFor('missing'));
+
+      expect(result, isNull);
+    });
+
+    test('returns null when the marker has no ValueKey<String>', () {
+      var accessories = [_accessory(id: 'a')];
+      var marker = Marker(point: const LatLng(0, 0), child: const SizedBox());
+
+      var result = accessoryForMarker(accessories, marker);
+
+      expect(result, isNull);
     });
   });
 }
