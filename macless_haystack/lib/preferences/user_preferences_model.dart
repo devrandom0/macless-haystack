@@ -57,18 +57,4 @@ class UserPreferences extends ChangeNotifier {
   bool? get locationAccessWanted {
     return _prefs?.getBool(locationAccessWantedKey);
   }
-
-  /// Updates the location access preference of the user.
-  Future<bool> setLocationPreference(bool locationAccessWanted) async {
-    _prefs ??= await SharedPreferences.getInstance();
-    var success = await _prefs!.setBool(locationPreferenceKnownKey, true);
-    if (!success) {
-      return Future.value(false);
-    } else {
-      var result =
-          await _prefs!.setBool(locationAccessWantedKey, locationAccessWanted);
-      notifyListeners();
-      return result;
-    }
-  }
 }

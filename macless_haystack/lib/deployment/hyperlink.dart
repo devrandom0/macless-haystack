@@ -20,6 +20,10 @@ class Hyperlink extends StatelessWidget {
     return Semantics(
       link: true,
       label: _text,
+      // The child Text below already renders _text - without this, a
+      // screen reader announces the same label twice (once from here,
+      // once from the Text's own implicit semantics).
+      excludeSemantics: true,
       child: InkWell(
         child: Padding(
           padding: const EdgeInsets.symmetric(vertical: 8),

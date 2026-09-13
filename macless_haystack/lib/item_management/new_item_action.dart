@@ -7,16 +7,10 @@ import 'package:macless_haystack/item_management/item_file_import.dart';
 import 'package:macless_haystack/item_management/item_import.dart';
 
 class NewKeyAction extends StatelessWidget {
-  /// If the action button is small.
-  final bool mini;
-
   /// Displays a floating button used to access the accessory creation menu.
   ///
   /// A new accessory can be created or an existing one imported manually.
-  const NewKeyAction({
-    super.key,
-    this.mini = false,
-  });
+  const NewKeyAction({super.key});
 
   /// Display a bottom sheet with creation options.
   void showCreationSheet(BuildContext context) {
@@ -36,7 +30,7 @@ class NewKeyAction extends StatelessWidget {
                   ),
                 ),
                 ListTile(
-                  title: const Text('Import Accessory'),
+                  title: const Text('Import accessory'),
                   leading: const Icon(Icons.import_export),
                   onTap: () {
                     Navigator.pushReplacement(
@@ -47,7 +41,7 @@ class NewKeyAction extends StatelessWidget {
                   },
                 ),
                 ListTile(
-                  title: const Text('Import from JSON File'),
+                  title: const Text('Import from JSON file'),
                   leading: const Icon(Icons.description),
                   onTap: () async {
                     PlatformFile? result = await FilePicker.pickFile(
@@ -83,7 +77,7 @@ class NewKeyAction extends StatelessWidget {
                   },
                 ),
                 ListTile(
-                  title: const Text('Create New Accessory'),
+                  title: const Text('Create new accessory'),
                   leading: const Icon(Icons.add),
                   onTap: () {
                     Navigator.pushReplacement(
@@ -102,12 +96,11 @@ class NewKeyAction extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return FloatingActionButton(
-      mini: mini,
       heroTag: null,
       onPressed: () {
         showCreationSheet(context);
       },
-      tooltip: 'Create',
+      tooltip: 'Add accessory',
       child: const Icon(Icons.add),
     );
   }
