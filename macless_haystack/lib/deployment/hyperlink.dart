@@ -17,17 +17,24 @@ class Hyperlink extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
-      child: Text(
-        _text,
-        style: const TextStyle(
-          color: Colors.blue,
-          decoration: TextDecoration.underline,
+    return Semantics(
+      link: true,
+      label: _text,
+      child: InkWell(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          child: Text(
+            _text,
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.primary,
+              decoration: TextDecoration.underline,
+            ),
+          ),
         ),
+        onTap: () {
+          launchUrl(Uri.parse((target)));
+        },
       ),
-      onTap: () {
-        launchUrl(Uri.parse((target)));
-      },
     );
   }
 }

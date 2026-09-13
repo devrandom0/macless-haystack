@@ -21,9 +21,17 @@ class CodeBlock extends StatelessWidget {
             constraints: const BoxConstraints(minHeight: 50),
             decoration: BoxDecoration(
               borderRadius: const BorderRadius.all(Radius.circular(10)),
-              color: Theme.of(context).colorScheme.surface,
+              color: Theme.of(context).colorScheme.surfaceContainerHighest,
+              border: Border.all(
+                color: Theme.of(context).colorScheme.outlineVariant,
+              ),
             ),
-            padding: const EdgeInsets.all(5),
+            padding: const EdgeInsets.only(
+              left: 5,
+              top: 5,
+              bottom: 5,
+              right: 80,
+            ),
             child: SelectableText(text),
           ),
           Positioned(
@@ -33,6 +41,10 @@ class CodeBlock extends StatelessWidget {
               child: const Text('Copy'),
               onPressed: () {
                 Clipboard.setData(ClipboardData(text: text));
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                  content: Text('Copied to clipboard'),
+                  duration: Duration(seconds: 2),
+                ));
               },
             ),
           ),

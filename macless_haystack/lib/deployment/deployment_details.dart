@@ -38,20 +38,17 @@ class _DeploymentDetailsState extends State<DeploymentDetails> {
           currentStep: _index,
           controlsBuilder: (BuildContext context, ControlsDetails details) {
             String continueText =
-                _index < stepCount - 1 ? 'CONTINUE' : 'FINISH';
+                _index < stepCount - 1 ? 'Continue' : 'Finish';
             return Row(
               children: <Widget>[
                 ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(1))),
                   onPressed: details.onStepContinue,
                   child: Text(continueText),
                 ),
                 if (_index > 0)
                   TextButton(
                     onPressed: details.onStepCancel,
-                    child: const Text('BACK'),
+                    child: const Text('Back'),
                   ),
               ],
             );
@@ -70,7 +67,6 @@ class _DeploymentDetailsState extends State<DeploymentDetails> {
           onStepContinue: () {
             // Continue button clicked
             if (_index == stepCount - 1) {
-              // TODO: Mark accessory as deployed
               // Deployment finished
               Navigator.pop(context);
               Navigator.pop(context);

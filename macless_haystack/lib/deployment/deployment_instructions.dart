@@ -52,27 +52,27 @@ class _DeploymentInstructionsState extends State<DeploymentInstructions> {
                             'Nordic nRF51, Espressif ESP32 and the generic Linux HCI '
                             'platform.\nAdditional information about the deployment '
                             'can be found on ',
-                        style: TextStyle(
-                          color: Theme.of(context).colorScheme.onSurface,
-                          fontSize: 18,
-                        ),
+                        style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                              color: Theme.of(context).colorScheme.onSurface,
+                            ),
                       ),
                       TextSpan(
                         text: 'GitHub',
-                        style: const TextStyle(
-                          color: Colors.blue,
-                          decoration: TextDecoration.underline,
-                          fontSize: 18,
-                        ),
+                        style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                              color: Theme.of(context).colorScheme.primary,
+                              decoration: TextDecoration.underline,
+                            ),
                         recognizer: TapGestureRecognizer()
                           ..onTap = () {
                             launchUrl(Uri.parse(
                                 'https://github.com/seemoo-lab/openhaystack/'));
                           },
                       ),
-                      const TextSpan(
+                      TextSpan(
                         text: '.',
-                        style: TextStyle(color: Colors.black, fontSize: 18),
+                        style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                              color: Theme.of(context).colorScheme.onSurface,
+                            ),
                       ),
                     ],
                   ),
@@ -111,7 +111,7 @@ class _DeploymentInstructionsState extends State<DeploymentInstructions> {
                           mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                           children: [
                             OutlinedButton(
-                              child: const Text('Send per mail'),
+                              child: const Text('Send by email'),
                               onPressed: () async {
                                 await launchUrl(Uri.parse(
                                     DeploymentEmail.getMicrobitDeploymentEmail(
@@ -164,7 +164,7 @@ class _DeploymentInstructionsState extends State<DeploymentInstructions> {
                           mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                           children: [
                             OutlinedButton(
-                              child: const Text('Send per mail'),
+                              child: const Text('Send by email'),
                               onPressed: () async {
                                 await launchUrl(Uri.parse(
                                     DeploymentEmail.getESP32DeploymentEmail(
@@ -217,7 +217,7 @@ class _DeploymentInstructionsState extends State<DeploymentInstructions> {
                           mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                           children: [
                             OutlinedButton(
-                              child: const Text('Send per mail'),
+                              child: const Text('Send by email'),
                               onPressed: () async {
                                 await launchUrl(Uri.parse(
                                     DeploymentEmail.getLinuxHCIDeploymentEmail(
