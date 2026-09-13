@@ -17,8 +17,9 @@ import 'package:pointycastle/src/utils.dart' as pc_utils;
 
 import '../preferences/user_preferences_model.dart';
 
-/// Decrypted location reports plus how many of them are genuinely new
-/// data (see [LocationReportsResult], which this is derived from).
+/// Decrypted location reports plus the server-side live-vs-cache count
+/// (see [LocationReportsResult], which this is derived from - the same
+/// "not necessarily new to this client" caveat applies).
 typedef ComputedLocationReports = ({
   List<FindMyLocationReport> reports,
   int newCount,

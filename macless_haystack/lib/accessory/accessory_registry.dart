@@ -15,6 +15,20 @@ import 'package:macless_haystack/preferences/user_preferences_model.dart';
 const accessoryStorageKey = 'ACCESSORIES';
 const historyStorageKey = 'HISTORY';
 
+/// How many of [reports] are new to [accessory] - i.e. not already in its
+/// persisted decrypted-hash set (see [Accessory.containsHash]).
+///
+/// This, not the server's own live-fetch-vs-cache bookkeeping, is what
+/// answers "is there anything here I haven't already seen": the app's own
+/// automatic startup fetch and the server's background history archiver
+/// both independently mark reports as known server-side, so by the time a
+/// user taps refresh the server very often has nothing left to call
+/// "freshly fetched" even though the report is still new to this client.
+/// Read-only - marking hashes as seen is [fillLocationHistory]'s job.
+int countNewReports(List<FindMyLocationReport> reports, Accessory accessory) {
+  return reports.where((r) => !accessory.containsHash(r.hash)).length;
+}
+
 class AccessoryRegistry extends ChangeNotifier {
   var _storage = const FlutterSecureStorage();
   List<Accessory> _accessories = [];
@@ -156,7 +170,7 @@ class AccessoryRegistry extends ChangeNotifier {
     for (var i = 0; i < currentAccessories.length; i++) {
       var accessory = currentAccessories.elementAt(i);
       var reports = reportsForAccessories.elementAt(i).reports;
-      out += reportsForAccessories.elementAt(i).newCount;
+      out += countNewReports(reports, accessory);
       logger.i(
         '${reports.length} reports fetched for ${accessory.hashedPublicKey} in total',
       );

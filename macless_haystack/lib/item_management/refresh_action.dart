@@ -20,27 +20,50 @@ class RefreshAction extends StatefulWidget {
 }
 
 class _RefreshingWidgetState extends State<RefreshAction> {
+  // Guards against a double-tap (or a long-press racing a tap) firing two
+  // overlapping fetches - especially important for onForceRefresh, which
+  // bypasses the endpoint's own freshness cache and hits Apple directly.
+  bool _busy = false;
+
+  Future<void> _run(AsyncCallback action) async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    try {
+      await action();
+    } finally {
+      if (mounted) {
+        setState(() => _busy = false);
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     var button = FloatingActionButton(
       heroTag: null,
-      onPressed: () {
-        widget.callback.call();
-      },
-      tooltip: widget.onForceRefresh == null
-          ? 'Refresh'
-          : 'Refresh (long-press to force a fresh fetch from Apple)',
+      onPressed: _busy ? null : () => _run(widget.callback),
       child: const Icon(Icons.refresh),
     );
     if (widget.onForceRefresh == null) {
-      return button;
+      return Tooltip(message: 'Refresh', child: button);
     }
-    return GestureDetector(
-      onLongPress: () {
-        HapticFeedback.mediumImpact();
-        widget.onForceRefresh!.call();
-      },
-      child: button,
+    // FloatingActionButton's own `tooltip` param installs its own
+    // long-press gesture recognizer internally (it wraps itself in a
+    // Tooltip), which wins the gesture arena against an outer
+    // GestureDetector's onLongPress before it ever fires - so the tooltip
+    // lives here instead, in manual trigger mode, and no longer competes.
+    return Tooltip(
+      message: 'Refresh (long-press to force a fresh fetch from Apple)',
+      triggerMode: TooltipTriggerMode.manual,
+      child: GestureDetector(
+        onLongPress: _busy
+            ? null
+            : () {
+                HapticFeedback.mediumImpact();
+                _run(widget.onForceRefresh!);
+              },
+        child: button,
+      ),
     );
   }
 }
