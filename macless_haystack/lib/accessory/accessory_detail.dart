@@ -9,7 +9,39 @@ import 'package:macless_haystack/accessory/accessory_registry.dart';
 import 'package:macless_haystack/history/archive_settings_validation.dart';
 import 'package:macless_haystack/history/history_archive_service.dart';
 import 'package:macless_haystack/item_management/accessory_name_input.dart';
+import 'package:macless_haystack/item_management/item_export.dart';
 import 'package:macless_haystack/preferences/user_preferences_model.dart';
+
+/// Shows a Cancel/confirm dialog for a destructive action, returning true
+/// only if the user picked [confirmLabel].
+Future<bool> confirmDestructiveAction(
+  BuildContext context, {
+  required String title,
+  required String message,
+  required String confirmLabel,
+}) async {
+  final result = await showDialog<bool>(
+    context: context,
+    builder: (dialogContext) => AlertDialog(
+      title: Text(title),
+      content: Text(message),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(dialogContext, false),
+          child: const Text('Cancel'),
+        ),
+        TextButton(
+          style: TextButton.styleFrom(
+            foregroundColor: Theme.of(dialogContext).colorScheme.error,
+          ),
+          onPressed: () => Navigator.pop(dialogContext, true),
+          child: Text(confirmLabel),
+        ),
+      ],
+    ),
+  );
+  return result ?? false;
+}
 
 class AccessoryDetail extends StatefulWidget {
   final Accessory accessory;
@@ -276,33 +308,40 @@ class _AccessoryDetailState extends State<AccessoryDetail> {
 
   Widget _buildArchiveSettingsForm() {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-      child: Form(
-        key: _archiveSettingsFormKey,
-        child: Column(
-          children: [
-            TextFormField(
-              controller: _pollIntervalController,
-              decoration:
-                  const InputDecoration(labelText: 'Poll interval (hours)'),
-              keyboardType: TextInputType.number,
-              validator: validatePollIntervalHours,
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+      child: Card(
+        margin: EdgeInsets.zero,
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Form(
+            key: _archiveSettingsFormKey,
+            child: Column(
+              children: [
+                TextFormField(
+                  controller: _pollIntervalController,
+                  decoration: const InputDecoration(
+                      labelText: 'Poll interval (hours)'),
+                  keyboardType: TextInputType.number,
+                  validator: validatePollIntervalHours,
+                ),
+                TextFormField(
+                  controller: _retentionDaysController,
+                  decoration:
+                      const InputDecoration(labelText: 'Retention (days)'),
+                  keyboardType: TextInputType.number,
+                  validator: validateRetentionDays,
+                ),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton(
+                    onPressed:
+                        _archivingUpdating ? null : _updateArchiveSettings,
+                    child: const Text('Update'),
+                  ),
+                ),
+              ],
             ),
-            TextFormField(
-              controller: _retentionDaysController,
-              decoration:
-                  const InputDecoration(labelText: 'Retention (days)'),
-              keyboardType: TextInputType.number,
-              validator: validateRetentionDays,
-            ),
-            Align(
-              alignment: Alignment.centerRight,
-              child: TextButton(
-                onPressed: _archivingUpdating ? null : _updateArchiveSettings,
-                child: const Text('Update'),
-              ),
-            ),
-          ],
+          ),
         ),
       ),
     );
@@ -317,6 +356,7 @@ class _AccessoryDetailState extends State<AccessoryDetail> {
       body: SingleChildScrollView(
         child: Form(
           key: _formKey,
+          autovalidateMode: AutovalidateMode.onUserInteraction,
           child: Column(
             children: [
               Center(
@@ -345,6 +385,7 @@ class _AccessoryDetailState extends State<AccessoryDetail> {
                             shape: BoxShape.circle,
                           ),
                           child: IconButton(
+                            tooltip: 'Change icon and color',
                             onPressed: () async {
                               // Show icon selection
                               String? selectedIcon =
@@ -391,7 +432,7 @@ class _AccessoryDetailState extends State<AccessoryDetail> {
               ),
               SwitchListTile(
                 value: newAccessory.isActive,
-                title: const Text('Is Active'),
+                title: const Text('Active'),
                 onChanged: (checked) {
                   setState(() {
                     newAccessory.isActive = checked;
@@ -414,77 +455,140 @@ class _AccessoryDetailState extends State<AccessoryDetail> {
               SwitchListTile(
                 value: _archivingEnabled,
                 title: const Text('Archive location history on endpoint'),
-                subtitle:
-                    _archivingLoading ? const Text('Loading status…') : null,
+                subtitle: Text(
+                  _archivingLoading
+                      ? 'Loading status…'
+                      : _archivingUpdating
+                          ? 'Updating…'
+                          : 'Sends a request to the endpoint - unlike the '
+                              'other settings on this page, this can fail',
+                ),
+                secondary: _archivingUpdating
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : null,
                 onChanged: (_archivingLoading || _archivingUpdating)
                     ? null
                     : _setArchiving,
               ),
               if (_archivingEnabled) _buildArchiveSettingsForm(),
-              ListTile(
-                title: OutlinedButton(
-                  onPressed: _formKey.currentState == null ||
-                          !_formKey.currentState!.validate()
-                      ? null
-                      : () {
-                          if (_formKey.currentState != null &&
-                              _formKey.currentState!.validate()) {
-                            // Update accessory with changed values
-                            var accessoryRegistry =
-                                Provider.of<AccessoryRegistry>(context,
-                                    listen: false);
-                            accessoryRegistry.editAccessory(
-                                widget.accessory, newAccessory);
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text('Changes saved!'),
-                              ),
-                            );
-                          }
-                        },
-                  child: const Text('Save'),
-                ),
-              ),
-              ListTile(
-                title: OutlinedButton(
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: Theme.of(context).colorScheme.error,
-                  ),
-                  onPressed: () {
-                    // Update accessory with changed values
-                    var accessoryRegistry =
-                        Provider.of<AccessoryRegistry>(context, listen: false);
-                    accessoryRegistry.deleteData(widget.accessory);
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content:
-                            Text('All current and historical data deleted'),
-                      ),
-                    );
-                  },
-                  child: const Text('Reset Accessory'),
-                ),
-              ),
-              ListTile(
-                title: ElevatedButton(
-                  style: ButtonStyle(
-                    backgroundColor: WidgetStateProperty.resolveWith<Color?>(
-                      (Set<WidgetState> states) {
-                        return Theme.of(context).colorScheme.error;
+              Padding(
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 16, vertical: 8),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    FilledButton(
+                      onPressed: () {
+                        // A Form's own validate() is re-run on every
+                        // keystroke via autovalidateMode, so Save can just
+                        // stay enabled and check the live result on press
+                        // instead of disabling itself before the form has
+                        // even been touched once.
+                        if (_formKey.currentState?.validate() ?? false) {
+                          var accessoryRegistry = Provider.of<AccessoryRegistry>(
+                              context,
+                              listen: false);
+                          accessoryRegistry.editAccessory(
+                              widget.accessory, newAccessory);
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Changes saved!'),
+                            ),
+                          );
+                        }
                       },
+                      child: const Text('Save'),
                     ),
-                  ),
-                  child: const Text(
-                    'Delete Accessory',
-                    style: TextStyle(color: Colors.white),
-                  ),
-                  onPressed: () {
-                    // Delete accessory
-                    var accessoryRegistry =
-                        Provider.of<AccessoryRegistry>(context, listen: false);
-                    accessoryRegistry.removeAccessory(widget.accessory);
-                    Navigator.pop(context);
-                  },
+                    const SizedBox(height: 12),
+                    OutlinedButton(
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: Theme.of(context).colorScheme.error,
+                      ),
+                      onPressed: () async {
+                        var confirmed = await confirmDestructiveAction(
+                          context,
+                          title: 'Reset "${widget.accessory.name}"?',
+                          message:
+                              'This permanently deletes its location history, '
+                              'last known location, and battery status. The '
+                              'accessory itself and its private key are kept.',
+                          confirmLabel: 'Reset',
+                        );
+                        if (!confirmed || !context.mounted) return;
+                        var accessoryRegistry = Provider.of<AccessoryRegistry>(
+                            context,
+                            listen: false);
+                        accessoryRegistry.deleteData(widget.accessory);
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content:
+                                Text('All current and historical data deleted'),
+                          ),
+                        );
+                      },
+                      child: const Text('Reset accessory'),
+                    ),
+                    const SizedBox(height: 12),
+                    FilledButton(
+                      style: FilledButton.styleFrom(
+                        backgroundColor: Theme.of(context).colorScheme.error,
+                        foregroundColor: Theme.of(context).colorScheme.onError,
+                      ),
+                      onPressed: () async {
+                        var action = await showDialog<String>(
+                          context: context,
+                          builder: (dialogContext) => AlertDialog(
+                            title:
+                                Text('Delete "${widget.accessory.name}"?'),
+                            content: const Text(
+                                'This permanently deletes the accessory and '
+                                'its private key. Without that key, this '
+                                'accessory can never be tracked again - '
+                                'export it first if you want to keep it.'),
+                            actions: [
+                              TextButton(
+                                onPressed: () =>
+                                    Navigator.pop(dialogContext, 'cancel'),
+                                child: const Text('Cancel'),
+                              ),
+                              TextButton(
+                                onPressed: () =>
+                                    Navigator.pop(dialogContext, 'export'),
+                                child: const Text('Export key first'),
+                              ),
+                              TextButton(
+                                style: TextButton.styleFrom(
+                                  foregroundColor:
+                                      Theme.of(dialogContext).colorScheme.error,
+                                ),
+                                onPressed: () =>
+                                    Navigator.pop(dialogContext, 'delete'),
+                                child: const Text('Delete'),
+                              ),
+                            ],
+                          ),
+                        );
+                        if (!context.mounted) return;
+                        if (action == 'export') {
+                          ItemExportMenu(accessory: widget.accessory)
+                              .showKeyExportSheet(context, widget.accessory);
+                          return;
+                        }
+                        if (action == 'delete') {
+                          var accessoryRegistry = Provider.of<AccessoryRegistry>(
+                              context,
+                              listen: false);
+                          accessoryRegistry.removeAccessory(widget.accessory);
+                          if (context.mounted) Navigator.pop(context);
+                        }
+                      },
+                      child: const Text('Delete accessory'),
+                    ),
+                  ],
                 ),
               ),
             ],
