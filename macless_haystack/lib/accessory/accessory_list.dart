@@ -31,6 +31,14 @@ String groupHeaderLabel(String title, int count) {
   return '$title ($count)';
 }
 
+/// Formats a distance in kilometers for display, e.g. '450 m' or '3.4 km'.
+String formatDistance(double km) {
+  if (km < 1) {
+    return '${(km * 1000).round()} m';
+  }
+  return '${km.toStringAsFixed(1)} km';
+}
+
 /// Rebuilds the full accessory order after a drag-reorder within one group
 /// (active or inactive).
 ///
@@ -258,7 +266,7 @@ class _AccessoryListState extends State<AccessoryList> {
       const Distance distance = Distance();
       final double km = distance.as(
           LengthUnit.Kilometer, locationModel.here!, accessory.lastLocation!);
-      trailing = Text('$km km');
+      trailing = Text(formatDistance(km));
     }
     // Get human readable location
     Widget tile = Slidable(
@@ -320,8 +328,8 @@ class _AccessoryListState extends State<AccessoryList> {
                 newAccessory.isActive = true;
                 accessoryRegistry.editAccessory(accessory, newAccessory);
               },
-              backgroundColor: Colors.green,
-              foregroundColor: Colors.white,
+              backgroundColor: Theme.of(context).colorScheme.primary,
+              foregroundColor: Theme.of(context).colorScheme.onPrimary,
               icon: Icons.toggle_on_outlined,
               label: 'Activate',
             ),
@@ -337,14 +345,13 @@ class _AccessoryListState extends State<AccessoryList> {
               var lastLocation = accessory.lastLocation;
               if (lastLocation != null) {
                 widget.centerOnPoint?.call(lastLocation);
+              } else {
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                    content:
+                        Text('This accessory has no known location yet')));
               }
             }
           },
-          onLongPress: !accessory.isActive
-              ? null
-              : () async {
-                  await widget.loadLocationUpdates(accessory);
-                },
         );
       }),
     );

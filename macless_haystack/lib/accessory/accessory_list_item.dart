@@ -1,4 +1,6 @@
 
+import 'dart:async';
+
 import 'package:universal_io/io.dart';
 
 import 'package:flutter/material.dart';
@@ -15,13 +17,11 @@ class AccessoryListItem extends StatefulWidget {
   final Widget? distance;
   final Placemark? herePlace;
   final VoidCallback onTap;
-  final VoidCallback? onLongPress;
 
   const AccessoryListItem({
     super.key,
     required this.accessory,
     required this.onTap,
-    this.onLongPress,
     this.distance,
     this.herePlace,
   });
@@ -32,13 +32,25 @@ class AccessoryListItem extends StatefulWidget {
 
 class AccessoryListItemState extends State<AccessoryListItem> {
   Color _tileColor = Colors.transparent;
+  Timer? _highlightTimer;
 
   @override
-  Widget build(BuildContext context) {
-    var hasChanged = widget.accessory.hasChangedFlag;
-    if (hasChanged) {
+  void initState() {
+    super.initState();
+    _updateHighlight();
+  }
+
+  @override
+  void didUpdateWidget(covariant AccessoryListItem oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _updateHighlight();
+  }
+
+  void _updateHighlight() {
+    if (widget.accessory.hasChangedFlag && _highlightTimer == null) {
       _tileColor = widget.accessory.color.withAlpha(50);
-      Future.delayed(const Duration(seconds: 1), () {
+      _highlightTimer = Timer(const Duration(seconds: 1), () {
+        _highlightTimer = null;
         if (mounted) {
           widget.accessory.hasChangedFlag = false;
           setState(() {
@@ -47,6 +59,16 @@ class AccessoryListItemState extends State<AccessoryListItem> {
         }
       });
     }
+  }
+
+  @override
+  void dispose() {
+    _highlightTimer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     return FutureBuilder<Placemark?>(
       future: widget.accessory.place,
       builder: (BuildContext context, AsyncSnapshot<Placemark?> snapshot) {
@@ -89,25 +111,21 @@ class AccessoryListItemState extends State<AccessoryListItem> {
                   _buildIcon(),
                 ],
               ),
-              subtitle: SingleChildScrollView(
-                scrollDirection: Axis.vertical,
-                child: Text(
-                  locationString + dateString,
-                  style: const TextStyle(fontSize: 12),
-                ),
+              subtitle: Text(
+                locationString + dateString,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontSize: 12),
               ),
               trailing: widget.distance,
               dense: true,
               visualDensity: VisualDensity.compact,
               contentPadding: const EdgeInsets.symmetric(horizontal: 12),
               minVerticalPadding: 0,
-              leading: GestureDetector(
-                onLongPress: widget.onLongPress,
-                child: AccessoryIcon(
-                  icon: widget.accessory.icon,
-                  color: widget.accessory.color,
-                  size: 20,
-                ),
+              leading: AccessoryIcon(
+                icon: widget.accessory.icon,
+                color: widget.accessory.color,
+                size: 20,
               ),
             ));
       },

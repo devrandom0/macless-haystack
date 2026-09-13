@@ -53,6 +53,21 @@ void main() {
     });
   });
 
+  group('formatDistance', () {
+    test('shows whole meters under 1 km', () {
+      expect(formatDistance(0.45), '450 m');
+    });
+
+    test('rounds to the nearest meter', () {
+      expect(formatDistance(0.4567), '457 m');
+    });
+
+    test('shows one decimal place at 1 km and above', () {
+      expect(formatDistance(1), '1.0 km');
+      expect(formatDistance(3.4567890123456789), '3.5 km');
+    });
+  });
+
   group('mergedOrderAfterGroupReorder', () {
     test('splices a reordered active group back in front of the inactives',
         () {
