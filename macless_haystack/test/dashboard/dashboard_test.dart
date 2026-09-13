@@ -84,5 +84,30 @@ void main() {
         'No new locations. 1 inactive accessory skipped',
       );
     });
+
+    test('names Apple directly when the fetch was forced and found data', () {
+      expect(
+        fetchFeedbackMessage(
+          showFeedback: true,
+          newCount: 2,
+          inactiveSkipped: 0,
+          force: true,
+        ),
+        'Fetched 2 new locations directly from Apple.',
+      );
+    });
+
+    test('a forced fetch with no new data reads the same as an unforced one',
+        () {
+      expect(
+        fetchFeedbackMessage(
+          showFeedback: true,
+          newCount: 0,
+          inactiveSkipped: 0,
+          force: true,
+        ),
+        'No new locations.',
+      );
+    });
   });
 }

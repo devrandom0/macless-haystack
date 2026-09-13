@@ -21,6 +21,7 @@ String? fetchFeedbackMessage({
   required bool showFeedback,
   required int newCount,
   required int inactiveSkipped,
+  bool force = false,
 }) {
   if (!showFeedback) {
     return null;
@@ -31,7 +32,11 @@ String? fetchFeedbackMessage({
   if (newCount == 0) {
     return 'No new locations.$skippedSuffix';
   }
-  return 'Fetched $newCount new location${newCount == 1 ? '' : 's'}.$skippedSuffix';
+  // Naming Apple only matters when there's actually something to report -
+  // "No new locations" already means the forced check came back empty, so
+  // there's no separate "directly from Apple" version of that message.
+  var source = force ? ' directly from Apple' : '';
+  return 'Fetched $newCount new location${newCount == 1 ? '' : 's'}$source.$skippedSuffix';
 }
 
 class Dashboard extends StatefulWidget {
@@ -141,6 +146,7 @@ class _DashboardState extends State<Dashboard> {
         showFeedback: showFeedback,
         newCount: newCount,
         inactiveSkipped: inactive,
+        force: force,
       );
       if (mounted && accessories.isNotEmpty && message != null) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -185,6 +191,21 @@ class _DashboardState extends State<Dashboard> {
       appBar: AppBar(
         title: const Text('My Accessories'),
         actions: <Widget>[
+          // The Map tab's refresh FAB also offers this via long-press, but
+          // that gesture has no way to advertise itself to a sighted user
+          // on a touchscreen (a Tooltip only shows on tap/hover, and both
+          // are already spoken for) - this menu item is the discoverable
+          // path to the same action.
+          if (_selectedIndex == 0)
+            PopupMenuButton<void>(
+              tooltip: 'More',
+              itemBuilder: (context) => [
+                PopupMenuItem<void>(
+                  onTap: () => loadLocationUpdates(null, force: true),
+                  child: const Text('Force fetch from Apple'),
+                ),
+              ],
+            ),
           IconButton(
             onPressed: () {
               Navigator.push(
