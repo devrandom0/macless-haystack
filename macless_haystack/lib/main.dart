@@ -92,7 +92,7 @@ class _AppLayoutState extends State<AppLayout> {
       showDialog<void>(
         context: context,
         builder: (context) => AlertDialog(
-          title: const Text('Secure Storage Warning'),
+          title: const Text('Secure storage warning'),
           content: Text(warning),
           actions: [
             TextButton(

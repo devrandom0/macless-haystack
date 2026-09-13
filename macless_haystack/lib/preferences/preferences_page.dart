@@ -132,6 +132,12 @@ class _PreferencesPageState extends State<PreferencesPage> {
       settingKey: locationAccessWantedKey,
       title: "Show this device's location",
       onChange: (showLocation) {
+        // Dashboard's initState only skips its own unconditional
+        // requestLocationUpdates() call once this preference is known to
+        // have been set at least once - without this, that flag stays
+        // unset forever and the app re-requests location on every launch
+        // regardless of what this switch is set to.
+        Settings.setValue<bool>(locationPreferenceKnownKey, true);
         var locationModel = Provider.of<LocationModel>(context, listen: false);
         if (showLocation) {
           locationModel.requestLocationUpdates();
