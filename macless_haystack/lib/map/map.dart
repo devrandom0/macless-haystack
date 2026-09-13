@@ -164,7 +164,39 @@ class _AccessoryMapState extends State<AccessoryMap> {
         });
       }
 
-      return FlutterMap(
+      return LayoutBuilder(builder: (context, constraints) {
+        // Whether there's enough map height above the selected marker's
+        // screen position to fit the popup - without this, a marker tapped
+        // near the top of a short map viewport pushes the popup off-screen
+        // instead of showing it. camera is only valid once _mapReady, which
+        // is guaranteed by the time selected is non-null (a marker can't be
+        // tapped before FlutterMap has rendered).
+        const desiredPopupHeight = 320.0;
+        const margin = 16.0;
+        var showPopupAbove = true;
+        var popupMaxHeight = desiredPopupHeight;
+        if (selected != null && _mapReady) {
+          var screenY = _mapController.camera
+              .latLngToScreenOffset(selected.lastLocation!)
+              .dy;
+          var spaceAbove = screenY - margin;
+          var spaceBelow = constraints.maxHeight - screenY - margin;
+          if (spaceAbove >= desiredPopupHeight) {
+            showPopupAbove = true;
+            popupMaxHeight = desiredPopupHeight;
+          } else if (spaceBelow >= desiredPopupHeight) {
+            showPopupAbove = false;
+            popupMaxHeight = desiredPopupHeight;
+          } else if (spaceAbove >= spaceBelow) {
+            showPopupAbove = true;
+            popupMaxHeight = spaceAbove.clamp(120.0, desiredPopupHeight);
+          } else {
+            showPopupAbove = false;
+            popupMaxHeight = spaceBelow.clamp(120.0, desiredPopupHeight);
+          }
+        }
+
+        return FlutterMap(
         mapController: _mapController,
         options: MapOptions(
             initialCenter: locationModel.here ?? const LatLng(51.1657, 10.4515),
@@ -281,6 +313,8 @@ class _AccessoryMapState extends State<AccessoryMap> {
                 onNavigate: () => navigateToAccessory(selected),
                 onHistory: () => openAccessoryHistory(context, selected),
                 onShare: () => shareAccessoryLocation(selected),
+                showAbove: showPopupAbove,
+                maxHeight: popupMaxHeight,
               ),
           ]),
           RichAttributionWidget(
@@ -290,7 +324,8 @@ class _AccessoryMapState extends State<AccessoryMap> {
             ],
           ),
         ],
-      );
+        );
+      });
     });
   }
 }

@@ -14,34 +14,46 @@ import '../util/time_format.dart';
 const _tailHeight = 8.0;
 const _tailWidth = 16.0;
 
-/// Popup card shown above a tapped accessory marker on the map, mirroring
+/// Popup card shown next to a tapped accessory marker on the map, mirroring
 /// [LocationPopup]'s Marker-subclass idiom from the history screen.
 class AccessoryPopup extends Marker {
+  /// Anchors the popup above the marker (the common case) when true, or
+  /// below it when the caller has determined there isn't enough map height
+  /// above the marker's screen position to fit the popup - without this, a
+  /// marker tapped near the top of a short map viewport (e.g. a small map
+  /// area, or a draggable sheet covering most of the screen) pushes the
+  /// popup off-screen instead of showing it at all.
   AccessoryPopup({
     super.key,
     required Accessory accessory,
     required VoidCallback onNavigate,
     required VoidCallback onHistory,
     required VoidCallback onShare,
+    bool showAbove = true,
+    double maxHeight = 320,
   }) : super(
           width: 250,
-          height: 320,
+          height: maxHeight,
           point: accessory.lastLocation!,
           rotate: true,
           // alignment: topCenter anchors the point to the marker's BOTTOM
-          // edge instead of its center, so the 320px height extends upward
-          // from the point rather than being centered on it. The 35px bottom
-          // pad then only needs to clear the 50px marker icon's top half
-          // (25px above the point) plus a 10px gap, and Align(bottomCenter)
-          // lets the content size to itself within the remaining space
-          // instead of being stretched to fill it - the tail is part of
-          // that content, so this same padding places the tail's tip (not
-          // the card's bottom edge) at the 10px gap above the marker.
-          alignment: Alignment.topCenter,
+          // edge instead of its center, so the height extends upward from
+          // the point rather than being centered on it (bottomCenter is the
+          // mirror image, extending downward for the flipped case). The
+          // 35px pad then only needs to clear the 50px marker icon's near
+          // half (25px) plus a 10px gap, and Align lets the content size to
+          // itself within the remaining space instead of being stretched to
+          // fill it - the tail is part of that content, so this same
+          // padding places the tail's tip (not the card's edge) at the 10px
+          // gap from the marker.
+          alignment: showAbove ? Alignment.topCenter : Alignment.bottomCenter,
           child: Padding(
-            padding: const EdgeInsets.only(bottom: 35),
+            padding: showAbove
+                ? const EdgeInsets.only(bottom: 35)
+                : const EdgeInsets.only(top: 35),
             child: Align(
-              alignment: Alignment.bottomCenter,
+              alignment:
+                  showAbove ? Alignment.bottomCenter : Alignment.topCenter,
               // Keyed by accessory id, not the enclosing Marker - flutter_map
               // repeats each Marker across every visible world copy at low
               // zoom, all as sibling Positioned widgets in one Stack, so a
@@ -56,6 +68,13 @@ class AccessoryPopup extends Marker {
                 onNavigate: onNavigate,
                 onHistory: onHistory,
                 onShare: onShare,
+                tailAbove: !showAbove,
+                // 35 accounts for the tail + gap already carved out by the
+                // padding above; without a cap here, a maxHeight tight
+                // enough to trigger the flip in the first place would still
+                // let the card render past the space the flip logic sized
+                // it for.
+                maxCardHeight: maxHeight - 35,
               ),
             ),
           ),
@@ -68,12 +87,23 @@ class _PopupContent extends StatelessWidget {
   final VoidCallback onHistory;
   final VoidCallback onShare;
 
+  /// Whether the tail points up at a marker above the card, instead of
+  /// down at one below it.
+  final bool tailAbove;
+
+  /// Caps the card's height, falling back to a scrollable card instead of
+  /// overflowing when the available map space is too tight for the card's
+  /// natural size.
+  final double? maxCardHeight;
+
   const _PopupContent({
     super.key,
     required this.accessory,
     required this.onNavigate,
     required this.onHistory,
     required this.onShare,
+    this.tailAbove = false,
+    this.maxCardHeight,
   });
 
   @override
@@ -93,13 +123,18 @@ class _PopupContent extends StatelessWidget {
         opacity: t.clamp(0, 1),
         child: Transform.scale(
           scale: t,
-          alignment: Alignment.bottomCenter,
+          alignment: tailAbove ? Alignment.topCenter : Alignment.bottomCenter,
           child: child,
         ),
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
+          if (tailAbove)
+            CustomPaint(
+              size: const Size(_tailWidth, _tailHeight),
+              painter: _TailPainter(color: cardColor, pointUp: true),
+            ),
           InkWell(
             // Absorb taps so they don't fall through to the map and
             // dismiss the popup that was just opened.
@@ -107,7 +142,11 @@ class _PopupContent extends StatelessWidget {
             child: Card(
               margin: EdgeInsets.zero,
               color: cardColor,
-              child: Padding(
+              child: ConstrainedBox(
+                constraints:
+                    BoxConstraints(maxHeight: maxCardHeight ?? double.infinity),
+                child: SingleChildScrollView(
+                  child: Padding(
                 padding:
                     const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                 child: Builder(builder: (context) {
@@ -200,36 +239,47 @@ class _PopupContent extends StatelessWidget {
                     ],
                   );
                 }),
+                  ),
+                ),
               ),
             ),
           ),
-          CustomPaint(
-            size: const Size(_tailWidth, _tailHeight),
-            painter: _TailPainter(color: cardColor),
-          ),
+          if (!tailAbove)
+            CustomPaint(
+              size: const Size(_tailWidth, _tailHeight),
+              painter: _TailPainter(color: cardColor),
+            ),
         ],
       ),
     );
   }
 }
 
-/// Draws a small downward-pointing triangle, giving the popup a visible
-/// anchor to the marker it belongs to instead of floating unexplained.
+/// Draws a small triangle pointing at the marker the popup belongs to -
+/// down when the card sits above the marker, up when it sits below.
 class _TailPainter extends CustomPainter {
   final Color color;
+  final bool pointUp;
 
-  const _TailPainter({required this.color});
+  const _TailPainter({required this.color, this.pointUp = false});
 
   @override
   void paint(Canvas canvas, Size size) {
-    var path = Path()
-      ..moveTo(0, 0)
-      ..lineTo(size.width, 0)
-      ..lineTo(size.width / 2, size.height)
-      ..close();
+    var path = pointUp
+        ? (Path()
+          ..moveTo(0, size.height)
+          ..lineTo(size.width, size.height)
+          ..lineTo(size.width / 2, 0)
+          ..close())
+        : (Path()
+          ..moveTo(0, 0)
+          ..lineTo(size.width, 0)
+          ..lineTo(size.width / 2, size.height)
+          ..close());
     canvas.drawPath(path, Paint()..color = color);
   }
 
   @override
-  bool shouldRepaint(_TailPainter oldDelegate) => oldDelegate.color != color;
+  bool shouldRepaint(_TailPainter oldDelegate) =>
+      oldDelegate.color != color || oldDelegate.pointUp != pointUp;
 }
