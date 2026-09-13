@@ -10,19 +10,38 @@ class NoAccessoriesPlaceholder extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Center(
+    return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
+          Icon(
+            Icons.sell_outlined,
+            size: 48,
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+          ),
+          const SizedBox(height: 16),
           Text(
-            'There\'s Nothing Here Yet\nAdd an accessory to get started.',
-            style: TextStyle(
-              fontSize: 20,
-              color: Colors.grey,
-            ),
+            'There\'s nothing here yet',
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurface,
+                ),
             textAlign: TextAlign.center,
           ),
-          NewKeyAction(mini: true),
+          const SizedBox(height: 8),
+          Text(
+            'Add an accessory to get started.',
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 24),
+          FilledButton.icon(
+            icon: const Icon(Icons.add),
+            label: const Text('Add accessory'),
+            onPressed: () =>
+                const NewKeyAction().showCreationSheet(context),
+          ),
         ],
       ),
     );

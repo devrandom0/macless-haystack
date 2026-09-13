@@ -14,8 +14,8 @@ class AvatarPlaceholder extends StatelessWidget {
     return Container(
       width: size * 3 / 2,
       height: size * 3 / 2,
-      decoration: const BoxDecoration(
-        color: Color.fromARGB(255, 200, 200, 200),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surfaceContainerHighest,
         shape: BoxShape.circle,
       ),
     );

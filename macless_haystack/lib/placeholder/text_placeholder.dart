@@ -68,15 +68,19 @@ class _TextPlaceholderState extends State<TextPlaceholder>
                 begin: Alignment.centerLeft,
                 end: Alignment.centerRight,
                 stops: [0.0, animation.value, 1.0],
-                colors: const [
-                  Color.fromARGB(255, 200, 200, 200),
-                  Color.fromARGB(255, 230, 230, 230),
-                  Color.fromARGB(255, 200, 200, 200)
+                // Two tones from the same tonal surface family (not two
+                // arbitrary greys) so the sweep is still visible on both
+                // themes, unlike a single repeated color.
+                colors: [
+                  Theme.of(context).colorScheme.surfaceContainerHigh,
+                  Theme.of(context).colorScheme.surfaceContainerHighest,
+                  Theme.of(context).colorScheme.surfaceContainerHigh,
                 ],
               )
             : null,
-        color:
-            widget.animated ? null : const Color.fromARGB(255, 200, 200, 200),
+        color: widget.animated
+            ? null
+            : Theme.of(context).colorScheme.surfaceContainerHighest,
         borderRadius: const BorderRadius.all(Radius.circular(8)),
       ),
     );
