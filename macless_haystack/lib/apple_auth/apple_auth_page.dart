@@ -142,6 +142,10 @@ class _AppleAuthPageState extends State<AppleAuthPage> {
     setState(() {
       _step = _AppleAuthStep.credentials;
       _error = null;
+      // Otherwise a second login attempt that also needs 2FA shows the
+      // previous attempt's now-stale code pre-filled.
+      _codeController.clear();
+      _method = null;
     });
   }
 
