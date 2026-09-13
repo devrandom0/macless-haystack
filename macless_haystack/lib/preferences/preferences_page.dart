@@ -7,6 +7,8 @@ import 'package:macless_haystack/apple_auth/apple_auth_service.dart';
 import 'package:macless_haystack/history/archive_settings_validation.dart';
 import 'package:macless_haystack/history/history_archive_service.dart';
 import 'package:macless_haystack/location/location_model.dart';
+import 'package:macless_haystack/map/map_style_picker_button.dart';
+import 'package:macless_haystack/map/map_tile_source.dart';
 import 'package:macless_haystack/preferences/theme_model.dart';
 import 'package:macless_haystack/preferences/user_preferences_model.dart';
 import 'package:macless_haystack/util/theme_mode.dart';
@@ -65,7 +67,9 @@ class _PreferencesPageState extends State<PreferencesPage> {
   void initState() {
     super.initState();
     _loadArchivingStatus();
-    _appleAuthEnabled = Settings.getValue<bool>(appleAuthEnabledKey, defaultValue: false) ?? false;
+    _appleAuthEnabled =
+        Settings.getValue<bool>(appleAuthEnabledKey, defaultValue: false) ??
+        false;
     if (_appleAuthEnabled) {
       _loadAppleAuthStatus();
     }
@@ -81,18 +85,19 @@ class _PreferencesPageState extends State<PreferencesPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Settings'),
-      ),
+      appBar: AppBar(title: const Text('Settings')),
       body: ListView(
         children: <Widget>[
           _sectionHeader(context, 'Location & fetching'),
           getLocationTile(),
           getFetchOnStartupTile(),
+          getCompactAccessoryListTile(),
           getNumberofDaysTile(),
           _sectionHeader(context, 'General'),
           getTimeFormatTile(),
           getThemeModeTile(),
+          _sectionHeader(context, 'Map'),
+          getMapTileProviderTile(),
           _sectionHeader(context, 'Endpoint Connection'),
           getUrlTile(),
           getUserTile(),
@@ -119,10 +124,10 @@ class _PreferencesPageState extends State<PreferencesPage> {
       child: Text(
         title.toUpperCase(),
         style: Theme.of(context).textTheme.labelMedium?.copyWith(
-              color: Theme.of(context).colorScheme.primary,
-              fontWeight: FontWeight.bold,
-              letterSpacing: 0.8,
-            ),
+          color: Theme.of(context).colorScheme.primary,
+          fontWeight: FontWeight.bold,
+          letterSpacing: 0.8,
+        ),
       ),
     );
   }
@@ -292,6 +297,25 @@ class _PreferencesPageState extends State<PreferencesPage> {
     );
   }
 
+  Widget getCompactAccessoryListTile() {
+    return SwitchSettingsTile(
+      settingKey: compactAccessoryListKey,
+      defaultValue: true,
+      title: 'Compact accessory list',
+      subtitle: 'Show icon, name, distance, and last seen on one line',
+      activeColor: Theme.of(context).colorScheme.onPrimary,
+    );
+  }
+
+  Widget getMapTileProviderTile() {
+    return const DropDownSettingsTile<String>(
+      title: 'Map style',
+      settingKey: mapTileProviderKey,
+      values: mapTileProviderLabels,
+      selected: mapTileProviderOsmValue,
+    );
+  }
+
   Set<String> _allKnownKeys(Iterable<Accessory> accessories) {
     var keys = <String>{};
     for (var accessory in accessories) {
@@ -303,15 +327,29 @@ class _PreferencesPageState extends State<PreferencesPage> {
 
   Future<void> _loadArchivingStatus() async {
     try {
-      var url = Settings.getValue<String>(endpointUrl, defaultValue: 'http://localhost:6176')!;
+      var url = Settings.getValue<String>(
+        endpointUrl,
+        defaultValue: 'http://localhost:6176',
+      )!;
       var user = Settings.getValue<String>(endpointUser, defaultValue: '')!;
       var pass = Settings.getValue<String>(endpointPass, defaultValue: '')!;
-      var accessories = Provider.of<AccessoryRegistry>(context, listen: false).accessories;
+      var accessories = Provider.of<AccessoryRegistry>(
+        context,
+        listen: false,
+      ).accessories;
       var allKeys = _allKnownKeys(accessories);
 
-      var devices = await HistoryArchiveService.getArchivedDevices(url, user, pass);
-      var enabledKeys = devices.where((d) => d.enabled).map((d) => d.hashedPublicKey).toSet();
-      var allEnabled = allKeys.isNotEmpty && allKeys.every(enabledKeys.contains);
+      var devices = await HistoryArchiveService.getArchivedDevices(
+        url,
+        user,
+        pass,
+      );
+      var enabledKeys = devices
+          .where((d) => d.enabled)
+          .map((d) => d.hashedPublicKey)
+          .toSet();
+      var allEnabled =
+          allKeys.isNotEmpty && allKeys.every(enabledKeys.contains);
 
       if (mounted) {
         setState(() {
@@ -331,7 +369,10 @@ class _PreferencesPageState extends State<PreferencesPage> {
   Future<void> _loadAppleAuthStatus() async {
     setState(() => _appleAuthStatusLoading = true);
     try {
-      var url = Settings.getValue<String>(endpointUrl, defaultValue: 'http://localhost:6176')!;
+      var url = Settings.getValue<String>(
+        endpointUrl,
+        defaultValue: 'http://localhost:6176',
+      )!;
       var user = Settings.getValue<String>(endpointUser, defaultValue: '')!;
       var pass = Settings.getValue<String>(endpointPass, defaultValue: '')!;
       var status = await AppleAuthService.getStatus(url, user, pass);
@@ -386,7 +427,10 @@ class _PreferencesPageState extends State<PreferencesPage> {
       subtitle: Text(_appleAuthStatusLabel()),
       trailing: const Icon(Icons.chevron_right),
       onTap: () async {
-        var url = Settings.getValue<String>(endpointUrl, defaultValue: 'http://localhost:6176')!;
+        var url = Settings.getValue<String>(
+          endpointUrl,
+          defaultValue: 'http://localhost:6176',
+        )!;
         var user = Settings.getValue<String>(endpointUser, defaultValue: '')!;
         var pass = Settings.getValue<String>(endpointPass, defaultValue: '')!;
         await Navigator.of(context).push(
@@ -412,8 +456,12 @@ class _PreferencesPageState extends State<PreferencesPage> {
   /// Builds the [HistoryDeviceEntry] list for [accessory]'s main key and any
   /// additional keys, shared by every place that pushes an archiving state
   /// (or setting) to the server for that accessory.
-  Future<List<HistoryDeviceEntry>> _deviceEntriesFor(Accessory accessory, bool enabled,
-      {int? pollIntervalHours, int? retentionDays}) async {
+  Future<List<HistoryDeviceEntry>> _deviceEntriesFor(
+    Accessory accessory,
+    bool enabled, {
+    int? pollIntervalHours,
+    int? retentionDays,
+  }) async {
     var additionalPrivateKeys = await accessory.getAdditionalPrivateKeys();
     return [
       HistoryDeviceEntry(
@@ -439,7 +487,10 @@ class _PreferencesPageState extends State<PreferencesPage> {
   }
 
   Future<void> _setArchivingAll(bool enabled) async {
-    var accessories = Provider.of<AccessoryRegistry>(context, listen: false).accessories;
+    var accessories = Provider.of<AccessoryRegistry>(
+      context,
+      listen: false,
+    ).accessories;
     if (accessories.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('No accessories to archive')),
@@ -452,7 +503,10 @@ class _PreferencesPageState extends State<PreferencesPage> {
       _archivingAllEnabled = enabled;
     });
     try {
-      var url = Settings.getValue<String>(endpointUrl, defaultValue: 'http://localhost:6176')!;
+      var url = Settings.getValue<String>(
+        endpointUrl,
+        defaultValue: 'http://localhost:6176',
+      )!;
       var user = Settings.getValue<String>(endpointUser, defaultValue: '')!;
       var pass = Settings.getValue<String>(endpointPass, defaultValue: '')!;
 
@@ -462,7 +516,12 @@ class _PreferencesPageState extends State<PreferencesPage> {
       }
 
       if (devices.isNotEmpty) {
-        await HistoryArchiveService.setDevicesArchiving(url, user, pass, devices);
+        await HistoryArchiveService.setDevicesArchiving(
+          url,
+          user,
+          pass,
+          devices,
+        );
       }
     } catch (e) {
       if (mounted) {
@@ -484,11 +543,14 @@ class _PreferencesPageState extends State<PreferencesPage> {
     if (_archiveDefaultsFormKey.currentState?.validate() != true) {
       return;
     }
-    var accessories = Provider.of<AccessoryRegistry>(context, listen: false).accessories;
+    var accessories = Provider.of<AccessoryRegistry>(
+      context,
+      listen: false,
+    ).accessories;
     if (accessories.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No accessories to update')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('No accessories to update')));
       return;
     }
 
@@ -496,35 +558,59 @@ class _PreferencesPageState extends State<PreferencesPage> {
     var retentionText = _defaultRetentionDaysController.text.trim();
     if (pollIntervalText.isEmpty && retentionText.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Enter a poll interval or retention value first')),
+        const SnackBar(
+          content: Text('Enter a poll interval or retention value first'),
+        ),
       );
       return;
     }
 
     try {
-      var pollIntervalHours =
-          pollIntervalText.isEmpty ? null : int.parse(pollIntervalText);
-      var retentionDays =
-          retentionText.isEmpty ? null : int.parse(retentionText);
+      var pollIntervalHours = pollIntervalText.isEmpty
+          ? null
+          : int.parse(pollIntervalText);
+      var retentionDays = retentionText.isEmpty
+          ? null
+          : int.parse(retentionText);
 
-      var url = Settings.getValue<String>(endpointUrl, defaultValue: 'http://localhost:6176')!;
+      var url = Settings.getValue<String>(
+        endpointUrl,
+        defaultValue: 'http://localhost:6176',
+      )!;
       var user = Settings.getValue<String>(endpointUser, defaultValue: '')!;
       var pass = Settings.getValue<String>(endpointPass, defaultValue: '')!;
 
-      var currentDevices = await HistoryArchiveService.getArchivedDevices(url, user, pass);
-      var enabledKeys = currentDevices.where((d) => d.enabled).map((d) => d.hashedPublicKey).toSet();
+      var currentDevices = await HistoryArchiveService.getArchivedDevices(
+        url,
+        user,
+        pass,
+      );
+      var enabledKeys = currentDevices
+          .where((d) => d.enabled)
+          .map((d) => d.hashedPublicKey)
+          .toSet();
 
       List<HistoryDeviceEntry> devices = [];
       for (var accessory in accessories) {
-        var entries = await _deviceEntriesFor(accessory, true,
-            pollIntervalHours: pollIntervalHours, retentionDays: retentionDays);
-        devices.addAll(entries.where((e) => enabledKeys.contains(e.hashedPublicKey)));
+        var entries = await _deviceEntriesFor(
+          accessory,
+          true,
+          pollIntervalHours: pollIntervalHours,
+          retentionDays: retentionDays,
+        );
+        devices.addAll(
+          entries.where((e) => enabledKeys.contains(e.hashedPublicKey)),
+        );
       }
 
       if (devices.isEmpty) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('No accessories are currently archived on the endpoint')),
+            const SnackBar(
+              content: Text(
+                'No accessories are currently archived on the endpoint',
+              ),
+            ),
           );
         }
         return;
@@ -533,7 +619,11 @@ class _PreferencesPageState extends State<PreferencesPage> {
       await HistoryArchiveService.setDevicesArchiving(url, user, pass, devices);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Archive settings applied to all archived accessories')),
+          const SnackBar(
+            content: Text(
+              'Archive settings applied to all archived accessories',
+            ),
+          ),
         );
       }
     } catch (e) {

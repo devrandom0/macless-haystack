@@ -1,12 +1,13 @@
-
 import 'dart:async';
 
 import 'package:universal_io/io.dart';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_settings_screens/flutter_settings_screens.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:macless_haystack/accessory/accessory_icon.dart';
 import 'package:macless_haystack/accessory/accessory_model.dart';
+import 'package:macless_haystack/preferences/user_preferences_model.dart';
 import 'package:macless_haystack/util/time_format.dart';
 import 'package:intl/intl.dart';
 
@@ -85,38 +86,50 @@ class AccessoryListItemState extends State<AccessoryListItem> {
           }
         }
         // Format published date in a human readable way
-        String? dateString = widget.accessory.datePublished != null &&
+        String? dateString =
+            widget.accessory.datePublished != null &&
                 widget.accessory.datePublished != DateTime(1970)
             ? '\n${DateFormat.yMMMd(Platform.localeName).format(widget.accessory.datePublished!)} ${formatTime(widget.accessory.datePublished!)}'
             : '';
+
+        var isCompact =
+            Settings.getValue<bool>(
+              compactAccessoryListKey,
+              defaultValue: true,
+            ) ??
+            true;
 
         return AnimatedContainer(
             duration: const Duration(milliseconds: 300), // Sanfter Übergang
             color: _tileColor,
             child: ListTile(
               onTap: widget.onTap,
-              title: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    widget.accessory.name,
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: widget.accessory.isActive
-                              ? Theme.of(context).colorScheme.onSurface
-                              : Theme.of(context).disabledColor,
+              title: isCompact
+                  ? _buildCompactTitle(context)
+                  : Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          widget.accessory.name,
+                          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                color: widget.accessory.isActive
+                                    ? Theme.of(context).colorScheme.onSurface
+                                    : Theme.of(context).disabledColor,
+                              ),
                         ),
-                  ),
-                  const SizedBox(width: 4),
-                  _buildIcon(),
-                ],
-              ),
-              subtitle: Text(
-                locationString + dateString,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
-              trailing: widget.distance,
+                        const SizedBox(width: 4),
+                        _buildIcon(),
+                      ],
+                    ),
+              subtitle: isCompact
+                  ? null
+                  : Text(
+                      locationString + dateString,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+              trailing: isCompact ? _buildCompactTrailing(context) : widget.distance,
               dense: true,
               visualDensity: VisualDensity.compact,
               contentPadding: const EdgeInsets.symmetric(horizontal: 12),
@@ -133,5 +146,44 @@ class AccessoryListItemState extends State<AccessoryListItem> {
 
   Widget _buildIcon() {
     return AccessoryBatteryIcon(status: widget.accessory.lastBatteryStatus);
+  }
+
+  Widget _buildCompactTitle(BuildContext context) {
+    return Text(
+      widget.accessory.name,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+            color: widget.accessory.isActive
+                ? Theme.of(context).colorScheme.onSurface
+                : Theme.of(context).disabledColor,
+          ),
+    );
+  }
+
+  Widget _buildCompactTrailing(BuildContext context) {
+    var datePublished = widget.accessory.datePublished;
+    String? lastSeen = datePublished != null && datePublished != DateTime(1970)
+        ? formatRelativeTime(
+            datePublished,
+            DateTime.now(),
+            locale: Platform.localeName,
+          )
+        : null;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (widget.distance != null) widget.distance!,
+        if (widget.distance != null && lastSeen != null)
+          const SizedBox(width: 6),
+        if (lastSeen != null)
+          Text(
+            lastSeen,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Theme.of(context).colorScheme.outline,
+                ),
+          ),
+      ],
+    );
   }
 }

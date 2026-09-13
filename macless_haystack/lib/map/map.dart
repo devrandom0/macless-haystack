@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
+import 'package:flutter_settings_screens/flutter_settings_screens.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:macless_haystack/accessory/accessory_actions.dart';
 import 'package:macless_haystack/accessory/accessory_icon.dart';
@@ -7,6 +8,8 @@ import 'package:macless_haystack/accessory/accessory_model.dart';
 import 'package:macless_haystack/accessory/accessory_registry.dart';
 import 'package:macless_haystack/location/location_model.dart';
 import 'package:macless_haystack/map/accessory_popup.dart';
+import 'package:macless_haystack/map/map_tile_source.dart';
+import 'package:macless_haystack/preferences/user_preferences_model.dart';
 import 'package:provider/provider.dart';
 
 /// Whether the map should auto-fit its camera to [accessories]' current
@@ -14,12 +17,15 @@ import 'package:provider/provider.dart';
 /// available - so a later, unrelated rebuild (e.g. a device location update
 /// streaming in) doesn't override a pan/zoom the user has already made.
 bool shouldFitToAccessoryLocations(
-    List<Accessory> accessories, bool hasFittedToAccessories) {
+  List<Accessory> accessories,
+  bool hasFittedToAccessories,
+) {
   if (hasFittedToAccessories) {
     return false;
   }
-  return accessories
-      .any((accessory) => accessory.isActive && accessory.lastLocation != null);
+  return accessories.any(
+    (accessory) => accessory.isActive && accessory.lastLocation != null,
+  );
 }
 
 /// The accessory with id [selectedId], restricted to one that is still
@@ -46,10 +52,7 @@ class AccessoryMap extends StatefulWidget {
   final MapController? mapController;
 
   /// Displays a map with all accessories at their latest position.
-  const AccessoryMap({
-    super.key,
-    this.mapController,
-  });
+  const AccessoryMap({super.key, this.mapController});
 
   @override
   State<StatefulWidget> createState() {
@@ -72,13 +75,17 @@ class _AccessoryMapState extends State<AccessoryMap> {
     super.initState();
     _mapController = widget.mapController ?? MapController();
 
-    var accessoryRegistry =
-        Provider.of<AccessoryRegistry>(context, listen: false);
+    var accessoryRegistry = Provider.of<AccessoryRegistry>(
+      context,
+      listen: false,
+    );
     var locationModel = Provider.of<LocationModel>(context, listen: false);
 
     // Resize map to fit all accessories at initial location
-    _hasFittedToAccessories =
-        shouldFitToAccessoryLocations(accessoryRegistry.accessories, false);
+    _hasFittedToAccessories = shouldFitToAccessoryLocations(
+      accessoryRegistry.accessories,
+      false,
+    );
     fitToContent(accessoryRegistry.accessories, locationModel.here);
 
     // Fit map if first location is known
@@ -116,7 +123,9 @@ class _AccessoryMapState extends State<AccessoryMap> {
       _mapController
         ..move(hereLocation, _mapController.camera.zoom)
         ..move(
-            _mapController.camera.center, _mapController.camera.zoom + 0.00001);
+          _mapController.camera.center,
+          _mapController.camera.zoom + 0.00001,
+        );
       points = [hereLocation];
     }
 
@@ -126,8 +135,11 @@ class _AccessoryMapState extends State<AccessoryMap> {
         .map((accessory) => accessory.lastLocation!)
         .toList();
     if (accessoryPoints.isNotEmpty) {
-      _mapController.fitCamera(CameraFit.bounds(
-          bounds: LatLngBounds.fromPoints([...points, ...accessoryPoints])));
+      _mapController.fitCamera(
+        CameraFit.bounds(
+          bounds: LatLngBounds.fromPoints([...points, ...accessoryPoints]),
+        ),
+      );
     }
   }
 
@@ -164,39 +176,62 @@ class _AccessoryMapState extends State<AccessoryMap> {
         });
       }
 
-      return LayoutBuilder(builder: (context, constraints) {
-        // Whether there's enough map height above the selected marker's
-        // screen position to fit the popup - without this, a marker tapped
-        // near the top of a short map viewport pushes the popup off-screen
-        // instead of showing it. camera is only valid once _mapReady, which
-        // is guaranteed by the time selected is non-null (a marker can't be
-        // tapped before FlutterMap has rendered).
-        const desiredPopupHeight = 320.0;
-        const margin = 16.0;
-        var showPopupAbove = true;
-        var popupMaxHeight = desiredPopupHeight;
-        if (selected != null && _mapReady) {
-          var screenY = _mapController.camera
-              .latLngToScreenOffset(selected.lastLocation!)
-              .dy;
-          var spaceAbove = screenY - margin;
-          var spaceBelow = constraints.maxHeight - screenY - margin;
-          if (spaceAbove >= desiredPopupHeight) {
-            showPopupAbove = true;
-            popupMaxHeight = desiredPopupHeight;
-          } else if (spaceBelow >= desiredPopupHeight) {
-            showPopupAbove = false;
-            popupMaxHeight = desiredPopupHeight;
-          } else if (spaceAbove >= spaceBelow) {
-            showPopupAbove = true;
-            popupMaxHeight = spaceAbove.clamp(120.0, desiredPopupHeight);
-          } else {
-            showPopupAbove = false;
-            popupMaxHeight = spaceBelow.clamp(120.0, desiredPopupHeight);
-          }
-        }
+      // ValueChangeObserver (rather than a plain Settings.getValue read) so
+      // this rebuilds live when the on-map style picker changes the
+      // setting, without needing a pop/navigate back to this screen to
+      // pick up the new value.
+      return ValueChangeObserver<String>(
+        cacheKey: mapTileProviderKey,
+        defaultValue: mapTileProviderOsmValue,
+        builder: (context, tileProviderValue, onTileProviderChanged) {
+          var tileSource = mapTileSourceFromString(tileProviderValue);
+          return _buildMap(
+              context, accessories, locationModel, selected, tileSource);
+        },
+      );
+    });
+  }
 
-        return FlutterMap(
+  Widget _buildMap(
+    BuildContext context,
+    List<Accessory> accessories,
+    LocationModel locationModel,
+    Accessory? selected,
+    MapTileSource tileSource,
+  ) {
+    return LayoutBuilder(builder: (context, constraints) {
+      // Whether there's enough map height above the selected marker's
+      // screen position to fit the popup - without this, a marker tapped
+      // near the top of a short map viewport pushes the popup off-screen
+      // instead of showing it. camera is only valid once _mapReady, which
+      // is guaranteed by the time selected is non-null (a marker can't be
+      // tapped before FlutterMap has rendered).
+      const desiredPopupHeight = 320.0;
+      const margin = 16.0;
+      var showPopupAbove = true;
+      var popupMaxHeight = desiredPopupHeight;
+      if (selected != null && _mapReady) {
+        var screenY = _mapController.camera
+            .latLngToScreenOffset(selected.lastLocation!)
+            .dy;
+        var spaceAbove = screenY - margin;
+        var spaceBelow = constraints.maxHeight - screenY - margin;
+        if (spaceAbove >= desiredPopupHeight) {
+          showPopupAbove = true;
+          popupMaxHeight = desiredPopupHeight;
+        } else if (spaceBelow >= desiredPopupHeight) {
+          showPopupAbove = false;
+          popupMaxHeight = desiredPopupHeight;
+        } else if (spaceAbove >= spaceBelow) {
+          showPopupAbove = true;
+          popupMaxHeight = spaceAbove.clamp(120.0, desiredPopupHeight);
+        } else {
+          showPopupAbove = false;
+          popupMaxHeight = spaceBelow.clamp(120.0, desiredPopupHeight);
+        }
+      }
+
+      return FlutterMap(
         mapController: _mapController,
         options: MapOptions(
             initialCenter: locationModel.here ?? const LatLng(51.1657, 10.4515),
@@ -215,7 +250,7 @@ class _AccessoryMapState extends State<AccessoryMap> {
                     InteractiveFlag.pinchZoom),
             onMapReady: () {
               _mapReady = true;
-              fitToContent(accessoryRegistry.accessories, locationModel.here);
+              fitToContent(accessories, locationModel.here);
             },
             onTap: (_, _) {
               if (_selectedAccessoryId != null) {
@@ -230,11 +265,14 @@ class _AccessoryMapState extends State<AccessoryMap> {
             // green parks turn magenta. flutter_map's own
             // darkModeTileBuilder composes the invert with a 180-degree
             // hue rotation, which restores the original hues at the
-            // flipped luminance instead.
-            tileBuilder: Theme.of(context).brightness == Brightness.dark
+            // flipped luminance instead. Skipped entirely for a tile
+            // source that's already dark on its own.
+            tileBuilder: Theme.of(context).brightness == Brightness.dark &&
+                    !tileSource.isDark
                 ? darkModeTileBuilder
                 : null,
-            urlTemplate: "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+            urlTemplate: tileSource.urlTemplate,
+            subdomains: tileSource.subdomains,
             userAgentPackageName: 'de.dchristl.headlesshaystack',
           ),
           MarkerLayer(
@@ -320,12 +358,11 @@ class _AccessoryMapState extends State<AccessoryMap> {
           RichAttributionWidget(
             alignment: AttributionAlignment.bottomLeft,
             attributions: [
-              const TextSourceAttribution('© OpenStreetMap contributors'),
+              TextSourceAttribution(tileSource.attributionText),
             ],
           ),
         ],
-        );
-      });
+      );
     });
   }
 }
