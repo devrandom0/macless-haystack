@@ -138,6 +138,13 @@ class _AppleAuthPageState extends State<AppleAuthPage> {
     }
   }
 
+  void _useDifferentAppleId() {
+    setState(() {
+      _step = _AppleAuthStep.credentials;
+      _error = null;
+    });
+  }
+
   Future<void> _submitCode() async {
     if (_codeController.text.trim().isEmpty) return;
     setState(() {
@@ -179,72 +186,117 @@ class _AppleAuthPageState extends State<AppleAuthPage> {
         child: _step == _AppleAuthStep.credentials
             ? Form(
                 key: _formKey,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    if (_error != null) ...[
-                      Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
-                      const SizedBox(height: 8),
-                    ],
-                    if (_showLoggedInHint) ...[
-                      Text(
-                        'Already logged in. Log in again to switch accounts or test the login flow, '
-                        'or log out below.',
-                        style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
+                child: AutofillGroup(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      if (_error != null) ...[
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: Theme.of(context).colorScheme.errorContainer,
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(Icons.error_outline, color: Theme.of(context).colorScheme.onErrorContainer),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  _error!,
+                                  style: TextStyle(color: Theme.of(context).colorScheme.onErrorContainer),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                      ],
+                      if (_showLoggedInHint) ...[
+                        Text(
+                          'Already logged in. Log in again to switch accounts or test the login flow, '
+                          'or log out below.',
+                          style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
+                        ),
+                        const SizedBox(height: 8),
+                      ],
+                      TextFormField(
+                        controller: _usernameController,
+                        decoration: InputDecoration(
+                          labelText: 'Apple ID',
+                          hintText: _showLoggedInHint ? 'Already logged in' : null,
+                        ),
+                        keyboardType: TextInputType.emailAddress,
+                        autofillHints: const [AutofillHints.username],
+                        validator: (v) => (v == null || v.trim().isEmpty) ? 'Enter your Apple ID' : null,
                       ),
-                      const SizedBox(height: 8),
-                    ],
-                    TextFormField(
-                      controller: _usernameController,
-                      decoration: InputDecoration(
-                        labelText: 'Apple ID',
-                        hintText: _showLoggedInHint ? 'Already logged in' : null,
+                      TextFormField(
+                        controller: _passwordController,
+                        decoration: InputDecoration(
+                          labelText: 'Password',
+                          hintText: _showLoggedInHint ? '••••••••' : null,
+                        ),
+                        obscureText: true,
+                        autofillHints: const [AutofillHints.password],
+                        validator: (v) => (v == null || v.isEmpty) ? 'Enter your password' : null,
                       ),
-                      keyboardType: TextInputType.emailAddress,
-                      validator: (v) => (v == null || v.trim().isEmpty) ? 'Enter your Apple ID' : null,
-                    ),
-                    TextFormField(
-                      controller: _passwordController,
-                      decoration: InputDecoration(
-                        labelText: 'Password',
-                        hintText: _showLoggedInHint ? '••••••••' : null,
-                      ),
-                      obscureText: true,
-                      validator: (v) => (v == null || v.isEmpty) ? 'Enter your password' : null,
-                    ),
-                    const SizedBox(height: 16),
-                    ElevatedButton(
-                      onPressed: (_submitting || _loggingOut) ? null : _submitCredentials,
-                      child: _submitting
-                          ? const SizedBox(
-                              height: 16, width: 16, child: CircularProgressIndicator(strokeWidth: 2))
-                          : const Text('Log in'),
-                    ),
-                    if (_showLoggedInHint) ...[
-                      const SizedBox(height: 8),
-                      OutlinedButton(
-                        onPressed: (_submitting || _loggingOut) ? null : _logout,
-                        child: _loggingOut
+                      const SizedBox(height: 16),
+                      ElevatedButton(
+                        onPressed: (_submitting || _loggingOut) ? null : _submitCredentials,
+                        child: _submitting
                             ? const SizedBox(
                                 height: 16, width: 16, child: CircularProgressIndicator(strokeWidth: 2))
-                            : const Text('Log out'),
+                            : const Text('Log in'),
                       ),
+                      if (_showLoggedInHint) ...[
+                        const SizedBox(height: 24),
+                        const Divider(),
+                        const SizedBox(height: 8),
+                        OutlinedButton(
+                          onPressed: (_submitting || _loggingOut) ? null : _logout,
+                          child: _loggingOut
+                              ? const SizedBox(
+                                  height: 16, width: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                              : const Text('Log out'),
+                        ),
+                      ],
                     ],
-                  ],
+                  ),
                 ),
               )
             : Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   if (_error != null) ...[
-                    Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Theme.of(context).colorScheme.errorContainer,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(Icons.error_outline, color: Theme.of(context).colorScheme.onErrorContainer),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              _error!,
+                              style: TextStyle(color: Theme.of(context).colorScheme.onErrorContainer),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                     const SizedBox(height: 8),
                   ],
+                  Text('Verifying ${_usernameController.text.trim()}'),
+                  const SizedBox(height: 8),
                   Text(_methodLabel()),
                   TextField(
                     controller: _codeController,
                     decoration: const InputDecoration(labelText: '2FA code'),
                     keyboardType: TextInputType.number,
+                    autofillHints: const [AutofillHints.oneTimeCode],
                   ),
                   const SizedBox(height: 16),
                   ElevatedButton(
@@ -253,6 +305,11 @@ class _AppleAuthPageState extends State<AppleAuthPage> {
                         ? const SizedBox(
                             height: 16, width: 16, child: CircularProgressIndicator(strokeWidth: 2))
                         : const Text('Submit code'),
+                  ),
+                  const SizedBox(height: 8),
+                  TextButton(
+                    onPressed: _submitting ? null : _useDifferentAppleId,
+                    child: const Text('Use a different Apple ID'),
                   ),
                 ],
               ),
