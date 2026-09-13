@@ -45,7 +45,7 @@ class _DashboardState extends State<Dashboard> {
           ),
     },
     {
-      'icon': Icons.style,
+      'icon': Icons.inventory_2,
       'label': 'Accessories',
       'actionButton': (ctx) => const NewKeyAction(),
     },
