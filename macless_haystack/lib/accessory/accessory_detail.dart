@@ -347,6 +347,51 @@ class _AccessoryDetailState extends State<AccessoryDetail> {
     );
   }
 
+  /// Lets the user change the icon or the color independently, instead of
+  /// force-marching every icon change through a color picker too (and
+  /// requiring a full icon re-pick just to reach the color picker).
+  Future<void> _showIconAndColorMenu(BuildContext context) async {
+    var choice = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.emoji_symbols_outlined),
+              title: const Text('Change icon'),
+              onTap: () => Navigator.pop(context, 'icon'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.palette_outlined),
+              title: const Text('Change color'),
+              onTap: () => Navigator.pop(context, 'color'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (choice == 'icon' && context.mounted) {
+      String? selectedIcon = await AccessoryIconSelector.showIconSelection(
+          context, newAccessory.rawIcon, newAccessory.color);
+      if (selectedIcon != null) {
+        setState(() {
+          newAccessory.setIcon(selectedIcon);
+        });
+      }
+    } else if (choice == 'color' && context.mounted) {
+      Color? selectedColor = await AccessoryColorSelector.showColorSelection(
+          context, newAccessory.color);
+      if (selectedColor != null) {
+        setState(() {
+          newAccessory.color = selectedColor;
+        });
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -386,31 +431,7 @@ class _AccessoryDetailState extends State<AccessoryDetail> {
                           ),
                           child: IconButton(
                             tooltip: 'Change icon and color',
-                            onPressed: () async {
-                              // Show icon selection
-                              String? selectedIcon =
-                                  await AccessoryIconSelector.showIconSelection(
-                                      context,
-                                      newAccessory.rawIcon,
-                                      newAccessory.color);
-                              if (selectedIcon != null) {
-                                setState(() {
-                                  newAccessory.setIcon(selectedIcon);
-                                });
-                                if (context.mounted) {
-                                  // Show color selection only when icon is selected
-                                  Color? selectedColor =
-                                      await AccessoryColorSelector
-                                          .showColorSelection(
-                                              context, newAccessory.color);
-                                  if (selectedColor != null) {
-                                    setState(() {
-                                      newAccessory.color = selectedColor;
-                                    });
-                                  }
-                                }
-                              }
-                            },
+                            onPressed: () => _showIconAndColorMenu(context),
                             icon: Icon(
                               Icons.edit,
                               color: Theme.of(context).colorScheme.primary,
