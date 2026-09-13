@@ -100,12 +100,11 @@ class AccessoryListItemState extends State<AccessoryListItem> {
                 children: [
                   Text(
                     widget.accessory.name,
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: widget.accessory.isActive
-                          ? Theme.of(context).colorScheme.onSurface
-                          : Theme.of(context).disabledColor,
-                    ),
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: widget.accessory.isActive
+                              ? Theme.of(context).colorScheme.onSurface
+                              : Theme.of(context).disabledColor,
+                        ),
                   ),
                   const SizedBox(width: 4),
                   _buildIcon(),
@@ -115,7 +114,7 @@ class AccessoryListItemState extends State<AccessoryListItem> {
                 locationString + dateString,
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontSize: 12),
+                style: Theme.of(context).textTheme.bodySmall,
               ),
               trailing: widget.distance,
               dense: true,

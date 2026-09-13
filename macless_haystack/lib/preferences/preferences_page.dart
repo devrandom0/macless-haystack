@@ -557,15 +557,15 @@ class _PreferencesPageState extends State<PreferencesPage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Padding(
-                  padding: EdgeInsets.only(top: 8),
+                Padding(
+                  padding: const EdgeInsets.only(top: 8),
                   child: Text(
                     'Poll interval and retention for accessories already archived on '
                     "the endpoint. Leave a field blank to keep each accessory's "
                     'existing value. Tap Apply to push these to every currently '
                     'archived accessory - accessories not currently archived are not '
                     'affected or turned on.',
-                    style: TextStyle(fontSize: 12),
+                    style: Theme.of(context).textTheme.bodySmall,
                   ),
                 ),
                 TextFormField(
