@@ -36,7 +36,10 @@ TimeFormatPreference timeFormatPreferenceFromString(String? value) {
 /// intl recognizes (e.g. a device reporting "POSIX" or an empty locale),
 /// so a broken device locale never crashes formatting.
 String formatTimeOfDay(
-    DateTime time, TimeFormatPreference preference, String locale) {
+  DateTime time,
+  TimeFormatPreference preference,
+  String locale,
+) {
   try {
     switch (preference) {
       case TimeFormatPreference.h12:
@@ -54,8 +57,42 @@ String formatTimeOfDay(
 /// Formats the time-of-day portion of [time] using the user's configured
 /// time format preference (Settings, key [timeFormatKey]).
 String formatTime(DateTime time) {
-  var preference = timeFormatPreferenceFromString(Settings.getValue<String>(
+  var preference = timeFormatPreferenceFromString(
+    Settings.getValue<String>(
       timeFormatKey,
-      defaultValue: timeFormatSystemValue));
+      defaultValue: timeFormatSystemValue,
+    ),
+  );
   return formatTimeOfDay(time, preference, Platform.localeName);
+}
+
+/// A short, human-friendly relative time (e.g. "2h ago") for [time]
+/// relative to [now]. Beyond a week old, "N days ago" stops being more
+/// useful than the actual date, so it falls back to a calendar date.
+///
+/// A [time] at or slightly after [now] (clock drift between device and
+/// server) is treated as "just now" rather than showing a negative age.
+String formatRelativeTime(
+  DateTime time,
+  DateTime now, {
+  String locale = 'en_US',
+}) {
+  final diff = now.difference(time);
+  if (diff.inSeconds < 60) {
+    return 'just now';
+  }
+  if (diff.inMinutes < 60) {
+    return '${diff.inMinutes}m ago';
+  }
+  if (diff.inHours < 24) {
+    return '${diff.inHours}h ago';
+  }
+  if (diff.inDays < 7) {
+    return '${diff.inDays}d ago';
+  }
+  try {
+    return DateFormat.MMMd(locale).format(time);
+  } catch (_) {
+    return DateFormat('MMM d').format(time);
+  }
 }

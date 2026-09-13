@@ -12,6 +12,7 @@ const String numberOfDaysToFetch = 'NUMBER_OF_DAYS';
 const String timeFormatKey = 'TIME_FORMAT';
 const String themeModeKey = 'THEME_MODE';
 const String appleAuthEnabledKey = 'APPLE_AUTH_ENABLED';
+const String compactAccessoryListKey = 'COMPACT_ACCESSORY_LIST';
 
 class UserPreferences extends ChangeNotifier {
   /// If these settings are initialized.
@@ -65,8 +66,10 @@ class UserPreferences extends ChangeNotifier {
     if (!success) {
       return Future.value(false);
     } else {
-      var result =
-          await _prefs!.setBool(locationAccessWantedKey, locationAccessWanted);
+      var result = await _prefs!.setBool(
+        locationAccessWantedKey,
+        locationAccessWanted,
+      );
       notifyListeners();
       return result;
     }
