@@ -41,6 +41,7 @@ class _AppleAuthPageState extends State<AppleAuthPage> {
   AppleAuthMethod? _method;
   bool _submitting = false;
   bool _loggingOut = false;
+  bool _obscurePassword = true;
   String? _error;
   late bool _showLoggedInHint;
 
@@ -239,8 +240,13 @@ class _AppleAuthPageState extends State<AppleAuthPage> {
                         decoration: InputDecoration(
                           labelText: 'Password',
                           hintText: _showLoggedInHint ? '••••••••' : null,
+                          suffixIcon: IconButton(
+                            tooltip: _obscurePassword ? 'Show password' : 'Hide password',
+                            icon: Icon(_obscurePassword ? Icons.visibility : Icons.visibility_off),
+                            onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
+                          ),
                         ),
-                        obscureText: true,
+                        obscureText: _obscurePassword,
                         autofillHints: const [AutofillHints.password],
                         validator: (v) => (v == null || v.isEmpty) ? 'Enter your password' : null,
                       ),

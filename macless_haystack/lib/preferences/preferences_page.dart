@@ -622,6 +622,7 @@ class _PasswordEditDialog extends StatefulWidget {
 
 class _PasswordEditDialogState extends State<_PasswordEditDialog> {
   final _controller = TextEditingController();
+  bool _obscure = true;
 
   @override
   void dispose() {
@@ -635,7 +636,7 @@ class _PasswordEditDialogState extends State<_PasswordEditDialog> {
       title: const Text('Password for endpoint'),
       content: TextField(
         controller: _controller,
-        obscureText: true,
+        obscureText: _obscure,
         autofocus: true,
         autocorrect: false,
         enableSuggestions: false,
@@ -646,6 +647,11 @@ class _PasswordEditDialogState extends State<_PasswordEditDialog> {
           helperText: widget.hasExistingPassword
               ? 'Leave blank to keep the current password'
               : null,
+          suffixIcon: IconButton(
+            tooltip: _obscure ? 'Show password' : 'Hide password',
+            icon: Icon(_obscure ? Icons.visibility : Icons.visibility_off),
+            onPressed: () => setState(() => _obscure = !_obscure),
+          ),
         ),
       ),
       actions: [
