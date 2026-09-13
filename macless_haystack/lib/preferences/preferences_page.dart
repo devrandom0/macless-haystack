@@ -84,26 +84,46 @@ class _PreferencesPageState extends State<PreferencesPage> {
       appBar: AppBar(
         title: const Text('Settings'),
       ),
-      body: Center(
-        child: Column(
-          children: <Widget>[
-            getLocationTile(),
-            getFetchOnStartupTile(),
-            getUrlTile(),
-            getUserTile(),
-            getPassTile(),
-            getAppleAuthTile(),
-            if (_appleAuthEnabled) getAppleAuthAccountTile(),
-            getNumberofDaysTile(),
-            getTimeFormatTile(),
-            getThemeModeTile(),
-            getArchiveDefaultsSection(),
-            getArchiveAllTile(),
-            ListTile(
-              title: getAbout(),
+      body: ListView(
+        children: <Widget>[
+          _sectionHeader(context, 'General'),
+          getLocationTile(),
+          getFetchOnStartupTile(),
+          getNumberofDaysTile(),
+          getTimeFormatTile(),
+          getThemeModeTile(),
+          _sectionHeader(context, 'Endpoint Connection'),
+          getUrlTile(),
+          getUserTile(),
+          getPassTile(),
+          _sectionHeader(context, 'Apple Account'),
+          getAppleAuthTile(),
+          if (_appleAuthEnabled) getAppleAuthAccountTile(),
+          _sectionHeader(context, 'History Archiving'),
+          getArchiveDefaultsSection(),
+          getArchiveAllTile(),
+          const Divider(height: 32),
+          ListTile(
+            title: getAbout(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// A small, all-caps label separating groups of related settings, so a
+  /// long flat list of switches/fields reads as a set of distinct
+  /// sections instead of one undifferentiated block.
+  Widget _sectionHeader(BuildContext context, String title) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 24, 16, 4),
+      child: Text(
+        title.toUpperCase(),
+        style: Theme.of(context).textTheme.labelMedium?.copyWith(
+              color: Theme.of(context).colorScheme.primary,
+              fontWeight: FontWeight.bold,
+              letterSpacing: 0.8,
             ),
-          ],
-        ),
       ),
     );
   }
