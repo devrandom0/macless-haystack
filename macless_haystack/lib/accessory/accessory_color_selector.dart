@@ -30,7 +30,7 @@ class AccessoryColorSelector extends StatelessWidget {
             )
           ),
           actions: <Widget>[
-            ElevatedButton(
+            TextButton(
               child: const Text('Save'),
               onPressed: () {
                 Navigator.pop(context, currentColor);
