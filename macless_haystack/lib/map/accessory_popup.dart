@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
+import 'package:geocoding/geocoding.dart';
 import 'package:intl/intl.dart';
 import 'package:universal_io/io.dart';
 
@@ -24,11 +25,11 @@ class AccessoryPopup extends Marker {
     required VoidCallback onShare,
   }) : super(
           width: 250,
-          height: 400,
+          height: 320,
           point: accessory.lastLocation!,
           rotate: true,
           // alignment: topCenter anchors the point to the marker's BOTTOM
-          // edge instead of its center, so the 400px height extends upward
+          // edge instead of its center, so the 320px height extends upward
           // from the point rather than being centered on it. The 35px bottom
           // pad then only needs to clear the 50px marker icon's top half
           // (25px above the point) plus a 10px gap, and Align(bottomCenter)
@@ -114,8 +115,8 @@ class _PopupContent extends StatelessWidget {
                   var datePublished = accessory.datePublished;
                   var hasDate =
                       datePublished != null && datePublished != DateTime(1970);
-                  const compactIconConstraints =
-                      BoxConstraints(minWidth: 32, minHeight: 32);
+                  const iconButtonConstraints =
+                      BoxConstraints(minWidth: 48, minHeight: 48);
                   return Column(
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -153,36 +154,42 @@ class _PopupContent extends StatelessWidget {
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
-                      Text(
-                        'Lat: ${location.latitude}, Lng: ${location.longitude}',
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
+                      FutureBuilder<Placemark?>(
+                        future: accessory.place,
+                        builder: (context, snapshot) {
+                          var locationText = snapshot.hasData &&
+                                  snapshot.data != null
+                              ? '${snapshot.data!.locality}, ${snapshot.data!.administrativeArea}'
+                              : 'Lat: ${location.latitude}, Lng: ${location.longitude}';
+                          return Text(
+                            locationText,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          );
+                        },
                       ),
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                         children: [
                           IconButton(
-                            visualDensity: VisualDensity.compact,
-                            constraints: compactIconConstraints,
-                            padding: EdgeInsets.zero,
+                            constraints: iconButtonConstraints,
+                            padding: const EdgeInsets.all(8),
                             tooltip: 'Navigate',
                             icon: const Icon(Icons.directions),
                             color: Theme.of(context).colorScheme.primary,
                             onPressed: onNavigate,
                           ),
                           IconButton(
-                            visualDensity: VisualDensity.compact,
-                            constraints: compactIconConstraints,
-                            padding: EdgeInsets.zero,
+                            constraints: iconButtonConstraints,
+                            padding: const EdgeInsets.all(8),
                             tooltip: 'History',
                             icon: const Icon(Icons.history),
                             color: Theme.of(context).colorScheme.primary,
                             onPressed: onHistory,
                           ),
                           IconButton(
-                            visualDensity: VisualDensity.compact,
-                            constraints: compactIconConstraints,
-                            padding: EdgeInsets.zero,
+                            constraints: iconButtonConstraints,
+                            padding: const EdgeInsets.all(8),
                             tooltip: 'Share',
                             icon: const Icon(Icons.share),
                             color: Theme.of(context).colorScheme.primary,
