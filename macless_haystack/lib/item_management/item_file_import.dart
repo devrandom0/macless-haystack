@@ -82,6 +82,9 @@ class _ItemFileImportState extends State<ItemFileImport> {
     return accessoryDTOs;
   }
 
+  /// Whether at least one accessory is currently checked for import.
+  bool get _hasSelection => selected?.any((s) => s) ?? false;
+
   /// Import the selected accessories.
   Future<void> _importSelectedAccessories() async {
     if (accessories == null) {
@@ -164,6 +167,7 @@ class _ItemFileImportState extends State<ItemFileImport> {
       return _buildScaffold(Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
               'An error occurred.',
@@ -173,6 +177,13 @@ class _ItemFileImportState extends State<ItemFileImport> {
               padding: const EdgeInsets.only(top: 8.0),
               child: Text(
                   errorText ?? 'An unknown error occurred. Please try again.'),
+            ),
+            Padding(
+              padding: const EdgeInsets.only(top: 16.0),
+              child: OutlinedButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Choose another file'),
+              ),
             ),
           ],
         ),
@@ -227,7 +238,7 @@ class _ItemFileImportState extends State<ItemFileImport> {
                                     '*' * (accessory.privateKey.length - 8),
                                   )),
                               _buildProperty(
-                                  'Is Active', accessory.isActive.toString()),
+                                  'Active', accessory.isActive.toString()),
                               _buildProperty(
                                   'Additional Keys',
                                   accessory.additionalKeys?.length.toString() ??
@@ -263,15 +274,30 @@ class _ItemFileImportState extends State<ItemFileImport> {
   Widget _buildScaffold(Widget body) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Select Accessories'),
+        title: const Text('Select accessories'),
         actions: [
-          ElevatedButton(
-            onPressed: () {
-              if (accessories != null) {
-                _importSelectedAccessories();
-                Navigator.of(context, rootNavigator: true).pop();
-              }
-            },
+          if (selected != null)
+            IconButton(
+              tooltip: _hasSelection ? 'Select none' : 'Select all',
+              icon: Icon(_hasSelection
+                  ? Icons.deselect
+                  : Icons.select_all),
+              onPressed: () {
+                setState(() {
+                  var selectAll = !_hasSelection;
+                  selected = selected!.map((_) => selectAll).toList();
+                });
+              },
+            ),
+          TextButton(
+            onPressed: accessories != null && _hasSelection
+                ? () async {
+                    await _importSelectedAccessories();
+                    if (mounted) {
+                      Navigator.of(context, rootNavigator: true).pop();
+                    }
+                  }
+                : null,
             child: const Text('Import'),
           ),
         ],

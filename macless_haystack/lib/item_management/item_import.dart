@@ -49,9 +49,8 @@ class _AccessoryImportState extends State<AccessoryImport> {
               ),
             );
           }
+          return;
         }
-        var keyPair = await FindMyController.importKeyPair(privateKey);
-        newAccessory.hashedPublicKey = keyPair.hashedPublicKey;
 
         if (context.mounted) {
           AccessoryRegistry accessoryRegistry =
@@ -67,7 +66,7 @@ class _AccessoryImportState extends State<AccessoryImport> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Import Accessory'),
+        title: const Text('Import accessory'),
       ),
       body: SingleChildScrollView(
         child: Form(
@@ -121,17 +120,19 @@ class _AccessoryImportState extends State<AccessoryImport> {
               ),
               SwitchListTile(
                 value: newAccessory.isActive,
-                title: const Text('Is Active'),
+                title: const Text('Active'),
                 onChanged: (checked) {
                   setState(() {
                     newAccessory.isActive = checked;
                   });
                 },
               ),
-              ListTile(
-                title: ElevatedButton(
-                  child: const Text('Import'),
+              Padding(
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 16, vertical: 8),
+                child: FilledButton(
                   onPressed: () => importKey(context),
+                  child: const Text('Import'),
                 ),
               ),
             ],

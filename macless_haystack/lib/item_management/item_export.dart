@@ -30,6 +30,7 @@ class ItemExportMenu extends StatelessWidget {
   void showKeyExportSheet(BuildContext context, Accessory accessory) {
     showModalBottomSheet(
         context: context,
+        showDragHandle: true,
         builder: (BuildContext context) {
           return SafeArea(
             child: ListView(
@@ -37,15 +38,17 @@ class ItemExportMenu extends StatelessWidget {
               shrinkWrap: true,
               children: [
                 ListTile(
+                  title: const Text('Export'),
                   trailing: IconButton(
+                    tooltip: 'What are these keys?',
                     onPressed: () {
                       _showKeyExplanationAlert(context);
                     },
-                    icon: const Icon(Icons.info),
+                    icon: const Icon(Icons.info_outline),
                   ),
                 ),
                 ListTile(
-                  title: const Text('Export All Accessories (JSON)'),
+                  title: const Text('Export all accessories (JSON)'),
                   onTap: () async {
                     var accessories =
                         Provider.of<AccessoryRegistry>(context, listen: false)
@@ -57,7 +60,7 @@ class ItemExportMenu extends StatelessWidget {
                   },
                 ),
                 ListTile(
-                  title: const Text('Export Accessory (JSON)'),
+                  title: const Text('Export accessory (JSON)'),
                   onTap: () async {
                     await _exportAccessoriesAsJSON([accessory]);
                     if (context.mounted) {
@@ -66,7 +69,7 @@ class ItemExportMenu extends StatelessWidget {
                   },
                 ),
                 ListTile(
-                  title: const Text('Export Hashed Advertisement Key (Base64)'),
+                  title: const Text('Export hashed advertisement key (Base64)'),
                   onTap: () async {
                     var advertisementKey =
                         await accessory.getHashedAdvertisementKey();
@@ -79,7 +82,7 @@ class ItemExportMenu extends StatelessWidget {
                   },
                 ),
                 ListTile(
-                  title: const Text('Export Advertisement Key (Base64)'),
+                  title: const Text('Export advertisement key (Base64)'),
                   onTap: () async {
                     var advertisementKey =
                         await accessory.getAdvertisementKey();
@@ -92,8 +95,41 @@ class ItemExportMenu extends StatelessWidget {
                   },
                 ),
                 ListTile(
-                  title: const Text('Export Private Key (Base64)'),
+                  title: const Text('Export private key (Base64)'),
+                  subtitle: const Text('Anyone with this key can decrypt '
+                      'this accessory\'s locations'),
                   onTap: () async {
+                    var confirmed = await showDialog<bool>(
+                          context: context,
+                          builder: (dialogContext) => AlertDialog(
+                            title: const Text('Share the private key?'),
+                            content: Text(
+                                'This is the secret that decrypts '
+                                '"${accessory.name}"\'s location reports. '
+                                'Anyone who receives it can track this '
+                                'accessory too - only share it somewhere '
+                                'you trust.'),
+                            actions: [
+                              TextButton(
+                                onPressed: () =>
+                                    Navigator.pop(dialogContext, false),
+                                child: const Text('Cancel'),
+                              ),
+                              TextButton(
+                                style: TextButton.styleFrom(
+                                  foregroundColor: Theme.of(dialogContext)
+                                      .colorScheme
+                                      .error,
+                                ),
+                                onPressed: () =>
+                                    Navigator.pop(dialogContext, true),
+                                child: const Text('Share'),
+                              ),
+                            ],
+                          ),
+                        ) ??
+                        false;
+                    if (!confirmed || !context.mounted) return;
                     var privateKey = await accessory.getPrivateKey();
                     SharePlus.instance.share(
                       ShareParams(text: privateKey),
@@ -174,7 +210,7 @@ class ItemExportMenu extends StatelessWidget {
       context: context,
       builder: (BuildContext context) {
         return AlertDialog(
-          title: const Text('Key Overview'),
+          title: const Text('Key overview'),
           content: const SingleChildScrollView(
             child: ListBody(
               children: <Widget>[
@@ -209,10 +245,11 @@ class ItemExportMenu extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return IconButton(
+      tooltip: 'Export accessory',
       onPressed: () {
         showKeyExportSheet(context, accessory);
       },
-      icon: const Icon(Icons.open_in_new),
+      icon: const Icon(Icons.ios_share),
     );
   }
 }
