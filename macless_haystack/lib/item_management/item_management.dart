@@ -6,6 +6,7 @@ import 'package:macless_haystack/accessory/accessory_detail.dart';
 import 'package:macless_haystack/accessory/accessory_icon.dart';
 import 'package:macless_haystack/accessory/no_accessories.dart';
 import 'package:macless_haystack/item_management/item_export.dart';
+import 'package:macless_haystack/item_management/loading_spinner.dart';
 import 'package:macless_haystack/accessory/accessory_registry.dart';
 import 'package:macless_haystack/util/time_format.dart';
 import 'package:intl/intl.dart';
@@ -25,6 +26,12 @@ class KeyManagement extends StatelessWidget {
         var accessories = accessoryRegistry.accessories;
 
         if (accessories.isEmpty) {
+          // Distinguish "still loading, nothing fetched yet" from "loaded,
+          // genuinely no accessories" - without this the empty state flashes
+          // on every launch before the first load finishes.
+          if (!accessoryRegistry.initialLoadFinished) {
+            return const LoadingSpinner();
+          }
           return const NoAccessoriesPlaceholder();
         }
 
