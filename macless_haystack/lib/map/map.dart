@@ -169,177 +169,193 @@ class _AccessoryMapState extends State<AccessoryMap> {
               });
             }
 
-            var tileSource = mapTileSourceFromString(
-              Settings.getValue<String>(
-                mapTileProviderKey,
-                defaultValue: mapTileProviderOsmValue,
-              ),
-            );
-
-            return FlutterMap(
-              mapController: _mapController,
-              options: MapOptions(
-                initialCenter:
-                    locationModel.here ?? const LatLng(51.1657, 10.4515),
-                maxZoom: 18.0,
-                minZoom: 2.0,
-                initialZoom: 13.0,
-                backgroundColor: Theme.of(context).colorScheme.surface,
-                interactionOptions: const InteractionOptions(
-                  enableMultiFingerGestureRace: true,
-                  flags:
-                      InteractiveFlag.pinchZoom |
-                      InteractiveFlag.drag |
-                      InteractiveFlag.doubleTapZoom |
-                      InteractiveFlag.scrollWheelZoom |
-                      InteractiveFlag.flingAnimation |
-                      InteractiveFlag.pinchMove |
-                      InteractiveFlag.pinchZoom,
-                ),
-                onTap: (_, _) {
-                  if (_selectedAccessoryId != null) {
-                    setState(() => _selectedAccessoryId = null);
-                  }
-                },
-              ),
-              children: [
-                TileLayer(
-                  tileProvider: NetworkTileProvider(),
-                  tileBuilder: (context, child, tile) {
-                    var isDark =
-                        (Theme.of(context).brightness == Brightness.dark) &&
-                        !tileSource.isDark;
-                    return isDark
-                        ? ColorFiltered(
-                            colorFilter: const ColorFilter.matrix([
-                              -1,
-                              0,
-                              0,
-                              0,
-                              255,
-                              0,
-                              -1,
-                              0,
-                              0,
-                              255,
-                              0,
-                              0,
-                              -1,
-                              0,
-                              255,
-                              0,
-                              0,
-                              0,
-                              1,
-                              0,
-                            ]),
-                            child: child,
-                          )
-                        : child;
-                  },
-                  urlTemplate: tileSource.urlTemplate,
-                  subdomains: tileSource.subdomains,
-                  userAgentPackageName: 'de.dchristl.headlesshaystack',
-                ),
-                MarkerLayer(
-                  markers: [
-                    ...accessories
-                        .where((accessory) => accessory.isActive)
-                        .where((accessory) => accessory.lastLocation != null)
-                        .map(
-                          (accessory) => Marker(
-                            rotate: true,
-                            width: 50,
-                            height: 50,
-                            point: accessory.lastLocation!,
-                            child: Semantics(
-                              button: true,
-                              label: accessory.name,
-                              child: GestureDetector(
-                                // opaque so the marker's transparent surround
-                                // (mostly empty space around the icon) is still
-                                // tappable, and so the tap doesn't also fall
-                                // through to MapOptions.onTap and dismiss the
-                                // popup it just opened.
-                                behavior: HitTestBehavior.opaque,
-                                onTap: () {
-                                  var isSelecting =
-                                      _selectedAccessoryId != accessory.id;
-                                  setState(() {
-                                    _selectedAccessoryId = isSelecting
-                                        ? accessory.id
-                                        : null;
-                                  });
-                                  if (isSelecting) {
-                                    _mapController.move(
-                                      accessory.lastLocation!,
-                                      _mapController.camera.zoom,
-                                    );
-                                  }
-                                },
-                                child: AccessoryIcon(
-                                  icon: accessory.icon,
-                                  color: accessory.color,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                  ],
-                ),
-                MarkerLayer(
-                  markers: [
-                    if (locationModel.here != null)
-                      Marker(
-                        width: 25.0,
-                        height: 25.0,
-                        point: locationModel.here!,
-                        child: Stack(
-                          children: [
-                            Container(
-                              decoration: BoxDecoration(
-                                color: Theme.of(context).colorScheme.surface,
-                                shape: BoxShape.circle,
-                              ),
-                            ),
-                            Padding(
-                              padding: const EdgeInsets.all(5),
-                              child: Container(
-                                decoration: BoxDecoration(
-                                  // indicatorColor resolves to onPrimarySurfaceColor,
-                                  // which is white in the light theme and invisible
-                                  // against the surface-colored circle behind it.
-                                  color: Theme.of(context).colorScheme.primary,
-                                  shape: BoxShape.circle,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                  ],
-                ),
-                MarkerLayer(
-                  markers: [
-                    if (selected != null)
-                      AccessoryPopup(
-                        accessory: selected,
-                        onNavigate: () => navigateToAccessory(selected),
-                        onHistory: () =>
-                            openAccessoryHistory(context, selected),
-                        onShare: () => shareAccessoryLocation(selected),
-                      ),
-                  ],
-                ),
-                RichAttributionWidget(
-                  alignment: AttributionAlignment.bottomLeft,
-                  attributions: [
-                    TextSourceAttribution(tileSource.attributionText),
-                  ],
-                ),
-              ],
+            // ValueChangeObserver (rather than a plain Settings.getValue
+            // read) so this rebuilds live when the on-map style picker
+            // changes the setting, without needing a pop/navigate back to
+            // this screen to pick up the new value.
+            return ValueChangeObserver<String>(
+              cacheKey: mapTileProviderKey,
+              defaultValue: mapTileProviderOsmValue,
+              builder: (context, tileProviderValue, onTileProviderChanged) {
+                var tileSource = mapTileSourceFromString(tileProviderValue);
+                return _buildMap(
+                  context,
+                  accessories,
+                  locationModel,
+                  selected,
+                  tileSource,
+                );
+              },
             );
           },
+    );
+  }
+
+  Widget _buildMap(
+    BuildContext context,
+    List<Accessory> accessories,
+    LocationModel locationModel,
+    Accessory? selected,
+    MapTileSource tileSource,
+  ) {
+    return FlutterMap(
+      mapController: _mapController,
+      options: MapOptions(
+        initialCenter: locationModel.here ?? const LatLng(51.1657, 10.4515),
+        maxZoom: 18.0,
+        minZoom: 2.0,
+        initialZoom: 13.0,
+        backgroundColor: Theme.of(context).colorScheme.surface,
+        interactionOptions: const InteractionOptions(
+          enableMultiFingerGestureRace: true,
+          flags:
+              InteractiveFlag.pinchZoom |
+              InteractiveFlag.drag |
+              InteractiveFlag.doubleTapZoom |
+              InteractiveFlag.scrollWheelZoom |
+              InteractiveFlag.flingAnimation |
+              InteractiveFlag.pinchMove |
+              InteractiveFlag.pinchZoom,
+        ),
+        onTap: (_, _) {
+          if (_selectedAccessoryId != null) {
+            setState(() => _selectedAccessoryId = null);
+          }
+        },
+      ),
+      children: [
+        TileLayer(
+          tileProvider: NetworkTileProvider(),
+          tileBuilder: (context, child, tile) {
+            var isDark =
+                (Theme.of(context).brightness == Brightness.dark) &&
+                !tileSource.isDark;
+            return isDark
+                ? ColorFiltered(
+                    colorFilter: const ColorFilter.matrix([
+                      -1,
+                      0,
+                      0,
+                      0,
+                      255,
+                      0,
+                      -1,
+                      0,
+                      0,
+                      255,
+                      0,
+                      0,
+                      -1,
+                      0,
+                      255,
+                      0,
+                      0,
+                      0,
+                      1,
+                      0,
+                    ]),
+                    child: child,
+                  )
+                : child;
+          },
+          urlTemplate: tileSource.urlTemplate,
+          subdomains: tileSource.subdomains,
+          userAgentPackageName: 'de.dchristl.headlesshaystack',
+        ),
+        MarkerLayer(
+          markers: [
+            ...accessories
+                .where((accessory) => accessory.isActive)
+                .where((accessory) => accessory.lastLocation != null)
+                .map(
+                  (accessory) => Marker(
+                    rotate: true,
+                    width: 50,
+                    height: 50,
+                    point: accessory.lastLocation!,
+                    child: Semantics(
+                      button: true,
+                      label: accessory.name,
+                      child: GestureDetector(
+                        // opaque so the marker's transparent surround
+                        // (mostly empty space around the icon) is still
+                        // tappable, and so the tap doesn't also fall
+                        // through to MapOptions.onTap and dismiss the
+                        // popup it just opened.
+                        behavior: HitTestBehavior.opaque,
+                        onTap: () {
+                          var isSelecting =
+                              _selectedAccessoryId != accessory.id;
+                          setState(() {
+                            _selectedAccessoryId = isSelecting
+                                ? accessory.id
+                                : null;
+                          });
+                          if (isSelecting) {
+                            _mapController.move(
+                              accessory.lastLocation!,
+                              _mapController.camera.zoom,
+                            );
+                          }
+                        },
+                        child: AccessoryIcon(
+                          icon: accessory.icon,
+                          color: accessory.color,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+          ],
+        ),
+        MarkerLayer(
+          markers: [
+            if (locationModel.here != null)
+              Marker(
+                width: 25.0,
+                height: 25.0,
+                point: locationModel.here!,
+                child: Stack(
+                  children: [
+                    Container(
+                      decoration: BoxDecoration(
+                        color: Theme.of(context).colorScheme.surface,
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.all(5),
+                      child: Container(
+                        decoration: BoxDecoration(
+                          // indicatorColor resolves to onPrimarySurfaceColor,
+                          // which is white in the light theme and invisible
+                          // against the surface-colored circle behind it.
+                          color: Theme.of(context).colorScheme.primary,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+          ],
+        ),
+        MarkerLayer(
+          markers: [
+            if (selected != null)
+              AccessoryPopup(
+                accessory: selected,
+                onNavigate: () => navigateToAccessory(selected),
+                onHistory: () => openAccessoryHistory(context, selected),
+                onShare: () => shareAccessoryLocation(selected),
+              ),
+          ],
+        ),
+        RichAttributionWidget(
+          alignment: AttributionAlignment.bottomLeft,
+          attributions: [TextSourceAttribution(tileSource.attributionText)],
+        ),
+      ],
     );
   }
 }

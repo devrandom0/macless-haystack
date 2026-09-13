@@ -6,6 +6,7 @@ import 'package:macless_haystack/accessory/accessory_list.dart';
 import 'package:macless_haystack/accessory/accessory_registry.dart';
 import 'package:macless_haystack/location/location_model.dart';
 import 'package:macless_haystack/map/map.dart';
+import 'package:macless_haystack/map/map_style_picker_button.dart';
 import 'package:latlong2/latlong.dart';
 
 import '../callbacks.dart';
@@ -51,8 +52,9 @@ class _AccessoryMapListVerticalState extends State<AccessoryMapListVertical> {
         curve: Curves.easeOut,
       );
     }
-    _mapController
-        .fitCamera(CameraFit.bounds(bounds: LatLngBounds.fromPoints([point])));
+    _mapController.fitCamera(
+      CameraFit.bounds(bounds: LatLngBounds.fromPoints([point])),
+    );
   }
 
   @override
@@ -64,59 +66,70 @@ class _AccessoryMapListVerticalState extends State<AccessoryMapListVertical> {
   @override
   Widget build(BuildContext context) {
     return Consumer2<AccessoryRegistry, LocationModel>(
-      builder: (BuildContext context, AccessoryRegistry accessoryRegistry,
-          LocationModel locationModel, Widget? child) {
-        return Stack(
-          children: [
-            Positioned.fill(
-              child: AccessoryMap(
-                mapController: _mapController,
-              ),
-            ),
-            DraggableScrollableSheet(
-              controller: _sheetController,
-              initialChildSize: _halfSize,
-              minChildSize: _peekSize,
-              maxChildSize: _fullSize,
-              snap: true,
-              snapSizes: _snapSizes,
-              builder: (context, scrollController) {
-                return Material(
-                  color: Theme.of(context).colorScheme.surface,
-                  elevation: 8,
-                  shadowColor: Colors.black45,
-                  borderRadius:
-                      const BorderRadius.vertical(top: Radius.circular(20)),
-                  clipBehavior: Clip.antiAlias,
-                  child: Column(
-                    children: [
-                      const SizedBox(height: 10),
-                      Container(
-                        width: 36,
-                        height: 4,
-                        decoration: BoxDecoration(
-                          color: Theme.of(context).colorScheme.outlineVariant,
-                          borderRadius: BorderRadius.circular(2),
-                        ),
+      builder:
+          (
+            BuildContext context,
+            AccessoryRegistry accessoryRegistry,
+            LocationModel locationModel,
+            Widget? child,
+          ) {
+            return Stack(
+              children: [
+                Positioned.fill(
+                  child: AccessoryMap(mapController: _mapController),
+                ),
+                Positioned(
+                  top: 12,
+                  right: 12,
+                  child: SafeArea(bottom: false, child: MapStylePickerButton()),
+                ),
+                DraggableScrollableSheet(
+                  controller: _sheetController,
+                  initialChildSize: _halfSize,
+                  minChildSize: _peekSize,
+                  maxChildSize: _fullSize,
+                  snap: true,
+                  snapSizes: _snapSizes,
+                  builder: (context, scrollController) {
+                    return Material(
+                      color: Theme.of(context).colorScheme.surface,
+                      elevation: 8,
+                      shadowColor: Colors.black45,
+                      borderRadius: const BorderRadius.vertical(
+                        top: Radius.circular(20),
                       ),
-                      const SizedBox(height: 6),
-                      Expanded(
-                        child: AccessoryList(
-                          scrollController: scrollController,
-                          loadLocationUpdates: widget.loadLocationUpdates,
-                          saveOrderUpdatesCallback:
-                              widget.saveOrderUpdatesCallback,
-                          centerOnPoint: _centerPoint,
-                        ),
+                      clipBehavior: Clip.antiAlias,
+                      child: Column(
+                        children: [
+                          const SizedBox(height: 10),
+                          Container(
+                            width: 36,
+                            height: 4,
+                            decoration: BoxDecoration(
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.outlineVariant,
+                              borderRadius: BorderRadius.circular(2),
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          Expanded(
+                            child: AccessoryList(
+                              scrollController: scrollController,
+                              loadLocationUpdates: widget.loadLocationUpdates,
+                              saveOrderUpdatesCallback:
+                                  widget.saveOrderUpdatesCallback,
+                              centerOnPoint: _centerPoint,
+                            ),
+                          ),
+                        ],
                       ),
-                    ],
-                  ),
-                );
-              },
-            ),
-          ],
-        );
-      },
+                    );
+                  },
+                ),
+              ],
+            );
+          },
     );
   }
 }

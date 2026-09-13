@@ -7,6 +7,7 @@ import 'package:macless_haystack/apple_auth/apple_auth_service.dart';
 import 'package:macless_haystack/history/archive_settings_validation.dart';
 import 'package:macless_haystack/history/history_archive_service.dart';
 import 'package:macless_haystack/location/location_model.dart';
+import 'package:macless_haystack/map/map_style_picker_button.dart';
 import 'package:macless_haystack/map/map_tile_source.dart';
 import 'package:macless_haystack/preferences/theme_model.dart';
 import 'package:macless_haystack/preferences/user_preferences_model.dart';
@@ -317,12 +318,7 @@ class _PreferencesPageState extends State<PreferencesPage> {
     return const DropDownSettingsTile<String>(
       title: 'Map style',
       settingKey: mapTileProviderKey,
-      values: <String, String>{
-        mapTileProviderOsmValue: 'OpenStreetMap',
-        mapTileProviderOpenTopoValue: 'OpenTopoMap (terrain)',
-        mapTileProviderCartoVoyagerValue: 'CARTO Voyager',
-        mapTileProviderCartoDarkValue: 'CARTO Dark Matter',
-      },
+      values: mapTileProviderLabels,
       selected: mapTileProviderOsmValue,
     );
   }
