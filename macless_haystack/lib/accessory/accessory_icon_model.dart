@@ -16,19 +16,30 @@ class AccessoryIconModel {
     'creditcard.fill': Icons.credit_card,
     'briefcase.fill': Icons.business_center,
     'case.fill': Icons.work,
-    'latch.2.case.fill': Icons.business_center,
+    // Was also Icons.business_center - pixel-identical to briefcase.fill
+    // above, so two supposedly different picker options rendered as the
+    // same glyph. luggage is visually distinct.
+    'latch.2.case.fill': Icons.luggage,
     'key.fill': Icons.vpn_key,
     'mappin': Icons.place,
     // 'pushpin': Icons.push_pin,
     'globe': Icons.language,
-    'crown.fill': Icons.school,
+    // Was Icons.school (a graduation cap) - workspace_premium is Material's
+    // actual medal/premium-badge glyph, much closer to "crown".
+    'crown.fill': Icons.workspace_premium,
     'gift.fill': Icons.redeem,
     'car.fill': Icons.directions_car,
     'bicycle': Icons.pedal_bike,
     'figure.walk': Icons.directions_walk,
     'heart.fill': Icons.favorite,
-    'hare.fill': Icons.pets,
-    'tortoise.fill': Icons.bug_report,
+    // Was Icons.pets (a generic paw print) - cruelty_free is Material's
+    // rabbit-face glyph, a direct match for "hare".
+    'hare.fill': Icons.cruelty_free,
+    // Was Icons.bug_report (a ladybug) - actively misleading, read as "bug"
+    // rather than "tortoise". Material has no turtle glyph; shield is the
+    // closest available nod (a tortoise's shell) rather than an unrelated
+    // insect.
+    'tortoise.fill': Icons.shield,
     'eye.fill': Icons.visibility,
   };
 
