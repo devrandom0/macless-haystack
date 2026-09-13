@@ -7,6 +7,7 @@ import 'package:universal_io/io.dart';
 import '../accessory/accessory_battery.dart';
 import '../accessory/accessory_icon.dart';
 import '../accessory/accessory_model.dart';
+import '../util/place_format.dart';
 import '../util/time_format.dart';
 
 /// Height of the small triangular tail pointing from the card down at the
@@ -31,22 +32,25 @@ class AccessoryPopup extends Marker {
     required VoidCallback onShare,
     bool showAbove = true,
     double maxHeight = 320,
+    double horizontalAlignment = 0,
   }) : super(
           width: 250,
           height: maxHeight,
           point: accessory.lastLocation!,
           rotate: true,
-          // alignment: topCenter anchors the point to the marker's BOTTOM
-          // edge instead of its center, so the height extends upward from
-          // the point rather than being centered on it (bottomCenter is the
-          // mirror image, extending downward for the flipped case). The
-          // 35px pad then only needs to clear the 50px marker icon's near
-          // half (25px) plus a 10px gap, and Align lets the content size to
+          // The y component anchors the point to the marker's BOTTOM edge
+          // instead of its center (topCenter), so the height extends upward
+          // from the point rather than being centered on it (1, the
+          // mirror image, extends downward for the flipped case). The 35px
+          // pad then only needs to clear the 50px marker icon's near half
+          // (25px) plus a 10px gap, and Align lets the content size to
           // itself within the remaining space instead of being stretched to
           // fill it - the tail is part of that content, so this same
           // padding places the tail's tip (not the card's edge) at the 10px
-          // gap from the marker.
-          alignment: showAbove ? Alignment.topCenter : Alignment.bottomCenter,
+          // gap from the marker. The x component (usually 0, centered) lets
+          // the caller shift the popup sideways to keep it on screen when
+          // the marker sits near the map's left or right edge.
+          alignment: Alignment(horizontalAlignment, showAbove ? -1 : 1),
           child: Padding(
             padding: showAbove
                 ? const EdgeInsets.only(bottom: 35)
@@ -196,10 +200,11 @@ class _PopupContent extends StatelessWidget {
                       FutureBuilder<Placemark?>(
                         future: accessory.place,
                         builder: (context, snapshot) {
-                          var locationText = snapshot.hasData &&
-                                  snapshot.data != null
-                              ? '${snapshot.data!.locality}, ${snapshot.data!.administrativeArea}'
-                              : 'Lat: ${location.latitude}, Lng: ${location.longitude}';
+                          var locationText = formatPlacePair(
+                                snapshot.data?.locality,
+                                snapshot.data?.administrativeArea,
+                              ) ??
+                              'Lat: ${location.latitude}, Lng: ${location.longitude}';
                           return Text(
                             locationText,
                             maxLines: 2,

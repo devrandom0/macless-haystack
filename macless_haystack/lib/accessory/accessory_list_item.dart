@@ -8,6 +8,7 @@ import 'package:geocoding/geocoding.dart';
 import 'package:macless_haystack/accessory/accessory_icon.dart';
 import 'package:macless_haystack/accessory/accessory_model.dart';
 import 'package:macless_haystack/preferences/user_preferences_model.dart';
+import 'package:macless_haystack/util/place_format.dart';
 import 'package:macless_haystack/util/time_format.dart';
 import 'package:intl/intl.dart';
 
@@ -79,10 +80,12 @@ class AccessoryListItemState extends State<AccessoryListItem> {
 
         if (snapshot.hasData && snapshot.data != null) {
           Placemark place = snapshot.data!;
-          locationString = '${place.locality}, ${place.administrativeArea}';
-          if (widget.herePlace != null &&
-              widget.herePlace!.country != place.country) {
-            locationString = '${place.locality}, ${place.country}';
+          var pair = widget.herePlace != null &&
+                  widget.herePlace!.country != place.country
+              ? formatPlacePair(place.locality, place.country)
+              : formatPlacePair(place.locality, place.administrativeArea);
+          if (pair != null) {
+            locationString = pair;
           }
         }
         // Format published date in a human readable way

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_settings_screens/flutter_settings_screens.dart';
@@ -48,6 +50,74 @@ Accessory? selectedAccessory(List<Accessory> accessories, String? selectedId) {
   return null;
 }
 
+/// Where and how large to render the accessory popup, given the selected
+/// marker's [markerScreenPoint] and the map's [viewportSize]. Keeps the
+/// fixed-width/height popup within [margin] of the viewport's edges
+/// whenever the marker's position allows it: flips above/below depending on
+/// which side has more room, and only shrinks the popup below
+/// [desiredHeight] when neither side has enough room at all.
+class PopupPlacement {
+  final bool showAbove;
+  final double maxHeight;
+  final double horizontalAlignment;
+
+  const PopupPlacement({
+    required this.showAbove,
+    required this.maxHeight,
+    required this.horizontalAlignment,
+  });
+}
+
+PopupPlacement popupPlacementFor({
+  required Offset markerScreenPoint,
+  required Size viewportSize,
+  double popupWidth = 250.0,
+  double desiredHeight = 320.0,
+  double margin = 16.0,
+  double minHeight = 120.0,
+}) {
+  var screenY = markerScreenPoint.dy;
+  var spaceAbove = screenY - margin;
+  var spaceBelow = viewportSize.height - screenY - margin;
+  bool showAbove;
+  double maxHeight;
+  if (spaceAbove >= desiredHeight) {
+    showAbove = true;
+    maxHeight = desiredHeight;
+  } else if (spaceBelow >= desiredHeight) {
+    showAbove = false;
+    maxHeight = desiredHeight;
+  } else if (spaceAbove >= spaceBelow) {
+    showAbove = true;
+    maxHeight = spaceAbove.clamp(minHeight, desiredHeight);
+  } else {
+    showAbove = false;
+    maxHeight = spaceBelow.clamp(minHeight, desiredHeight);
+  }
+
+  var screenX = markerScreenPoint.dx;
+  var desiredLeft = screenX - popupWidth / 2;
+  var maxLeft = viewportSize.width - margin - popupWidth;
+  // A viewport narrower than the popup plus its margins can't fit either
+  // constraint - fall back to the left margin rather than let clamp() throw
+  // on a lower bound greater than its upper bound.
+  var clampedLeft =
+      maxLeft < margin ? margin : desiredLeft.clamp(margin, maxLeft);
+  // flutter_map positions a Marker's box as
+  // [point - 0.5*W*(1-a), point + 0.5*W*(1+a)] - alignment.x=-1 puts the
+  // box's RIGHT edge at the point (box extends left), +1 puts the LEFT
+  // edge at the point (box extends right). Solving for the desired left
+  // edge gives this, not the mirrored version.
+  var horizontalAlignment =
+      (1 - 2 * (screenX - clampedLeft) / popupWidth).clamp(-1.0, 1.0);
+
+  return PopupPlacement(
+    showAbove: showAbove,
+    maxHeight: maxHeight,
+    horizontalAlignment: horizontalAlignment,
+  );
+}
+
 class AccessoryMap extends StatefulWidget {
   final MapController? mapController;
 
@@ -69,11 +139,24 @@ class _AccessoryMapState extends State<AccessoryMap> {
   // mounted - onMapReady is the real signal for that, not a guessed delay.
   bool _mapReady = false;
   String? _selectedAccessoryId;
+  StreamSubscription<MapEvent>? _mapEventSubscription;
 
   @override
   void initState() {
     super.initState();
     _mapController = widget.mapController ?? MapController();
+
+    // The popup's on-screen position/size is computed at build time from
+    // the marker's current screen offset, but pure camera pan/zoom (with no
+    // Provider change) never triggers a rebuild on its own - without this,
+    // panning while a popup is open leaves it anchored at whatever
+    // alignment was computed when it was selected, so it drifts off screen
+    // instead of staying clamped as the marker moves toward an edge.
+    _mapEventSubscription = _mapController.mapEventStream.listen((event) {
+      if (mounted && _selectedAccessoryId != null) {
+        setState(() {});
+      }
+    });
 
     var accessoryRegistry = Provider.of<AccessoryRegistry>(
       context,
@@ -107,6 +190,7 @@ class _AccessoryMapState extends State<AccessoryMap> {
 
     cancelLocationUpdates?.call();
     cancelAccessoryUpdates?.call();
+    _mapEventSubscription?.cancel();
   }
 
   void fitToContent(List<Accessory> accessories, LatLng? hereLocation) {
@@ -200,35 +284,25 @@ class _AccessoryMapState extends State<AccessoryMap> {
     MapTileSource tileSource,
   ) {
     return LayoutBuilder(builder: (context, constraints) {
-      // Whether there's enough map height above the selected marker's
-      // screen position to fit the popup - without this, a marker tapped
-      // near the top of a short map viewport pushes the popup off-screen
-      // instead of showing it. camera is only valid once _mapReady, which
-      // is guaranteed by the time selected is non-null (a marker can't be
-      // tapped before FlutterMap has rendered).
-      const desiredPopupHeight = 320.0;
-      const margin = 16.0;
+      // Where/how large to render the popup - without this, a marker
+      // tapped near an edge of a short or narrow map viewport (e.g. a
+      // small map area, or a draggable sheet covering most of the screen)
+      // pushed the fixed-size popup off-screen instead of showing it.
+      // camera is only valid once _mapReady, which is guaranteed by the
+      // time selected is non-null (a marker can't be tapped before
+      // FlutterMap has rendered).
       var showPopupAbove = true;
-      var popupMaxHeight = desiredPopupHeight;
+      var popupMaxHeight = 320.0;
+      var popupHorizontalAlignment = 0.0;
       if (selected != null && _mapReady) {
-        var screenY = _mapController.camera
-            .latLngToScreenOffset(selected.lastLocation!)
-            .dy;
-        var spaceAbove = screenY - margin;
-        var spaceBelow = constraints.maxHeight - screenY - margin;
-        if (spaceAbove >= desiredPopupHeight) {
-          showPopupAbove = true;
-          popupMaxHeight = desiredPopupHeight;
-        } else if (spaceBelow >= desiredPopupHeight) {
-          showPopupAbove = false;
-          popupMaxHeight = desiredPopupHeight;
-        } else if (spaceAbove >= spaceBelow) {
-          showPopupAbove = true;
-          popupMaxHeight = spaceAbove.clamp(120.0, desiredPopupHeight);
-        } else {
-          showPopupAbove = false;
-          popupMaxHeight = spaceBelow.clamp(120.0, desiredPopupHeight);
-        }
+        var placement = popupPlacementFor(
+          markerScreenPoint: _mapController.camera
+              .latLngToScreenOffset(selected.lastLocation!),
+          viewportSize: constraints.biggest,
+        );
+        showPopupAbove = placement.showAbove;
+        popupMaxHeight = placement.maxHeight;
+        popupHorizontalAlignment = placement.horizontalAlignment;
       }
 
       return FlutterMap(
@@ -353,6 +427,7 @@ class _AccessoryMapState extends State<AccessoryMap> {
                 onShare: () => shareAccessoryLocation(selected),
                 showAbove: showPopupAbove,
                 maxHeight: popupMaxHeight,
+                horizontalAlignment: popupHorizontalAlignment,
               ),
           ]),
           RichAttributionWidget(
