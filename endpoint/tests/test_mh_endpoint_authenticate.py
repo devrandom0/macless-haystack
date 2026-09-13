@@ -1,4 +1,5 @@
 import base64
+import logging
 import threading
 
 import pytest
@@ -136,3 +137,39 @@ def test_get_basic_auth_users_does_not_interpolate_percent_in_password(monkeypat
     monkeypatch.setattr(mh_config, "config", _config_with("[BasicAuthUsers]\nalice = p%ssw0rd\n"))
 
     assert mh_config.getBasicAuthUsers() == {"alice": "p%ssw0rd"}
+
+
+def test_log_auth_status_warns_when_nothing_configured(caplog, monkeypatch):
+    monkeypatch.setattr(mh_config, "getEndpointUser", lambda: "")
+    monkeypatch.setattr(mh_config, "getEndpointPass", lambda: "")
+    monkeypatch.setattr(mh_config, "getBasicAuthUsers", lambda: {})
+
+    with caplog.at_level(logging.WARNING):
+        mh_endpoint._log_auth_status()
+
+    assert "not protected" in caplog.text
+
+
+def test_log_auth_status_reports_protected_for_legacy_pair(caplog, monkeypatch):
+    monkeypatch.setattr(mh_config, "getEndpointUser", lambda: "simo")
+    monkeypatch.setattr(mh_config, "getEndpointPass", lambda: "hunter2")
+    monkeypatch.setattr(mh_config, "getBasicAuthUsers", lambda: {})
+
+    with caplog.at_level(logging.INFO):
+        mh_endpoint._log_auth_status()
+
+    assert "is protected by authentication" in caplog.text
+
+
+def test_log_auth_status_reports_protected_for_basic_auth_users_alone(caplog, monkeypatch):
+    # This is the exact bug this helper fixes: migrating from the legacy
+    # pair to [BasicAuthUsers] alone used to log a false "not protected"
+    # warning, even though authenticate() still requires credentials.
+    monkeypatch.setattr(mh_config, "getEndpointUser", lambda: "")
+    monkeypatch.setattr(mh_config, "getEndpointPass", lambda: "")
+    monkeypatch.setattr(mh_config, "getBasicAuthUsers", lambda: {"alice": "pass-a"})
+
+    with caplog.at_level(logging.INFO):
+        mh_endpoint._log_auth_status()
+
+    assert "is protected by authentication" in caplog.text

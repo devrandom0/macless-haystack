@@ -76,8 +76,7 @@ class ServerHandler(BaseHTTPRequestHandler):
         endpoint_user = mh_config.getEndpointUser()
         endpoint_pass = mh_config.getEndpointPass()
         basic_auth_users = mh_config.getBasicAuthUsers()
-        has_legacy_pair = not (
-            (endpoint_user is None or endpoint_user == "") and (endpoint_pass is None or endpoint_pass == ""))
+        has_legacy_pair = _has_legacy_credentials(endpoint_user, endpoint_pass)
         if not has_legacy_pair and not basic_auth_users:
             return True
 
@@ -462,6 +461,17 @@ _SECOND_FACTOR_METHOD_NAMES = {
 }
 
 
+def _has_legacy_credentials(endpoint_user, endpoint_pass):
+    return not ((endpoint_user is None or endpoint_user == "") and (endpoint_pass is None or endpoint_pass == ""))
+
+
+def _log_auth_status():
+    if _has_legacy_credentials(mh_config.getEndpointUser(), mh_config.getEndpointPass()) or mh_config.getBasicAuthUsers():
+        logger.info("Endpoint is protected by authentication")
+    else:
+        logger.warning("Endpoint is not protected by authentication")
+
+
 def _expire_pending_login_if_stale():
     global pending_apple_login
     if pending_apple_login is not None and time.time() - pending_apple_login.started_at > PENDING_LOGIN_TIMEOUT_SECONDS:
@@ -590,12 +600,7 @@ if __name__ == "__main__":
         logger.info("Certificate file " + mh_config.getCertFile() +
                     " not found, so not using SSL")
         logger.info("serving at " + address + " over HTTP")
-    user = mh_config.getEndpointUser()
-    passw = mh_config.getEndpointPass()
-    if (user is None or user == "") and (passw is None or passw == ""):
-        logger.warning("Endpoint is not protected by authentication")
-    else:
-        logger.info("Endpoint is protected by authentication")
+    _log_auth_status()
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:
