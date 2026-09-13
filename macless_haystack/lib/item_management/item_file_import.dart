@@ -9,6 +9,7 @@ import 'package:macless_haystack/accessory/accessory_model.dart';
 import 'package:macless_haystack/accessory/accessory_registry.dart';
 import 'package:macless_haystack/findMy/find_my_controller.dart';
 import 'package:macless_haystack/item_management/loading_spinner.dart';
+import 'package:macless_haystack/widgets/app_error_state.dart';
 
 class ItemFileImport extends StatefulWidget {
   /// The path to the file to import from.
@@ -171,34 +172,15 @@ class _ItemFileImportState extends State<ItemFileImport> {
   @override
   Widget build(BuildContext context) {
     if (hasError) {
-      return _buildScaffold(Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'An error occurred.',
-              style: Theme.of(context).textTheme.headlineSmall,
-            ),
-            Padding(
-              padding: const EdgeInsets.only(top: 8.0),
-              child: Text(
-                  errorText ?? 'An unknown error occurred. Please try again.'),
-            ),
-            Padding(
-              padding: const EdgeInsets.only(top: 16.0),
-              child: OutlinedButton(
-                // This screen replaced the file-picker sheet in the nav
-                // stack (pushReplacement), so popping lands on the
-                // dashboard, not back at a picker - "Go back" says what
-                // actually happens instead of promising a re-pick this
-                // screen can't do on its own.
-                onPressed: () => Navigator.pop(context),
-                child: const Text('Go back'),
-              ),
-            ),
-          ],
-        ),
+      return _buildScaffold(AppErrorState(
+        title: 'An error occurred',
+        message: errorText ?? 'An unknown error occurred. Please try again.',
+        actionLabel: 'Go back',
+        // This screen replaced the file-picker sheet in the nav stack
+        // (pushReplacement), so popping lands on the dashboard, not back
+        // at a picker - "Go back" says what actually happens instead of
+        // promising a re-pick this screen can't do on its own.
+        onAction: () => Navigator.pop(context),
       ));
     }
 
