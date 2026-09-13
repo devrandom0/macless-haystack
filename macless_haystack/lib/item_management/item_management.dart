@@ -1,3 +1,5 @@
+import 'package:universal_io/io.dart';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:macless_haystack/accessory/accessory_detail.dart';
@@ -35,7 +37,7 @@ class KeyManagement extends StatelessWidget {
             children: accessories.map((accessory) {
               String lastSeen = accessory.datePublished != null &&
                       accessory.datePublished != DateTime(1970)
-                  ? '${DateFormat('dd.MM.yyyy').format(accessory.datePublished!)} '
+                  ? '${DateFormat.yMMMd(Platform.localeName).format(accessory.datePublished!)} '
                       '${formatTime(accessory.datePublished!)}'
                   : 'Never';
               return Material(
@@ -49,12 +51,16 @@ class KeyManagement extends StatelessWidget {
                             )),
                   );
                 },
+                contentPadding: const EdgeInsets.symmetric(horizontal: 12),
                 dense: true,
+                visualDensity: VisualDensity.compact,
+                minVerticalPadding: 0,
                 title: Text(accessory.name),
                 subtitle: Text('Last seen: $lastSeen'),
                 leading: AccessoryIcon(
                   icon: accessory.icon,
                   color: accessory.color,
+                  size: 20,
                 ),
                 trailing: ItemExportMenu(accessory: accessory),
               ));
