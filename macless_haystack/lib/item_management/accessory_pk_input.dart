@@ -17,8 +17,8 @@ class AccessoryPrivateKeyInput extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 4.0),
       child: TextFormField(
         decoration: const InputDecoration(
-          hintText: 'SGVsbG8gV29ybGQhCg==',
           labelText: 'Private Key (Base64)',
+          helperText: 'Base64-encoded private key',
         ),
         validator: (value) {
           if (value == null || value.isEmpty) {

@@ -22,11 +22,19 @@ class NewKeyAction extends StatelessWidget {
   void showCreationSheet(BuildContext context) {
     showModalBottomSheet(
         context: context,
+        showDragHandle: true,
         builder: (BuildContext context) {
           return SafeArea(
             child: ListView(
               shrinkWrap: true,
               children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+                  child: Text(
+                    'Add accessory',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                ),
                 ListTile(
                   title: const Text('Import Accessory'),
                   leading: const Icon(Icons.import_export),
@@ -76,7 +84,7 @@ class NewKeyAction extends StatelessWidget {
                 ),
                 ListTile(
                   title: const Text('Create New Accessory'),
-                  leading: const Icon(Icons.add_box),
+                  leading: const Icon(Icons.add),
                   onTap: () {
                     Navigator.pushReplacement(
                       context,

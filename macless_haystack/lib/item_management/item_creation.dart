@@ -109,7 +109,7 @@ class _AccessoryGenerationState extends State<AccessoryGeneration> {
               ),
               ListTile(
                 title: OutlinedButton(
-                  child: const Text('Create Only'),
+                  child: const Text('Create'),
                   onPressed: () async {
                     var created = await createAccessory(context);
                     if (created && context.mounted) {
@@ -120,7 +120,7 @@ class _AccessoryGenerationState extends State<AccessoryGeneration> {
               ),
               ListTile(
                 title: ElevatedButton(
-                  child: const Text('Create and Deploy'),
+                  child: const Text('Create and set up hardware'),
                   onPressed: () async {
                     var created = await createAccessory(context);
                     if (created && context.mounted) {
