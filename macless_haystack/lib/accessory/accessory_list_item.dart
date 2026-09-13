@@ -73,9 +73,9 @@ class AccessoryListItemState extends State<AccessoryListItem> {
         var isCompact =
             Settings.getValue<bool>(
               compactAccessoryListKey,
-              defaultValue: false,
+              defaultValue: true,
             ) ??
-            false;
+            true;
 
         return AnimatedContainer(
           duration: const Duration(milliseconds: 300), // Sanfter Übergang

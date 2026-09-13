@@ -7,6 +7,7 @@ import 'package:macless_haystack/apple_auth/apple_auth_service.dart';
 import 'package:macless_haystack/history/archive_settings_validation.dart';
 import 'package:macless_haystack/history/history_archive_service.dart';
 import 'package:macless_haystack/location/location_model.dart';
+import 'package:macless_haystack/map/map_tile_source.dart';
 import 'package:macless_haystack/preferences/theme_model.dart';
 import 'package:macless_haystack/preferences/user_preferences_model.dart';
 import 'package:macless_haystack/util/theme_mode.dart';
@@ -93,6 +94,8 @@ class _PreferencesPageState extends State<PreferencesPage> {
           getNumberofDaysTile(),
           getTimeFormatTile(),
           getThemeModeTile(),
+          _sectionHeader(context, 'Map'),
+          getMapTileProviderTile(),
           _sectionHeader(context, 'Endpoint Connection'),
           getUrlTile(),
           getUserTile(),
@@ -303,10 +306,24 @@ class _PreferencesPageState extends State<PreferencesPage> {
   Widget getCompactAccessoryListTile() {
     return SwitchSettingsTile(
       settingKey: compactAccessoryListKey,
-      defaultValue: false,
+      defaultValue: true,
       title: 'Compact accessory list',
       subtitle: 'Show icon, name, distance, and last seen on one line',
       activeColor: Theme.of(context).colorScheme.onPrimary,
+    );
+  }
+
+  Widget getMapTileProviderTile() {
+    return const DropDownSettingsTile<String>(
+      title: 'Map style',
+      settingKey: mapTileProviderKey,
+      values: <String, String>{
+        mapTileProviderOsmValue: 'OpenStreetMap',
+        mapTileProviderOpenTopoValue: 'OpenTopoMap (terrain)',
+        mapTileProviderCartoVoyagerValue: 'CARTO Voyager',
+        mapTileProviderCartoDarkValue: 'CARTO Dark Matter',
+      },
+      selected: mapTileProviderOsmValue,
     );
   }
 

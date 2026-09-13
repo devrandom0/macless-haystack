@@ -13,6 +13,7 @@ const String timeFormatKey = 'TIME_FORMAT';
 const String themeModeKey = 'THEME_MODE';
 const String appleAuthEnabledKey = 'APPLE_AUTH_ENABLED';
 const String compactAccessoryListKey = 'COMPACT_ACCESSORY_LIST';
+const String mapTileProviderKey = 'MAP_TILE_PROVIDER';
 
 class UserPreferences extends ChangeNotifier {
   /// If these settings are initialized.
