@@ -1,5 +1,3 @@
-import 'dart:math';
-
 import 'package:flutter/material.dart';
 
 class DaysSelectionSlider extends StatelessWidget {
@@ -24,9 +22,20 @@ class DaysSelectionSlider extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // A degenerate 1-day range can't drive a Slider (min must be < max),
-    // and isn't worth a slider anyway.
-    var effectiveMax = max(maxDays, 2);
+    // With at most 1 day of data ever fetched, there's no real range to
+    // slide across - showing a "1..2" slider here would let the user pick
+    // a day count that clamping (not real data) invented, reintroducing
+    // the exact mismatch this range-following behavior was meant to fix.
+    if (maxDays <= 1) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+        child: Text(
+          'Only the latest location is fetched - see Settings to fetch '
+          'more history.',
+          style: Theme.of(context).textTheme.bodySmall,
+        ),
+      );
+    }
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
       child: Row(
@@ -39,15 +48,15 @@ class DaysSelectionSlider extends StatelessWidget {
           const Text('1'),
           Expanded(
             child: Slider(
-              value: numberOfDays.clamp(1, effectiveMax.toDouble()),
+              value: numberOfDays.clamp(1, maxDays.toDouble()),
               min: 1,
-              max: effectiveMax.toDouble(),
+              max: maxDays.toDouble(),
               label: '${numberOfDays.round()}',
-              divisions: effectiveMax - 1,
+              divisions: maxDays - 1,
               onChanged: onChanged,
             ),
           ),
-          Text('$effectiveMax'),
+          Text('$maxDays'),
           const SizedBox(width: 12),
           SizedBox(
             width: 44,

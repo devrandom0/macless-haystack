@@ -94,7 +94,7 @@ class _AccessoryHistoryState extends State<AccessoryHistory> {
         // The count reads clearly on its own line instead of shrinking the
         // whole title (including the accessory's own name) to fit.
         bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(20),
+          preferredSize: const Size.fromHeight(32),
           child: Padding(
             padding: const EdgeInsets.only(bottom: 6),
             child: Text(
