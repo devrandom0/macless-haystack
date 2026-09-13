@@ -67,7 +67,7 @@ dependencies:
 
 
   flutter_settings_screens: ^0.3.4
-  latlong2: ^0.9.1
+  latlong2: ">=0.9.1 <0.11.0"
   intl: ^0.20.2
   package_info_plus: ^10.2.1
   logger: ^2.6.2
@@ -84,6 +84,8 @@ dev_dependencies:
   flutter_lints: ^6.0.0 # Do not update
   test: ^1.30.0
   mockito: ^5.6.3
+  flutter_test:
+    sdk: flutter
 
 # Configuration for flutter_launcher_icons
 flutter_icons:

@@ -296,5 +296,79 @@ void main() {
 
       expect(result, isNull);
     });
+
+    test('returns null for a key of the wrong type rather than matching by luck',
+        () {
+      var accessories = [_accessory(id: '1')];
+      // Deliberately not a ValueKey<String> - this is the branch a type
+      // mismatch (e.g. a stray ValueKey<int> or an ObjectKey) would hit,
+      // as opposed to a marker with no key at all.
+      var marker = Marker(
+        key: const ValueKey<int>(1),
+        point: const LatLng(0, 0),
+        child: const SizedBox(),
+      );
+
+      var result = accessoryForMarker(accessories, marker);
+
+      expect(result, isNull);
+    });
+  });
+
+  group('accessoryIdForMarkerKey', () {
+    test('returns the value of a ValueKey<String>', () {
+      expect(accessoryIdForMarkerKey(const ValueKey('a')), 'a');
+    });
+
+    test('returns null for a null key', () {
+      expect(accessoryIdForMarkerKey(null), isNull);
+    });
+
+    test('returns null for a key of a different type', () {
+      expect(accessoryIdForMarkerKey(const ValueKey<int>(1)), isNull);
+    });
+  });
+
+  group('accessoryMarkers', () {
+    test('builds a marker for each active accessory with a known location',
+        () {
+      var accessories = [
+        _accessory(id: 'a', lastLocation: const LatLng(1, 1)),
+        _accessory(id: 'b', lastLocation: const LatLng(2, 2)),
+      ];
+
+      var markers = accessoryMarkers(accessories);
+
+      expect(markers, hasLength(2));
+      expect(markers[0].key, const ValueKey('a'));
+      expect(markers[0].point, const LatLng(1, 1));
+      expect(markers[1].key, const ValueKey('b'));
+      expect(markers[1].point, const LatLng(2, 2));
+    });
+
+    test('excludes accessories without a known location', () {
+      var accessories = [
+        _accessory(id: 'a', lastLocation: null),
+        _accessory(id: 'b', lastLocation: const LatLng(2, 2)),
+      ];
+
+      var markers = accessoryMarkers(accessories);
+
+      expect(markers, hasLength(1));
+      expect(markers.single.key, const ValueKey('b'));
+    });
+
+    test('excludes inactive accessories', () {
+      var accessories = [
+        _accessory(
+            id: 'a', lastLocation: const LatLng(1, 1), isActive: false),
+        _accessory(id: 'b', lastLocation: const LatLng(2, 2)),
+      ];
+
+      var markers = accessoryMarkers(accessories);
+
+      expect(markers, hasLength(1));
+      expect(markers.single.key, const ValueKey('b'));
+    });
   });
 }

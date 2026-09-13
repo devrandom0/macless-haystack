@@ -51,16 +51,27 @@ Accessory? selectedAccessory(List<Accessory> accessories, String? selectedId) {
   return null;
 }
 
+/// The accessory id encoded in an accessory marker's key, or null if [key]
+/// isn't one of this file's own accessory-marker keys. Centralized so the
+/// two functions below can't drift into matching keys two different ways -
+/// ValueKey's == compares runtimeType too, so a stray `ValueKey<String?>`
+/// (e.g. from an unpromoted nullable variable) would silently never match
+/// a `ValueKey<String>` without this single choke point.
+String? accessoryIdForMarkerKey(Key? key) {
+  return key is ValueKey<String> ? key.value : null;
+}
+
 /// Whether [mergedMarkers] - markers flutter_map_marker_cluster just grouped
 /// into a cluster on zoom-out - includes the currently selected accessory
-/// (identified by [selectedId] via each marker's ValueKey). A popup anchored
-/// to a count badge instead of the real marker wouldn't make sense, so the
+/// (identified by [selectedId] via each marker's key). A popup anchored to
+/// a count badge instead of the real marker wouldn't make sense, so the
 /// popup should close when this is true.
 bool clusterAbsorbedSelection(List<Marker> mergedMarkers, String? selectedId) {
   if (selectedId == null) {
     return false;
   }
-  return mergedMarkers.any((marker) => marker.key == ValueKey(selectedId));
+  return mergedMarkers
+      .any((marker) => accessoryIdForMarkerKey(marker.key) == selectedId);
 }
 
 /// The accessory in [accessories] whose id matches [marker]'s key, or null
@@ -69,16 +80,40 @@ bool clusterAbsorbedSelection(List<Marker> mergedMarkers, String? selectedId) {
 /// defensive, since tap callbacks can in principle fire after the list has
 /// changed out from under them.
 Accessory? accessoryForMarker(List<Accessory> accessories, Marker marker) {
-  var key = marker.key;
-  if (key is! ValueKey<String>) {
+  var id = accessoryIdForMarkerKey(marker.key);
+  if (id == null) {
     return null;
   }
   for (var accessory in accessories) {
-    if (accessory.id == key.value) {
+    if (accessory.id == id) {
       return accessory;
     }
   }
   return null;
+}
+
+/// The tappable marker widgets for [accessories]' active, location-known
+/// members, each keyed by accessory id so onMarkerTap/onMarkersClustered
+/// can look the tapped/absorbed accessory back up via [accessoryForMarker]
+/// and [accessoryIdForMarkerKey].
+List<Marker> accessoryMarkers(List<Accessory> accessories) {
+  return accessories
+      .where((accessory) => accessory.isActive)
+      .where((accessory) => accessory.lastLocation != null)
+      .map((accessory) => Marker(
+            key: ValueKey(accessory.id),
+            rotate: true,
+            width: 50,
+            height: 50,
+            point: accessory.lastLocation!,
+            child: Semantics(
+              button: true,
+              label: accessory.name,
+              child: AccessoryIcon(
+                  icon: accessory.icon, color: accessory.color),
+            ),
+          ))
+      .toList();
 }
 
 /// Where and how large to render the accessory popup, given the selected
@@ -171,6 +206,15 @@ class _AccessoryMapState extends State<AccessoryMap> {
   bool _mapReady = false;
   String? _selectedAccessoryId;
   StreamSubscription<MapEvent>? _mapEventSubscription;
+  // The cluster layer re-clusters from scratch (an O(markers x zoom levels)
+  // rebuild) whenever its markers list changes identity, and a fresh
+  // .toList() every build always counts as changed - combined with
+  // _mapEventSubscription's setState on every pan/zoom event while a popup
+  // is open, that reran on every single frame. Cached here, keyed by a
+  // signature of what actually affects marker rendering, so it's rebuilt
+  // only when an accessory's id/location/appearance genuinely changes.
+  List<Marker>? _cachedAccessoryMarkers;
+  String? _cachedAccessoryMarkersSignature;
 
   @override
   void initState() {
@@ -222,6 +266,25 @@ class _AccessoryMapState extends State<AccessoryMap> {
     cancelLocationUpdates?.call();
     cancelAccessoryUpdates?.call();
     _mapEventSubscription?.cancel();
+  }
+
+  /// The cluster layer's markers, rebuilt only when something that would
+  /// actually change their rendering has changed - see the field doc on
+  /// [_cachedAccessoryMarkers].
+  List<Marker> _accessoryMarkersFor(List<Accessory> accessories) {
+    var signature = accessories
+        .where((accessory) => accessory.isActive)
+        .where((accessory) => accessory.lastLocation != null)
+        .map((accessory) =>
+            '${accessory.id}:${accessory.lastLocation!.latitude}:'
+            '${accessory.lastLocation!.longitude}:${accessory.icon}:'
+            '${accessory.color.toARGB32()}')
+        .join('|');
+    if (signature != _cachedAccessoryMarkersSignature) {
+      _cachedAccessoryMarkersSignature = signature;
+      _cachedAccessoryMarkers = accessoryMarkers(accessories);
+    }
+    return _cachedAccessoryMarkers!;
   }
 
   void fitToContent(List<Accessory> accessories, LatLng? hereLocation) {
@@ -384,40 +447,20 @@ class _AccessoryMapState extends State<AccessoryMap> {
             options: MarkerClusterLayerOptions(
               maxClusterRadius: 45,
               size: const Size(44, 44),
-              // Zoom-to-bounds-on-cluster-tap can't help once already at
-              // the map's own max zoom (18, see MapOptions below) - without
-              // this, two accessories close enough to share a cluster at
-              // that zoom would have no way to ever be shown/tapped
-              // individually. One zoom level of margin below the map's max.
-              // Zoom-to-bounds-on-cluster-tap can't help once already at the
-              // map's own max zoom (18, see MapOptions below) - without
-              // this, two accessories close enough to share a cluster at
-              // that zoom would have no way to ever be shown/tapped
-              // individually. Markers within roughly 20m of each other can
-              // still land in the same cluster right at this boundary
-              // (observed on-device, not fully root-caused - flutter_map_
-              // marker_cluster hasn't had a release in ~11 months and this
-              // may be a library-side edge case) - tapping such a cluster
-              // still zooms in as far as it can, it just doesn't guarantee
-              // full separation for pathologically close pairs.
+              // Must match MapOptions.maxZoom below - this option defaults
+              // to 17.0 independently of the map's own max zoom, so
+              // tapping a cluster to zoom into it silently capped out one
+              // level short of the map's real maximum.
+              maxZoom: 18.0,
+              // The package's own dartdoc for this option reads backwards
+              // from its actual behavior (confirmed on-device): clustering
+              // is enabled at this zoom level and below, and disabled
+              // above it - not the other way around. A few levels of
+              // margin below the map's max (18) so cluster-tap's
+              // zoom-to-bounds has room to actually reach an unclustered
+              // state before hitting the ceiling.
               disableClusteringAtZoom: 15,
-              markers: accessories
-                  .where((accessory) => accessory.isActive)
-                  .where((accessory) => accessory.lastLocation != null)
-                  .map((accessory) => Marker(
-                        key: ValueKey(accessory.id),
-                        rotate: true,
-                        width: 50,
-                        height: 50,
-                        point: accessory.lastLocation!,
-                        child: Semantics(
-                          button: true,
-                          label: accessory.name,
-                          child: AccessoryIcon(
-                              icon: accessory.icon, color: accessory.color),
-                        ),
-                      ))
-                  .toList(),
+              markers: _accessoryMarkersFor(accessories),
               // Centering is handled by hand below, only when actually
               // selecting (not deselecting) - the package's own
               // centerMarkerOnClick would recenter on every tap including a
@@ -440,24 +483,36 @@ class _AccessoryMapState extends State<AccessoryMap> {
               // Fires when zooming out merges markers into a cluster - if
               // the selected accessory is one of them, its popup would be
               // left pointing at a count badge instead of the real marker.
+              // Fires from inside the cluster layer's own build(), so the
+              // setState (like the two others in this file) must be
+              // deferred to after this frame rather than run immediately.
               onMarkersClustered: (mergedMarkers) {
-                if (clusterAbsorbedSelection(
+                if (!clusterAbsorbedSelection(
                     mergedMarkers, _selectedAccessoryId)) {
-                  setState(() => _selectedAccessoryId = null);
+                  return;
                 }
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (mounted) {
+                    setState(() => _selectedAccessoryId = null);
+                  }
+                });
               },
               builder: (context, markers) {
-                return Container(
-                  decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.primary,
-                    shape: BoxShape.circle,
-                  ),
-                  alignment: Alignment.center,
-                  child: Text(
-                    '${markers.length}',
-                    style: TextStyle(
-                      color: Theme.of(context).colorScheme.onPrimary,
-                      fontWeight: FontWeight.bold,
+                return Semantics(
+                  button: true,
+                  label: '${markers.length} accessories',
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).colorScheme.primary,
+                      shape: BoxShape.circle,
+                    ),
+                    alignment: Alignment.center,
+                    child: Text(
+                      '${markers.length}',
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.onPrimary,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                   ),
                 );
