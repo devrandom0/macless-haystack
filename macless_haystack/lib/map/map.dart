@@ -142,7 +142,14 @@ class _AccessoryMapState extends State<AccessoryMap> {
       var accessories = accessoryRegistry.accessories;
       if (shouldFitToAccessoryLocations(accessories, _hasFittedToAccessories)) {
         _hasFittedToAccessories = true;
-        fitToContent(accessories, locationModel.here);
+        // fitToContent moves the map controller, which must not happen
+        // while this very build is still in progress - deferred the same
+        // way the selected-accessory reset below already is.
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            fitToContent(accessories, locationModel.here);
+          }
+        });
       }
       var selected = selectedAccessory(accessories, _selectedAccessoryId);
       if (_selectedAccessoryId != null && selected == null) {
