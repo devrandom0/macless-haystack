@@ -86,26 +86,25 @@ class _PreferencesPageState extends State<PreferencesPage> {
       ),
       body: ListView(
         children: <Widget>[
-          _sectionHeader(context, 'General'),
+          _sectionHeader(context, 'Location & fetching'),
           getLocationTile(),
           getFetchOnStartupTile(),
           getNumberofDaysTile(),
+          _sectionHeader(context, 'General'),
           getTimeFormatTile(),
           getThemeModeTile(),
           _sectionHeader(context, 'Endpoint Connection'),
           getUrlTile(),
           getUserTile(),
           getPassTile(),
-          _sectionHeader(context, 'Apple Account'),
+          _sectionHeader(context, 'Apple ID'),
           getAppleAuthTile(),
           if (_appleAuthEnabled) getAppleAuthAccountTile(),
           _sectionHeader(context, 'History Archiving'),
           getArchiveDefaultsSection(),
           getArchiveAllTile(),
           const Divider(height: 32),
-          ListTile(
-            title: getAbout(),
-          ),
+          getAbout(),
         ],
       ),
     );
@@ -132,7 +131,6 @@ class _PreferencesPageState extends State<PreferencesPage> {
     return SwitchSettingsTile(
       settingKey: locationAccessWantedKey,
       title: "Show this device's location",
-      activeColor: Theme.of(context).colorScheme.onPrimary,
       onChange: (showLocation) {
         var locationModel = Provider.of<LocationModel>(context, listen: false);
         if (showLocation) {
@@ -150,13 +148,13 @@ class _PreferencesPageState extends State<PreferencesPage> {
       settingKey: numberOfDaysToFetch,
       values: <int, String>{
         0: "Latest location only",
-        1: "1",
-        2: "2",
-        3: "3",
-        4: "4",
-        5: "5",
-        6: "6",
-        7: "7",
+        1: "1 day",
+        2: "2 days",
+        3: "3 days",
+        4: "4 days",
+        5: "5 days",
+        6: "6 days",
+        7: "7 days",
       },
       selected: 7,
     );
@@ -263,32 +261,21 @@ class _PreferencesPageState extends State<PreferencesPage> {
   }
 
   Widget getAbout() {
-    return TextButton(
-        style: ButtonStyle(
-            padding:
-                WidgetStateProperty.all<EdgeInsets>(const EdgeInsets.all(10)),
-            foregroundColor: WidgetStateProperty.resolveWith<Color?>(
-              (Set<WidgetState> states) {
-                return Colors.white;
-              },
-            ),
-            backgroundColor: WidgetStateProperty.resolveWith<Color?>(
-              (Set<WidgetState> states) {
-                return Colors.indigo;
-              },
-            )),
-        child: const Text('About'),
-        onPressed: () async {
-          var packageInfo = await PackageInfo.fromPlatform();
-          if (!mounted) return;
-          showAboutDialog(
-            context: context,
-            applicationName: packageInfo.appName,
-            applicationVersion: packageInfo.buildNumber.isEmpty
-                ? packageInfo.version
-                : '${packageInfo.version}+${packageInfo.buildNumber}',
-          );
-        });
+    return ListTile(
+      title: const Text('About'),
+      trailing: const Icon(Icons.chevron_right),
+      onTap: () async {
+        var packageInfo = await PackageInfo.fromPlatform();
+        if (!mounted) return;
+        showAboutDialog(
+          context: context,
+          applicationName: packageInfo.appName,
+          applicationVersion: packageInfo.buildNumber.isEmpty
+              ? packageInfo.version
+              : '${packageInfo.version}+${packageInfo.buildNumber}',
+        );
+      },
+    );
   }
 
   Widget getFetchOnStartupTile() {
@@ -296,7 +283,6 @@ class _PreferencesPageState extends State<PreferencesPage> {
       settingKey: fetchLocationOnStartupKey,
       defaultValue: true,
       title: 'Fetch locations on startup',
-      activeColor: Theme.of(context).colorScheme.onPrimary,
     );
   }
 
@@ -372,7 +358,6 @@ class _PreferencesPageState extends State<PreferencesPage> {
       settingKey: appleAuthEnabledKey,
       defaultValue: false,
       title: 'Enable in-app Apple ID login',
-      activeColor: Theme.of(context).colorScheme.onPrimary,
       onChange: (enabled) {
         setState(() {
           _appleAuthEnabled = enabled;
@@ -391,7 +376,7 @@ class _PreferencesPageState extends State<PreferencesPage> {
 
   Widget getAppleAuthAccountTile() {
     return ListTile(
-      title: const Text('Apple Account'),
+      title: const Text('Apple ID'),
       subtitle: Text(_appleAuthStatusLabel()),
       trailing: const Icon(Icons.chevron_right),
       onTap: () async {
@@ -556,45 +541,51 @@ class _PreferencesPageState extends State<PreferencesPage> {
 
   Widget getArchiveDefaultsSection() {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16.0),
-      child: Form(
-        key: _archiveDefaultsFormKey,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Padding(
-              padding: EdgeInsets.only(top: 8),
-              child: Text(
-                'Poll interval and retention for accessories already archived on '
-                "the endpoint. Leave a field blank to keep each accessory's "
-                'existing value. Tap Apply to push these to every currently '
-                'archived accessory - accessories not currently archived are not '
-                'affected or turned on.',
-                style: TextStyle(fontSize: 12),
-              ),
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+      child: Card(
+        margin: EdgeInsets.zero,
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Form(
+            key: _archiveDefaultsFormKey,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Padding(
+                  padding: EdgeInsets.only(top: 8),
+                  child: Text(
+                    'Poll interval and retention for accessories already archived on '
+                    "the endpoint. Leave a field blank to keep each accessory's "
+                    'existing value. Tap Apply to push these to every currently '
+                    'archived accessory - accessories not currently archived are not '
+                    'affected or turned on.',
+                    style: TextStyle(fontSize: 12),
+                  ),
+                ),
+                TextFormField(
+                  controller: _defaultPollIntervalController,
+                  decoration: const InputDecoration(
+                      labelText: 'Default poll interval (hours)'),
+                  keyboardType: TextInputType.number,
+                  validator: validateOptionalPollIntervalHours,
+                ),
+                TextFormField(
+                  controller: _defaultRetentionDaysController,
+                  decoration:
+                      const InputDecoration(labelText: 'Default retention (days)'),
+                  keyboardType: TextInputType.number,
+                  validator: validateOptionalRetentionDays,
+                ),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton(
+                    onPressed: _applyDefaultsToAll,
+                    child: const Text('Apply to archived accessories'),
+                  ),
+                ),
+              ],
             ),
-            TextFormField(
-              controller: _defaultPollIntervalController,
-              decoration:
-                  const InputDecoration(labelText: 'Default poll interval (hours)'),
-              keyboardType: TextInputType.number,
-              validator: validateOptionalPollIntervalHours,
-            ),
-            TextFormField(
-              controller: _defaultRetentionDaysController,
-              decoration:
-                  const InputDecoration(labelText: 'Default retention (days)'),
-              keyboardType: TextInputType.number,
-              validator: validateOptionalRetentionDays,
-            ),
-            Align(
-              alignment: Alignment.centerRight,
-              child: TextButton(
-                onPressed: _applyDefaultsToAll,
-                child: const Text('Apply to archived accessories'),
-              ),
-            ),
-          ],
+          ),
         ),
       ),
     );
