@@ -209,7 +209,7 @@ class ServerHandler(BaseHTTPRequestHandler):
             return json.loads(r.content.decode())['results']
 
         try:
-            results = history_archiver.fetch_reports_with_cache(
+            results, new_count = history_archiver.fetch_reports_with_cache(
                 ids, days, force, history_store,
                 mh_config.getHistoryPollIntervalHours(), fetch_from_apple,
             )
@@ -218,7 +218,7 @@ class ServerHandler(BaseHTTPRequestHandler):
             self.addCORSHeaders()
             self.end_headers()
 
-            responseBody = json.dumps({"results": results})
+            responseBody = json.dumps({"results": results, "new_count": new_count})
             self.wfile.write(responseBody.encode())
         except requests.exceptions.ConnectTimeout:
             logger.error("Timeout to " + mh_config.getAnisetteServer() +

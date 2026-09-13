@@ -17,20 +17,32 @@ import 'package:pointycastle/src/utils.dart' as pc_utils;
 
 import '../preferences/user_preferences_model.dart';
 
+/// Decrypted location reports plus how many of them are genuinely new
+/// data (see [LocationReportsResult], which this is derived from).
+typedef ComputedLocationReports = ({
+  List<FindMyLocationReport> reports,
+  int newCount,
+});
+
 class FindMyController {
   static const _storage = FlutterSecureStorage();
   static final ECCurve_secp224r1 _curveParams = ECCurve_secp224r1();
   static final HashMap _keyCache = HashMap();
 
-  static final logger = Logger(
-    printer: PrettyPrinter(methodCount: 0),
-  );
+  static final logger = Logger(printer: PrettyPrinter(methodCount: 0));
 
   /// Starts a new, fetches and decrypts all location reports
   /// for the given [FindMyKeyPair].
-  /// Returns a list of [FindMyLocationReport]'s.
-  static Future<List<FindMyLocationReport>> computeResults(
-      List<FindMyKeyPair> keyPairs, String? url) async {
+  ///
+  /// Returns the decrypted reports plus how many of them are genuinely new
+  /// data (see [LocationReportsResult]). [force] bypasses the endpoint's
+  /// own freshness cache and asks Apple directly, regardless of when it
+  /// last checked.
+  static Future<ComputedLocationReports> computeResults(
+    List<FindMyKeyPair> keyPairs,
+    String? url, {
+    bool force = false,
+  }) async {
     for (var kp in keyPairs) {
       await _loadPrivateKey(kp);
     }
@@ -42,30 +54,40 @@ class FindMyController {
     }
 
     map['url'] = url;
-    map['daysToFetch'] =
-        Settings.getValue<int>(numberOfDaysToFetch, defaultValue: 7)!;
+    map['daysToFetch'] = Settings.getValue<int>(
+      numberOfDaysToFetch,
+      defaultValue: 7,
+    )!;
     map['user'] = Settings.getValue<String>(endpointUser, defaultValue: '')!;
     map['pass'] = Settings.getValue<String>(endpointPass, defaultValue: '')!;
+    map['force'] = force;
     return compute(_getListedReportResults, map);
   }
 
   /// Fetches and decrypts the location reports for the given
   /// [FindMyKeyPair] from apples FindMy Network.
-  /// Returns a list of [FindMyLocationReport].
-  static Future<List<FindMyLocationReport>> _getListedReportResults(
-      Map map) async {
+  static Future<ComputedLocationReports> _getListedReportResults(
+    Map map,
+  ) async {
     List<FindMyLocationReport> results = <FindMyLocationReport>[];
     List<FindMyKeyPair> keyPairs = map['keyPair'];
     var url = map['url'];
     int daysToFetch = map['daysToFetch'];
+    bool force = map['force'] ?? false;
     Map<String, FindMyKeyPair> hashedKeyKeyPairsMap = {
-      for (var e in keyPairs) e.getHashedAdvertisementKey(): e
+      for (var e in keyPairs) e.getHashedAdvertisementKey(): e,
     };
 
-    List jsonResults = await ReportsFetcher.fetchLocationReports(
-        hashedKeyKeyPairsMap.keys, daysToFetch, url, map['user'], map['pass']);
+    var fetchResult = await ReportsFetcher.fetchLocationReports(
+      hashedKeyKeyPairsMap.keys,
+      daysToFetch,
+      url,
+      map['user'],
+      map['pass'],
+      force: force,
+    );
     FindMyLocationReport? latest;
-    for (var result in jsonResults) {
+    for (var result in fetchResult.reports) {
       FindMyKeyPair keyPair =
           hashedKeyKeyPairsMap[result['id']] as FindMyKeyPair;
       var currentReport = FindMyLocationReport.decrypted(
@@ -79,7 +101,7 @@ class FindMyController {
     if (latest != null) {
       await latest.decrypt();
     }
-    return results;
+    return (reports: results, newCount: fetchResult.newCount);
   }
 
   /// Loads the private key from the local cache or secure storage and adds it
@@ -88,8 +110,10 @@ class FindMyController {
     String? privateKey;
     if (!_keyCache.containsKey(keyPair.hashedPublicKey)) {
       privateKey = await _storage.read(key: keyPair.hashedPublicKey);
-      final newKey =
-          _keyCache.putIfAbsent(keyPair.hashedPublicKey, () => privateKey);
+      final newKey = _keyCache.putIfAbsent(
+        keyPair.hashedPublicKey,
+        () => privateKey,
+      );
       assert(newKey == privateKey);
     } else {
       privateKey = _keyCache[keyPair.hashedPublicKey];
@@ -110,12 +134,18 @@ class FindMyController {
     final privateKeyBase64 = await _storage.read(key: base64HashedPublicKey);
 
     ECPrivateKey privateKey = ECPrivateKey(
-        pc_utils.decodeBigIntWithSign(1, base64Decode(privateKeyBase64!)),
-        _curveParams);
+      pc_utils.decodeBigIntWithSign(1, base64Decode(privateKeyBase64!)),
+      _curveParams,
+    );
     ECPublicKey publicKey = _derivePublicKey(privateKey);
 
     return FindMyKeyPair(
-        publicKey, base64HashedPublicKey, privateKey, DateTime.now(), -1);
+      publicKey,
+      base64HashedPublicKey,
+      privateKey,
+      DateTime.now(),
+      -1,
+    );
   }
 
   /// Imports a base64 encoded private key to the local [FlutterSecureStorage].
@@ -123,14 +153,23 @@ class FindMyController {
   static Future<FindMyKeyPair> importKeyPair(String privateKeyBase64) async {
     final privateKeyBytes = base64Decode(privateKeyBase64);
     final ECPrivateKey privateKey = ECPrivateKey(
-        pc_utils.decodeBigIntWithSign(1, privateKeyBytes), _curveParams);
+      pc_utils.decodeBigIntWithSign(1, privateKeyBytes),
+      _curveParams,
+    );
     final ECPublicKey publicKey = _derivePublicKey(privateKey);
     final hashedPublicKey = getHashedPublicKey(publicKey: publicKey);
     final keyPair = FindMyKeyPair(
-        publicKey, hashedPublicKey, privateKey, DateTime.now(), -1);
+      publicKey,
+      hashedPublicKey,
+      privateKey,
+      DateTime.now(),
+      -1,
+    );
 
     await _storage.write(
-        key: hashedPublicKey, value: keyPair.getBase64PrivateKey());
+      key: hashedPublicKey,
+      value: keyPair.getBase64PrivateKey(),
+    );
 
     return keyPair;
   }
@@ -141,17 +180,24 @@ class FindMyController {
     final ecCurve = ECCurve_secp224r1();
     final secureRandom = SecureRandom('Fortuna')
       ..seed(
-          KeyParameter(Platform.instance.platformEntropySource().getBytes(32)));
+        KeyParameter(Platform.instance.platformEntropySource().getBytes(32)),
+      );
     ECKeyGenerator keyGen = ECKeyGenerator()
-      ..init(ParametersWithRandom(
-          ECKeyGeneratorParameters(ecCurve), secureRandom));
+      ..init(
+        ParametersWithRandom(ECKeyGeneratorParameters(ecCurve), secureRandom),
+      );
 
     final newKeyPair = keyGen.generateKeyPair();
     final ECPublicKey publicKey = newKeyPair.publicKey;
     final ECPrivateKey privateKey = newKeyPair.privateKey;
     final hashedKey = getHashedPublicKey(publicKey: publicKey);
-    final keyPair =
-        FindMyKeyPair(publicKey, hashedKey, privateKey, DateTime.now(), -1);
+    final keyPair = FindMyKeyPair(
+      publicKey,
+      hashedKey,
+      privateKey,
+      DateTime.now(),
+      -1,
+    );
     await _storage.write(key: hashedKey, value: keyPair.getBase64PrivateKey());
 
     return keyPair;
@@ -160,8 +206,10 @@ class FindMyController {
   /// Returns hashed, base64 encoded public key for given [publicKeyBytes]
   /// or for an [ECPublicKey] object [publicKey], if [publicKeyBytes] equals null.
   /// Returns the base64 encoded hashed public key as a [String].
-  static String getHashedPublicKey(
-      {Uint8List? publicKeyBytes, ECPublicKey? publicKey}) {
+  static String getHashedPublicKey({
+    Uint8List? publicKeyBytes,
+    ECPublicKey? publicKey,
+  }) {
     var pkBytes = publicKeyBytes ?? publicKey!.Q!.getEncoded(false);
     final shaDigest = SHA256Digest();
     shaDigest.update(pkBytes, 0, pkBytes.lengthInBytes);

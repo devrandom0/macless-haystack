@@ -26,9 +26,7 @@ class AccessoryRegistry extends ChangeNotifier {
   /// flutter_secure_storage v11 cipher/backend removals.
   SecureStorageUpgradeStatus? storageUpgradeStatus;
 
-  var logger = Logger(
-    printer: PrettyPrinter(methodCount: 0),
-  );
+  var logger = Logger(printer: PrettyPrinter(methodCount: 0));
 
   /// Creates the accessory registry.
   ///
@@ -50,11 +48,12 @@ class AccessoryRegistry extends ChangeNotifier {
     } catch (e) {
       serialized = null;
     }
-    
+
     if (serialized != null) {
       List accessoryJson = json.decode(serialized);
-      List<Accessory> loadedAccessories =
-          accessoryJson.map((val) => Accessory.fromJson(val)).toList();
+      List<Accessory> loadedAccessories = accessoryJson
+          .map((val) => Accessory.fromJson(val))
+          .toList();
       _accessories = loadedAccessories;
       clearInvalidAccessories(_accessories);
       if (_accessories.length != loadedAccessories.length) {
@@ -113,28 +112,41 @@ class AccessoryRegistry extends ChangeNotifier {
   }
 
   /// Fetches new location reports and matches them to their accessory.
+  ///
+  /// Returns how many reports are genuinely new data, not just the total
+  /// size of whatever was returned (which may be entirely already-known
+  /// cached reports). [force] bypasses the endpoint's freshness cache and
+  /// asks Apple directly.
   Future<int> loadLocationReports(
-      Iterable<Accessory> currentAccessories) async {
-    List<Future<List<FindMyLocationReport>>> runningLocationRequests = [];
+    Iterable<Accessory> currentAccessories, {
+    bool force = false,
+  }) async {
+    List<Future<ComputedLocationReports>> runningLocationRequests = [];
 
     // request location updates for all accessories simultaneously
     String? url = Settings.getValue<String>(endpointUrl);
     for (var i = 0; i < currentAccessories.length; i++) {
       var accessory = currentAccessories.elementAt(i);
 
-      var keyPair =
-          await FindMyController.getKeyPair(accessory.hashedPublicKey);
+      var keyPair = await FindMyController.getKeyPair(
+        accessory.hashedPublicKey,
+      );
 
       List<FindMyKeyPair> hashedPublicKeys =
           await Stream.fromIterable(accessory.additionalKeys)
-              .asyncMap((hashedPublicKey) =>
-                  FindMyController.getKeyPair(hashedPublicKey))
+              .asyncMap(
+                (hashedPublicKey) =>
+                    FindMyController.getKeyPair(hashedPublicKey),
+              )
               .toList();
 
       hashedPublicKeys.add(keyPair);
 
-      var locationRequest =
-          FindMyController.computeResults(hashedPublicKeys, url);
+      var locationRequest = FindMyController.computeResults(
+        hashedPublicKeys,
+        url,
+        force: force,
+      );
       runningLocationRequests.add(locationRequest);
     }
 
@@ -143,20 +155,25 @@ class AccessoryRegistry extends ChangeNotifier {
     Map<Accessory, Future<List<Pair<dynamic, dynamic>>>> historyEntries = {};
     for (var i = 0; i < currentAccessories.length; i++) {
       var accessory = currentAccessories.elementAt(i);
-      var reports = reportsForAccessories.elementAt(i);
-      out += reports.length;
+      var reports = reportsForAccessories.elementAt(i).reports;
+      out += reportsForAccessories.elementAt(i).newCount;
       logger.i(
-          '${reports.length} reports fetched for ${accessory.hashedPublicKey} in total');
+        '${reports.length} reports fetched for ${accessory.hashedPublicKey} in total',
+      );
 
       if (reports.where((element) => !element.isEncrypted()).isNotEmpty) {
-        var lastReport =
-            reports.where((element) => !element.isEncrypted()).first;
-        var reportDate = lastReport.timestamp ?? DateTime.fromMicrosecondsSinceEpoch(0);
+        var lastReport = reports
+            .where((element) => !element.isEncrypted())
+            .first;
+        var reportDate =
+            lastReport.timestamp ?? DateTime.fromMicrosecondsSinceEpoch(0);
         if (accessory.datePublished != null &&
             reportDate.isAfter(accessory.datePublished!)) {
           accessory.datePublished = reportDate;
-          accessory.lastLocation =
-              LatLng(lastReport.latitude!, lastReport.longitude!);
+          accessory.lastLocation = LatLng(
+            lastReport.latitude!,
+            lastReport.longitude!,
+          );
 
           // Update last battery status
           accessory.lastBatteryStatus = lastReport.batteryStatus;
@@ -176,22 +193,26 @@ class AccessoryRegistry extends ChangeNotifier {
   }
 
   Future<void> _storeHistory(
-      Map<Accessory, Future<List<Pair<dynamic, dynamic>>>>
-          historyEntries) async {
+    Map<Accessory, Future<List<Pair<dynamic, dynamic>>>> historyEntries,
+  ) async {
     Map<String, List<Pair<dynamic, dynamic>>> historyEntriesAsJson = {};
     for (var entry in historyEntries.entries) {
       Accessory key = entry.key;
       Future<List<Pair<dynamic, dynamic>>> future = entry.value;
       List<Pair<dynamic, dynamic>> result = await future;
       var nowMinusDays = DateTime.now().subtract(const Duration(days: 7));
-      var upperDayLimit =
-          DateTime(nowMinusDays.year, nowMinusDays.month, nowMinusDays.day);
+      var upperDayLimit = DateTime(
+        nowMinusDays.year,
+        nowMinusDays.month,
+        nowMinusDays.day,
+      );
       var filtered = result
           .where((element) => element.end.isAfter(upperDayLimit))
           .toList();
       if (filtered.length != result.length) {
         logger.i(
-            '${result.length - filtered.length} history elements have been filtered out and will be deleted due to age.');
+          '${result.length - filtered.length} history elements have been filtered out and will be deleted due to age.',
+        );
       }
       historyEntriesAsJson[key.id] = filtered;
     }
@@ -199,8 +220,8 @@ class AccessoryRegistry extends ChangeNotifier {
     accessories
         .where((a) => !historyEntriesAsJson.keys.toList().contains(a.id))
         .forEach((a) {
-      historyEntriesAsJson[a.id] = a.locationHistory;
-    });
+          historyEntriesAsJson[a.id] = a.locationHistory;
+        });
 
     var historyJson = jsonEncode(historyEntriesAsJson);
     _storage.write(key: historyStorageKey, value: historyJson);
@@ -242,7 +263,9 @@ class AccessoryRegistry extends ChangeNotifier {
   }
 
   Future<List<Pair<dynamic, dynamic>>> fillLocationHistory(
-      List<FindMyLocationReport> reports, Accessory accessory) async {
+    List<FindMyLocationReport> reports,
+    Accessory accessory,
+  ) async {
     List<FindMyLocationReport> decryptedReports = [];
     //Decrypt only reports that are not already decrypted
     Set<String> hashes = {};
@@ -262,7 +285,8 @@ class AccessoryRegistry extends ChangeNotifier {
       hashes.add(currHash!);
     }
     logger.d(
-        '${reports.length - count} reports decrypted. Decryption of $count reports skipped, because they are already fetched and decrypted.');
+      '${reports.length - count} reports decrypted. Decryption of $count reports skipped, because they are already fetched and decrypted.',
+    );
     //All hashes, that are not in the reports anymore can be deleted, because they are out of time
     accessory.removeOldHashes();
     //Sort by date
@@ -276,13 +300,14 @@ class AccessoryRegistry extends ChangeNotifier {
     if (decryptedReports.isNotEmpty) {
       var lastReport = decryptedReports[decryptedReports.length - 1];
       var oldTs = accessory.datePublished;
-      var latestReportTS =
-          lastReport.timestamp ??  DateTime(1971);
+      var latestReportTS = lastReport.timestamp ?? DateTime(1971);
 
       if (oldTs == null || oldTs.isBefore(latestReportTS)) {
         //only an actualization if oldTS is not set or is older than the latest of the new ones
-        accessory.lastLocation =
-            LatLng(lastReport.latitude!, lastReport.longitude!);
+        accessory.lastLocation = LatLng(
+          lastReport.latitude!,
+          lastReport.longitude!,
+        );
         accessory.datePublished = latestReportTS;
 
         //Update alway battery status
@@ -294,14 +319,15 @@ class AccessoryRegistry extends ChangeNotifier {
       }
     }
 
-//add to history in correct order
+    //add to history in correct order
     for (var i = 0; i < decryptedReports.length; i++) {
       FindMyLocationReport report = decryptedReports[i];
       if (report.longitude!.abs() <= 180 && report.latitude!.abs() <= 90) {
         accessory.addLocationHistoryEntry(report);
       } else {
         logger.d(
-            'Report skipped, because of anomaly data (lat: ${report.latitude}, lon: ${report.longitude}, acc: ${report.accuracy})');
+          'Report skipped, because of anomaly data (lat: ${report.latitude}, lon: ${report.longitude}, acc: ${report.accuracy})',
+        );
       }
     }
     _storeAccessories();
@@ -318,8 +344,9 @@ class AccessoryRegistry extends ChangeNotifier {
   void clearInvalidAccessories(List<Accessory> loadedAccessories) async {
     List<int> indicesToRemove = [];
     for (int i = 0; i < accessories.length; i++) {
-      bool containsKey =
-          await _storage.containsKey(key: accessories[i].hashedPublicKey);
+      bool containsKey = await _storage.containsKey(
+        key: accessories[i].hashedPublicKey,
+      );
       if (!containsKey) {
         // Invalid Element should be removed
         indicesToRemove.add(i);
@@ -360,8 +387,11 @@ class AccessoryRegistry extends ChangeNotifier {
     };
     // An accessory missing from newOrder (e.g. a registry change racing a
     // pending reorder) sorts to the end instead of throwing.
-    _accessories.sort((a, b) => (positionMap[a] ?? newOrder.length)
-        .compareTo(positionMap[b] ?? newOrder.length));
+    _accessories.sort(
+      (a, b) => (positionMap[a] ?? newOrder.length).compareTo(
+        positionMap[b] ?? newOrder.length,
+      ),
+    );
     _storeAccessories();
     notifyListeners();
   }

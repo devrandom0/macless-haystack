@@ -94,13 +94,16 @@ def test_fetch_reports_with_cache_no_store_calls_apple_and_filters_by_days():
     new_entry = _entry(now - 1 * 86400)   # 1 day old
     fetch_from_apple = MagicMock(return_value=[old_entry, new_entry])
 
-    results = fetch_reports_with_cache(
+    results, new_count = fetch_reports_with_cache(
         ids=["key-a"], days=7, force=False, store=None,
         poll_interval_hours=4, fetch_from_apple=fetch_from_apple,
     )
 
     fetch_from_apple.assert_called_once_with(["key-a"])
     assert results == [new_entry]
+    # No store means no cache to compare against - a live fetch's results
+    # are reported as new by definition.
+    assert new_count == 1
 
 
 def test_fetch_reports_with_cache_fresh_store_skips_apple():
@@ -108,13 +111,14 @@ def test_fetch_reports_with_cache_fresh_store_skips_apple():
     store.mark_polled("key-a", when=int(time.time()))
     fetch_from_apple = MagicMock()
 
-    results = fetch_reports_with_cache(
+    results, new_count = fetch_reports_with_cache(
         ids=["key-a"], days=7, force=False, store=store,
         poll_interval_hours=4, fetch_from_apple=fetch_from_apple,
     )
 
     fetch_from_apple.assert_not_called()
     assert results == []
+    assert new_count == 0
 
 
 def test_fetch_reports_with_cache_stale_store_calls_apple_and_persists():
@@ -124,13 +128,14 @@ def test_fetch_reports_with_cache_stale_store_calls_apple_and_persists():
     entry = _entry(int(time.time()) - 3600)
     fetch_from_apple = MagicMock(return_value=[entry])
 
-    results = fetch_reports_with_cache(
+    results, new_count = fetch_reports_with_cache(
         ids=["key-a"], days=7, force=False, store=store,
         poll_interval_hours=4, fetch_from_apple=fetch_from_apple,
     )
 
     fetch_from_apple.assert_called_once_with(["key-a"])
     assert results == [entry]
+    assert new_count == 1
     assert store.last_polled_at("key-a") > stale_time
 
 
@@ -140,13 +145,31 @@ def test_fetch_reports_with_cache_force_calls_apple_even_if_fresh():
     entry = _entry(int(time.time()))
     fetch_from_apple = MagicMock(return_value=[entry])
 
-    results = fetch_reports_with_cache(
+    results, new_count = fetch_reports_with_cache(
         ids=["key-a"], days=7, force=True, store=store,
         poll_interval_hours=4, fetch_from_apple=fetch_from_apple,
     )
 
     fetch_from_apple.assert_called_once_with(["key-a"])
     assert results == [entry]
+    assert new_count == 1
+
+
+def test_fetch_reports_with_cache_force_reports_no_new_data_if_unchanged():
+    store = HistoryStore(":memory:")
+    store.mark_polled("key-a", when=int(time.time()))
+    entry = _entry(int(time.time()) - 100)
+    store.record_reports("key-a", [entry])
+    # Apple returns the exact same entry again - nothing actually changed.
+    fetch_from_apple = MagicMock(return_value=[entry])
+
+    results, new_count = fetch_reports_with_cache(
+        ids=["key-a"], days=7, force=True, store=store,
+        poll_interval_hours=4, fetch_from_apple=fetch_from_apple,
+    )
+
+    assert results == [entry]
+    assert new_count == 0
 
 
 def test_fetch_reports_with_cache_falls_back_to_cache_on_apple_failure():
@@ -157,12 +180,14 @@ def test_fetch_reports_with_cache_falls_back_to_cache_on_apple_failure():
     store.record_reports("key-a", [cached_entry])
     fetch_from_apple = MagicMock(side_effect=Exception("network error"))
 
-    results = fetch_reports_with_cache(
+    results, new_count = fetch_reports_with_cache(
         ids=["key-a"], days=7, force=False, store=store,
         poll_interval_hours=4, fetch_from_apple=fetch_from_apple,
     )
 
     assert results == [cached_entry]
+    # No live fetch succeeded, so nothing new is confirmed.
+    assert new_count == 0
     # last_polled_at is untouched since the fetch failed
     assert store.last_polled_at("key-a") == old_poll
 
@@ -173,7 +198,7 @@ def test_fetch_reports_with_cache_sorts_newest_first():
     store.record_reports("key-a", [_entry(now - 100), _entry(now - 50)])
     store.mark_polled("key-a", when=now)
 
-    results = fetch_reports_with_cache(
+    results, _ = fetch_reports_with_cache(
         ids=["key-a"], days=7, force=False, store=store,
         poll_interval_hours=4, fetch_from_apple=MagicMock(),
     )
@@ -189,13 +214,14 @@ def test_fetch_reports_with_cache_falls_back_to_live_fetch_on_store_error():
     live_entry = _entry(now - 100)
     fetch_from_apple = MagicMock(return_value=[live_entry])
 
-    results = fetch_reports_with_cache(
+    results, new_count = fetch_reports_with_cache(
         ids=["key-a"], days=7, force=False, store=store,
         poll_interval_hours=4, fetch_from_apple=fetch_from_apple,
     )
 
     fetch_from_apple.assert_called_once_with(["key-a"])
     assert results == [live_entry]
+    assert new_count == 1
 
 
 def test_fetch_reports_with_cache_mixed_fresh_and_stale_ids():
@@ -211,13 +237,15 @@ def test_fetch_reports_with_cache_mixed_fresh_and_stale_ids():
     stale_b_entry = _entry(now - 50, id_="key-b")
     fetch_from_apple = MagicMock(return_value=[stale_b_entry])
 
-    results = fetch_reports_with_cache(
+    results, new_count = fetch_reports_with_cache(
         ids=["key-a", "key-b"], days=7, force=False, store=store,
         poll_interval_hours=4, fetch_from_apple=fetch_from_apple,
     )
 
     fetch_from_apple.assert_called_once_with(["key-b"])
     assert {r["id"] for r in results} == {"key-a", "key-b"}
+    # Only key-b was actually fetched and is genuinely new.
+    assert new_count == 1
 
 
 class _StopLoop(Exception):

@@ -38,22 +38,33 @@ def load_tracked_keys(devices_file_path):
 
 
 def _store_fetched_entries(hashed_keys, entries, store, when):
+    """Persists [entries] for [hashed_keys], returning the total number of
+    report rows that were genuinely new (not already stored)."""
     entries_by_id = {}
     for entry in entries:
         entries_by_id.setdefault(entry["id"], []).append(entry)
+    new_count = 0
     for hashed_key in hashed_keys:
-        store.record_reports(hashed_key, entries_by_id.get(hashed_key, []))
+        new_count += store.record_reports(hashed_key, entries_by_id.get(hashed_key, []))
         store.mark_polled(hashed_key, when)
+    return new_count
 
 
 def fetch_reports_with_cache(ids, days, force, store, poll_interval_hours, fetch_from_apple):
+    """Returns (entries, new_count): the reports in [days], and how many of
+    them are genuinely new data from this call - as opposed to Apple/the
+    cache simply reconfirming reports already known from an earlier
+    fetch. A cache hit that made no live call always reports 0 new."""
     now = int(time.time())
     since = now - (days * 86400)
 
     def _fetch_live():
         entries = fetch_from_apple(ids)
         entries = [e for e in entries if extract_report_timestamp(e) > since]
-        return sorted(entries, key=extract_report_timestamp, reverse=True)
+        entries = sorted(entries, key=extract_report_timestamp, reverse=True)
+        # No store means no history to compare against, so a live fetch's
+        # results are new by definition.
+        return entries, len(entries)
 
     if store is None:
         return _fetch_live()
@@ -67,16 +78,18 @@ def fetch_reports_with_cache(ids, days, force, store, poll_interval_hours, fetch
             or (now - store.last_polled_at(hashed_key)) > freshness_window
         ]
 
+        new_count = 0
         if stale_ids:
             try:
                 fresh_entries = fetch_from_apple(stale_ids)
             except Exception as e:
                 logger.warning(f"Live fetch failed, falling back to cached history: {e}")
             else:
-                _store_fetched_entries(stale_ids, fresh_entries, store, now)
+                new_count = _store_fetched_entries(stale_ids, fresh_entries, store, now)
 
         entries = store.get_reports(ids, since)
-        return sorted(entries, key=extract_report_timestamp, reverse=True)
+        entries = sorted(entries, key=extract_report_timestamp, reverse=True)
+        return entries, new_count
     except sqlite3.Error as e:
         logger.error(f"History store error, falling back to live Apple fetch without caching: {e}")
         return _fetch_live()

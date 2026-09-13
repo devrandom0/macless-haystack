@@ -1,4 +1,3 @@
-
 import 'package:flutter/material.dart';
 import 'package:flutter_settings_screens/flutter_settings_screens.dart';
 import 'package:logger/logger.dart';
@@ -13,6 +12,27 @@ import 'package:macless_haystack/preferences/preferences_page.dart';
 import 'package:macless_haystack/preferences/user_preferences_model.dart';
 
 import '../accessory/accessory_model.dart';
+
+/// The snackbar message to show after a fetch attempt, or null to show
+/// nothing at all. [showFeedback] is false for the app's own
+/// automatic/startup fetch, which stays silent regardless of [newCount] -
+/// it's not something the user consciously asked for.
+String? fetchFeedbackMessage({
+  required bool showFeedback,
+  required int newCount,
+  required int inactiveSkipped,
+}) {
+  if (!showFeedback) {
+    return null;
+  }
+  var skippedSuffix = inactiveSkipped > 0
+      ? ' $inactiveSkipped inactive ${inactiveSkipped == 1 ? 'accessory' : 'accessories'} skipped'
+      : '';
+  if (newCount == 0) {
+    return 'No new locations.$skippedSuffix';
+  }
+  return 'Fetched $newCount new location${newCount == 1 ? '' : 's'}.$skippedSuffix';
+}
 
 class Dashboard extends StatefulWidget {
   /// Displays the layout for the mobile view of the app.
@@ -39,10 +59,13 @@ class _DashboardState extends State<Dashboard> {
       'icon': Icons.place,
       'label': 'Map',
       'actionButton': (ctx) => RefreshAction(
-            callback: () async {
-              await loadLocationUpdates(null);
-            },
-          ),
+        callback: () async {
+          await loadLocationUpdates(null);
+        },
+        onForceRefresh: () async {
+          await loadLocationUpdates(null, force: true);
+        },
+      ),
     },
     {
       'icon': Icons.style,
@@ -75,21 +98,32 @@ class _DashboardState extends State<Dashboard> {
     if (!locationPreferenceKnown || locationAccessWanted) {
       locationModel.requestLocationUpdates();
     }
-    // Load new location reports on app start
-    if (Settings.getValue<bool>(fetchLocationOnStartupKey,
-        defaultValue: true)!) {
-      loadLocationUpdates(null);
+    // Load new location reports on app start. Silent even when it finds
+    // new data - this is plumbing the app does on its own, not something
+    // the user asked for by tapping refresh.
+    if (Settings.getValue<bool>(
+      fetchLocationOnStartupKey,
+      defaultValue: true,
+    )!) {
+      loadLocationUpdates(null, showFeedback: false);
     }
   }
 
-  var logger = Logger(
-    printer: PrettyPrinter(),
-  );
+  var logger = Logger(printer: PrettyPrinter());
 
-  /// Fetch location updates for all accessories.
-  Future<void> loadLocationUpdates(Accessory? accessory) async {
-    var accessoryRegistry =
-        Provider.of<AccessoryRegistry>(context, listen: false);
+  /// Fetch location updates for all accessories. [force] bypasses the
+  /// endpoint's freshness cache and asks Apple directly. [showFeedback]
+  /// controls whether a snackbar is shown at all - false for the app's own
+  /// silent automatic/startup fetch.
+  Future<void> loadLocationUpdates(
+    Accessory? accessory, {
+    bool force = false,
+    bool showFeedback = true,
+  }) async {
+    var accessoryRegistry = Provider.of<AccessoryRegistry>(
+      context,
+      listen: false,
+    );
     var inactive = 0;
     Iterable<Accessory> accessories;
     if (accessory == null) {
@@ -99,17 +133,22 @@ class _DashboardState extends State<Dashboard> {
       accessories = [accessory];
     }
     try {
-      var count = await accessoryRegistry
-          .loadLocationReports(accessories.where((a) => a.isActive));
-      if (mounted && accessories.isNotEmpty) {
+      var newCount = await accessoryRegistry.loadLocationReports(
+        accessories.where((a) => a.isActive),
+        force: force,
+      );
+      var message = fetchFeedbackMessage(
+        showFeedback: showFeedback,
+        newCount: newCount,
+        inactiveSkipped: inactive,
+      );
+      if (mounted && accessories.isNotEmpty && message != null) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             backgroundColor: Theme.of(context).colorScheme.primary,
             content: Text(
-              'Fetched $count location(s).${inactive > 0 ? ' $inactive inactive ${inactive == 1 ? 'accessory' : 'accessories'} skipped' : ''}',
-              style: TextStyle(
-                color: Theme.of(context).colorScheme.onPrimary,
-              ),
+              message,
+              style: TextStyle(color: Theme.of(context).colorScheme.onPrimary),
             ),
           ),
         );
@@ -122,9 +161,7 @@ class _DashboardState extends State<Dashboard> {
             backgroundColor: Theme.of(context).colorScheme.error,
             content: Text(
               'Could not find location reports. Try again later. Error: ${e.toString()}',
-              style: TextStyle(
-                color: Theme.of(context).colorScheme.onError,
-              ),
+              style: TextStyle(color: Theme.of(context).colorScheme.onError),
             ),
           ),
         );
@@ -145,45 +182,49 @@ class _DashboardState extends State<Dashboard> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-        appBar: AppBar(
-          title: const Text('My Accessories'),
-          actions: <Widget>[
-            IconButton(
-              onPressed: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                      builder: (context) => const PreferencesPage()),
-                );
-              },
-              icon: const Icon(Icons.settings),
-            ),
-          ],
-        ),
-        body: IndexedStack(
-          index: _selectedIndex,
-          children: _tabBodies,
-        ),
-        bottomNavigationBar: BottomNavigationBar(
-          items: _tabs
-              .map((tab) => BottomNavigationBarItem(
-                    icon: Icon(tab['icon']),
-                    label: tab['label'],
-                  ))
-              .toList(),
-          currentIndex: _selectedIndex,
-          // secondaryHeaderColor's blue[50]/grey[700] was nearly invisible against the nav bar.
-          unselectedItemColor: Theme.of(context).colorScheme.outline,
-          onTap: _onItemTapped,
-        ),
-        floatingActionButton:
-            _tabs[_selectedIndex]['actionButton']?.call(context),
-        floatingActionButtonLocation: FloatingActionButtonLocation.endDocked);
+      appBar: AppBar(
+        title: const Text('My Accessories'),
+        actions: <Widget>[
+          IconButton(
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const PreferencesPage(),
+                ),
+              );
+            },
+            icon: const Icon(Icons.settings),
+          ),
+        ],
+      ),
+      body: IndexedStack(index: _selectedIndex, children: _tabBodies),
+      bottomNavigationBar: BottomNavigationBar(
+        items: _tabs
+            .map(
+              (tab) => BottomNavigationBarItem(
+                icon: Icon(tab['icon']),
+                label: tab['label'],
+              ),
+            )
+            .toList(),
+        currentIndex: _selectedIndex,
+        // secondaryHeaderColor's blue[50]/grey[700] was nearly invisible against the nav bar.
+        unselectedItemColor: Theme.of(context).colorScheme.outline,
+        onTap: _onItemTapped,
+      ),
+      floatingActionButton: _tabs[_selectedIndex]['actionButton']?.call(
+        context,
+      ),
+      floatingActionButtonLocation: FloatingActionButtonLocation.endDocked,
+    );
   }
 
   Future<void> saveAccessories(List<Accessory> accessories) async {
-    var accessoryRegistry =
-        Provider.of<AccessoryRegistry>(context, listen: false);
+    var accessoryRegistry = Provider.of<AccessoryRegistry>(
+      context,
+      listen: false,
+    );
     accessoryRegistry.saveOrderUpdates(accessories);
   }
 }
