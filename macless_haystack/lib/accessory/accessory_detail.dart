@@ -473,29 +473,31 @@ class _AccessoryDetailState extends State<AccessoryDetail> {
                   }
                 },
               ),
-              SwitchListTile(
-                value: _archivingEnabled,
-                title: const Text('Archive location history on endpoint'),
-                subtitle: Text(
-                  _archivingLoading
-                      ? 'Loading status…'
-                      : _archivingUpdating
-                          ? 'Updating…'
-                          : 'Sends a request to the endpoint - unlike the '
-                              'other settings on this page, this can fail',
+              if (newAccessory.isActive) ...[
+                SwitchListTile(
+                  value: _archivingEnabled,
+                  title: const Text('Archive location history on endpoint'),
+                  subtitle: Text(
+                    _archivingLoading
+                        ? 'Loading status…'
+                        : _archivingUpdating
+                            ? 'Updating…'
+                            : 'Sends a request to the endpoint - unlike the '
+                                'other settings on this page, this can fail',
+                  ),
+                  secondary: _archivingUpdating
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : null,
+                  onChanged: (_archivingLoading || _archivingUpdating)
+                      ? null
+                      : _setArchiving,
                 ),
-                secondary: _archivingUpdating
-                    ? const SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : null,
-                onChanged: (_archivingLoading || _archivingUpdating)
-                    ? null
-                    : _setArchiving,
-              ),
-              if (_archivingEnabled) _buildArchiveSettingsForm(),
+                if (_archivingEnabled) _buildArchiveSettingsForm(),
+              ],
               Padding(
                 padding: const EdgeInsets.symmetric(
                     horizontal: 16, vertical: 8),
