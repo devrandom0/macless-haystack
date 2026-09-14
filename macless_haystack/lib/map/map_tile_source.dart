@@ -56,8 +56,31 @@ const Map<String, MapTileSource> _mapTileSources = {
   ),
 };
 
+/// Whether [value] identifies one of the CARTO tile sources, which - unlike
+/// OpenStreetMap and OpenTopoMap - now require an API key on every request
+/// (see [mapTileSourceFromString]).
+bool isCartoTileSource(String? value) {
+  return value == mapTileProviderCartoVoyagerValue ||
+      value == mapTileProviderCartoDarkValue;
+}
+
 /// Maps a raw settings value to a [MapTileSource], falling back to
 /// OpenStreetMap (this setting's default) for anything unrecognized.
-MapTileSource mapTileSourceFromString(String? value) {
-  return _mapTileSources[value] ?? _mapTileSources[mapTileProviderOsmValue]!;
+///
+/// CARTO's free basemaps now require an API key appended to every tile
+/// request (https://carto.com/basemaps/apikey/) - without one, CARTO serves
+/// tiles watermarked "API KEY REQUIRED" instead of an error, so [cartoApiKey]
+/// is appended whenever [value] is a CARTO source and a key was provided.
+MapTileSource mapTileSourceFromString(String? value, {String? cartoApiKey}) {
+  var source = _mapTileSources[value] ?? _mapTileSources[mapTileProviderOsmValue]!;
+  if (isCartoTileSource(value) && cartoApiKey != null && cartoApiKey.isNotEmpty) {
+    return MapTileSource(
+      urlTemplate:
+          '${source.urlTemplate}?key=${Uri.encodeQueryComponent(cartoApiKey)}',
+      subdomains: source.subdomains,
+      attributionText: source.attributionText,
+      isDark: source.isDark,
+    );
+  }
+  return source;
 }

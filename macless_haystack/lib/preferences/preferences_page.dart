@@ -99,6 +99,7 @@ class _PreferencesPageState extends State<PreferencesPage> {
           getThemeModeTile(),
           _sectionHeader(context, 'Map'),
           getMapTileProviderTile(),
+          getCartoApiKeyTileIfNeeded(),
           _sectionHeader(context, 'Endpoint Connection'),
           getUrlTile(),
           getUserTile(),
@@ -319,6 +320,30 @@ class _PreferencesPageState extends State<PreferencesPage> {
       onChange: (value) {
         Provider.of<MapTileProviderModel>(context, listen: false)
             .setValue(value);
+      },
+    );
+  }
+
+  /// Only CARTO styles need an API key (carto.com/basemaps/apikey) - shown
+  /// only while one of those is selected, live, via the same
+  /// [MapTileProviderModel] the style dropdown itself writes to.
+  Widget getCartoApiKeyTileIfNeeded() {
+    return Consumer<MapTileProviderModel>(
+      builder: (context, tileProviderModel, child) {
+        if (!isCartoTileSource(tileProviderModel.value)) {
+          return const SizedBox.shrink();
+        }
+        return TextInputSettingsTile(
+          initialValue: tileProviderModel.cartoApiKey,
+          settingKey: cartoApiKeyKey,
+          title: 'CARTO API key',
+          helperText: 'Free at carto.com/basemaps/apikey - required for '
+              'CARTO styles to load',
+          onChange: (value) {
+            Provider.of<MapTileProviderModel>(context, listen: false)
+                .setCartoApiKey(value);
+          },
+        );
       },
     );
   }

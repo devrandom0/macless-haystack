@@ -357,8 +357,11 @@ class _AccessoryMapState extends State<AccessoryMap> {
       // rebuilds live when the on-map style picker or the Settings page
       // changes the setting, without needing a pop/navigate back to this
       // screen to pick up the new value.
-      var tileProviderValue = context.watch<MapTileProviderModel>().value;
-      var tileSource = mapTileSourceFromString(tileProviderValue);
+      var tileProviderModel = context.watch<MapTileProviderModel>();
+      var tileSource = mapTileSourceFromString(
+        tileProviderModel.value,
+        cartoApiKey: tileProviderModel.cartoApiKey,
+      );
       return _buildMap(
           context, accessories, locationModel, selected, tileSource);
     });

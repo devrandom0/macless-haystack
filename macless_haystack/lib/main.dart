@@ -22,20 +22,25 @@ Future<void> main() async {
       Settings.getValue<String>(themeModeKey, defaultValue: themeModeSystemValue));
   var initialMapTileProvider = Settings.getValue<String>(mapTileProviderKey,
       defaultValue: mapTileProviderOsmValue)!;
+  var initialCartoApiKey =
+      Settings.getValue<String>(cartoApiKeyKey, defaultValue: '')!;
   runApp(MyApp(
     initialThemeMode: initialThemeMode,
     initialMapTileProvider: initialMapTileProvider,
+    initialCartoApiKey: initialCartoApiKey,
   ));
 }
 
 class MyApp extends StatelessWidget {
   final ThemeMode initialThemeMode;
   final String initialMapTileProvider;
+  final String initialCartoApiKey;
 
   const MyApp({
     super.key,
     required this.initialThemeMode,
     required this.initialMapTileProvider,
+    required this.initialCartoApiKey,
   });
 
   @override
@@ -47,7 +52,8 @@ class MyApp extends StatelessWidget {
         ChangeNotifierProvider(create: (ctx) => LocationModel()),
         ChangeNotifierProvider(create: (ctx) => ThemeModel(initialThemeMode)),
         ChangeNotifierProvider(
-            create: (ctx) => MapTileProviderModel(initialMapTileProvider)),
+            create: (ctx) => MapTileProviderModel(
+                initialMapTileProvider, initialCartoApiKey)),
       ],
       child: Consumer<ThemeModel>(
         builder: (context, themeModel, child) {

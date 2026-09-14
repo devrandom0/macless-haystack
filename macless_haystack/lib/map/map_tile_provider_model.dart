@@ -19,15 +19,25 @@ import 'package:macless_haystack/preferences/user_preferences_model.dart';
 /// be lost the next time the app starts.
 class MapTileProviderModel extends ChangeNotifier {
   String _value;
+  String _cartoApiKey;
 
-  MapTileProviderModel(this._value);
+  MapTileProviderModel(this._value, this._cartoApiKey);
 
   String get value => _value;
+
+  String get cartoApiKey => _cartoApiKey;
 
   void setValue(String value) {
     if (_value == value) return;
     _value = value;
     Settings.setValue<String>(mapTileProviderKey, value);
+    notifyListeners();
+  }
+
+  void setCartoApiKey(String cartoApiKey) {
+    if (_cartoApiKey == cartoApiKey) return;
+    _cartoApiKey = cartoApiKey;
+    Settings.setValue<String>(cartoApiKeyKey, cartoApiKey);
     notifyListeners();
   }
 }
