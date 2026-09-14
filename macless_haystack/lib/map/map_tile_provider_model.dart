@@ -1,4 +1,6 @@
 import 'package:flutter/foundation.dart';
+import 'package:flutter_settings_screens/flutter_settings_screens.dart';
+import 'package:macless_haystack/preferences/user_preferences_model.dart';
 
 /// Holds the app's current map tile provider setting and notifies listeners
 /// when it changes, so the map screen and its on-map style picker can react
@@ -10,6 +12,11 @@ import 'package:flutter/foundation.dart';
 /// wiped out the map's own (long-lived) registration too, so picking a new
 /// style there stopped reaching the map. See ThemeModel for the same fix
 /// applied to theme mode.
+///
+/// setValue persists to Settings itself (rather than relying on a caller's
+/// own DropDownSettingsTile to do it) - the on-map picker has no such tile
+/// backing it, so without this its selection would only live in memory and
+/// be lost the next time the app starts.
 class MapTileProviderModel extends ChangeNotifier {
   String _value;
 
@@ -20,6 +27,7 @@ class MapTileProviderModel extends ChangeNotifier {
   void setValue(String value) {
     if (_value == value) return;
     _value = value;
+    Settings.setValue<String>(mapTileProviderKey, value);
     notifyListeners();
   }
 }
