@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 
@@ -42,16 +44,40 @@ class _AccessoryMapListVerticalState extends State<AccessoryMapListVertical> {
   static const double _fullSize = 0.92;
   static const List<double> _snapSizes = [_peekSize, _halfSize, _fullSize];
 
-  void _centerPoint(LatLng point) {
-    // Pull the sheet back down to peek height first so the newly centered
-    // marker isn't left hidden underneath it.
-    if (_sheetController.isAttached && _sheetController.size > _halfSize) {
+  StreamSubscription<MapEvent>? _mapEventSubscription;
+
+  @override
+  void initState() {
+    super.initState();
+    // Collapse the sheet to peek height as soon as the user starts panning
+    // or pinch-zooming, so dragging the map doesn't stay stuck under it -
+    // gated to gesture starts (not every _mapController move) so this can't
+    // fight with the pan/zoom itself or with a programmatic move like
+    // _centerPoint's own fitCamera call.
+    _mapEventSubscription = _mapController.mapEventStream.listen((event) {
+      if (event.source == MapEventSource.dragStart ||
+          event.source == MapEventSource.multiFingerGestureStart) {
+        _collapseSheetToPeek(above: _peekSize);
+      }
+    });
+  }
+
+  /// Animates the sheet down to peek height, but only if it's currently
+  /// expanded past [above].
+  void _collapseSheetToPeek({required double above}) {
+    if (_sheetController.isAttached && _sheetController.size > above) {
       _sheetController.animateTo(
         _peekSize,
         duration: const Duration(milliseconds: 250),
         curve: Curves.easeOut,
       );
     }
+  }
+
+  void _centerPoint(LatLng point) {
+    // Pull the sheet back down to peek height first so the newly centered
+    // marker isn't left hidden underneath it.
+    _collapseSheetToPeek(above: _halfSize);
     _mapController.fitCamera(
       CameraFit.bounds(bounds: LatLngBounds.fromPoints([point])),
     );
@@ -59,6 +85,7 @@ class _AccessoryMapListVerticalState extends State<AccessoryMapListVertical> {
 
   @override
   void dispose() {
+    _mapEventSubscription?.cancel();
     _sheetController.dispose();
     super.dispose();
   }
