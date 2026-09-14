@@ -3,7 +3,6 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_map_marker_cluster/flutter_map_marker_cluster.dart';
-import 'package:flutter_settings_screens/flutter_settings_screens.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:macless_haystack/accessory/accessory_actions.dart';
 import 'package:macless_haystack/accessory/accessory_icon.dart';
@@ -11,8 +10,8 @@ import 'package:macless_haystack/accessory/accessory_model.dart';
 import 'package:macless_haystack/accessory/accessory_registry.dart';
 import 'package:macless_haystack/location/location_model.dart';
 import 'package:macless_haystack/map/accessory_popup.dart';
+import 'package:macless_haystack/map/map_tile_provider_model.dart';
 import 'package:macless_haystack/map/map_tile_source.dart';
-import 'package:macless_haystack/preferences/user_preferences_model.dart';
 import 'package:provider/provider.dart';
 
 /// Whether the map should auto-fit its camera to [accessories]' current
@@ -354,19 +353,14 @@ class _AccessoryMapState extends State<AccessoryMap> {
         });
       }
 
-      // ValueChangeObserver (rather than a plain Settings.getValue read) so
-      // this rebuilds live when the on-map style picker changes the
-      // setting, without needing a pop/navigate back to this screen to
-      // pick up the new value.
-      return ValueChangeObserver<String>(
-        cacheKey: mapTileProviderKey,
-        defaultValue: mapTileProviderOsmValue,
-        builder: (context, tileProviderValue, onTileProviderChanged) {
-          var tileSource = mapTileSourceFromString(tileProviderValue);
-          return _buildMap(
-              context, accessories, locationModel, selected, tileSource);
-        },
-      );
+      // context.watch (rather than a plain Settings.getValue read) so this
+      // rebuilds live when the on-map style picker or the Settings page
+      // changes the setting, without needing a pop/navigate back to this
+      // screen to pick up the new value.
+      var tileProviderValue = context.watch<MapTileProviderModel>().value;
+      var tileSource = mapTileSourceFromString(tileProviderValue);
+      return _buildMap(
+          context, accessories, locationModel, selected, tileSource);
     });
   }
 

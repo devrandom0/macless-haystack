@@ -8,6 +8,7 @@ import 'package:macless_haystack/history/archive_settings_validation.dart';
 import 'package:macless_haystack/history/history_archive_service.dart';
 import 'package:macless_haystack/location/location_model.dart';
 import 'package:macless_haystack/map/map_style_picker_button.dart';
+import 'package:macless_haystack/map/map_tile_provider_model.dart';
 import 'package:macless_haystack/map/map_tile_source.dart';
 import 'package:macless_haystack/preferences/theme_model.dart';
 import 'package:macless_haystack/preferences/user_preferences_model.dart';
@@ -310,11 +311,15 @@ class _PreferencesPageState extends State<PreferencesPage> {
   }
 
   Widget getMapTileProviderTile() {
-    return const DropDownSettingsTile<String>(
+    return DropDownSettingsTile<String>(
       title: 'Map style',
       settingKey: mapTileProviderKey,
       values: mapTileProviderLabels,
       selected: mapTileProviderOsmValue,
+      onChange: (value) {
+        Provider.of<MapTileProviderModel>(context, listen: false)
+            .setValue(value);
+      },
     );
   }
 

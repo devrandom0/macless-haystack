@@ -4,6 +4,8 @@ import 'package:macless_haystack/dashboard/dashboard.dart';
 import 'package:provider/provider.dart';
 import 'package:macless_haystack/accessory/accessory_registry.dart';
 import 'package:macless_haystack/location/location_model.dart';
+import 'package:macless_haystack/map/map_tile_provider_model.dart';
+import 'package:macless_haystack/map/map_tile_source.dart';
 import 'package:macless_haystack/preferences/theme_model.dart';
 import 'package:macless_haystack/preferences/user_preferences_model.dart';
 import 'package:macless_haystack/splashscreen.dart';
@@ -18,13 +20,23 @@ Future<void> main() async {
   await initializeDateFormatting();
   var initialThemeMode = themeModeFromString(
       Settings.getValue<String>(themeModeKey, defaultValue: themeModeSystemValue));
-  runApp(MyApp(initialThemeMode: initialThemeMode));
+  var initialMapTileProvider = Settings.getValue<String>(mapTileProviderKey,
+      defaultValue: mapTileProviderOsmValue)!;
+  runApp(MyApp(
+    initialThemeMode: initialThemeMode,
+    initialMapTileProvider: initialMapTileProvider,
+  ));
 }
 
 class MyApp extends StatelessWidget {
   final ThemeMode initialThemeMode;
+  final String initialMapTileProvider;
 
-  const MyApp({super.key, required this.initialThemeMode});
+  const MyApp({
+    super.key,
+    required this.initialThemeMode,
+    required this.initialMapTileProvider,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -34,6 +46,8 @@ class MyApp extends StatelessWidget {
         ChangeNotifierProvider(create: (ctx) => UserPreferences()),
         ChangeNotifierProvider(create: (ctx) => LocationModel()),
         ChangeNotifierProvider(create: (ctx) => ThemeModel(initialThemeMode)),
+        ChangeNotifierProvider(
+            create: (ctx) => MapTileProviderModel(initialMapTileProvider)),
       ],
       child: Consumer<ThemeModel>(
         builder: (context, themeModel, child) {
