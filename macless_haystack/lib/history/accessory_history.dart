@@ -337,32 +337,41 @@ class _AccessoryHistoryState extends State<AccessoryHistory> {
   /// downloaded directly on web, where there's no share sheet).
   Future<void> _exportHistory(List<Pair<dynamic, dynamic>> entries) async {
     var gpx = buildGpxDocument(widget.accessory.name, entries);
-    var filename = '${_sanitizeFilename(widget.accessory.name)}_history.gpx';
+    var filename = gpxFilenameFor(widget.accessory.name);
 
-    if (kIsWeb) {
-      final blob = html.Blob([gpx], 'application/gpx+xml', 'native');
-      final url = html.Url.createObjectUrlFromBlob(blob);
+    try {
+      if (kIsWeb) {
+        final blob = html.Blob([gpx], 'application/gpx+xml', 'native');
+        final url = html.Url.createObjectUrlFromBlob(blob);
 
-      html.AnchorElement(href: url)
-        ..setAttribute('download', filename)
-        ..click();
+        html.AnchorElement(href: url)
+          ..setAttribute('download', filename)
+          ..click();
 
-      html.Url.revokeObjectUrl(url);
-    } else {
-      Directory tempDir = await getTemporaryDirectory();
-      File file = File('${tempDir.path}/$filename');
-      await file.writeAsString(gpx);
+        html.Url.revokeObjectUrl(url);
+      } else {
+        Directory tempDir = await getTemporaryDirectory();
+        File file = File('${tempDir.path}/$filename');
+        await file.writeAsString(gpx);
 
-      SharePlus.instance.share(
-        ShareParams(files: [XFile(file.path)], subject: filename),
-      );
+        SharePlus.instance.share(
+          ShareParams(files: [XFile(file.path)], subject: filename),
+        );
+      }
+    } catch (e, stacktrace) {
+      logger.e('Error exporting history', error: e, stackTrace: stacktrace);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: Theme.of(context).colorScheme.error,
+            content: Text(
+              'Could not export history.',
+              style: TextStyle(color: Theme.of(context).colorScheme.onError),
+            ),
+          ),
+        );
+      }
     }
-  }
-
-  /// Strips characters that aren't safe in a filename on common
-  /// filesystems, since [Accessory.name] is free-form user input.
-  String _sanitizeFilename(String name) {
-    return name.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_').trim();
   }
 
   List<Pair<dynamic, dynamic>> filterHistoryEntries() {
