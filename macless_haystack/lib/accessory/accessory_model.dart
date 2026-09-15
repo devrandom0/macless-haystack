@@ -75,6 +75,11 @@ class Accessory {
   /// (null if battery data not found)
   AccessoryBatteryStatus? lastBatteryStatus;
 
+  /// The most severe [AccessoryBatteryStatus] we've already shown a
+  /// low-battery notification for. Reset to null once the accessory's
+  /// battery recovers above low, so a future drop alerts again.
+  AccessoryBatteryStatus? lastNotifiedBatteryStatus;
+
   /// A list of known locations over time.
   List<Pair<dynamic, dynamic>> locationHistory = [];
   Map<String, dynamic> hashesWithTS = {};
@@ -114,7 +119,7 @@ class Accessory {
 
   /// Creates a new accessory with exactly the same properties of this accessory.
   Accessory clone() {
-    return Accessory(
+    var cloned = Accessory(
         datePublished: datePublished,
         id: id,
         name: name,
@@ -127,6 +132,8 @@ class Accessory {
         additionalKeys: additionalKeys,
         locationHistory: locationHistory,
         lastBatteryStatus: lastBatteryStatus);
+    cloned.lastNotifiedBatteryStatus = lastNotifiedBatteryStatus;
+    return cloned;
   }
 
   /// Updates the properties of this accessor with the new values of the [newAccessory].
@@ -197,6 +204,10 @@ class Accessory {
         lastBatteryStatus = json['lastBatteryStatus'] != null
             ? AccessoryBatteryStatus.values.byName(json['lastBatteryStatus'])
             : null,
+        lastNotifiedBatteryStatus = json['lastNotifiedBatteryStatus'] != null
+            ? AccessoryBatteryStatus.values
+                .byName(json['lastNotifiedBatteryStatus'])
+            : null,
         hashesWithTS = json['hashesWithTS'] != null
             ? jsonDecode(json['hashesWithTS']) as Map<String, dynamic>
             : <String, dynamic>{},
@@ -228,6 +239,9 @@ class Accessory {
         'additionalKeys': additionalKeys,
         ...lastBatteryStatus != null
             ? {'lastBatteryStatus': lastBatteryStatus!.name}
+            : {},
+        ...lastNotifiedBatteryStatus != null
+            ? {'lastNotifiedBatteryStatus': lastNotifiedBatteryStatus!.name}
             : {}
       };
 
