@@ -449,14 +449,20 @@ class _AccessoryMapState extends State<AccessoryMap> {
               // tapping a cluster to zoom into it silently capped out one
               // level short of the map's real maximum.
               maxZoom: 18.0,
-              // The package's own dartdoc for this option reads backwards
-              // from its actual behavior (confirmed on-device): clustering
-              // is enabled at this zoom level and below, and disabled
-              // above it - not the other way around. A few levels of
-              // margin below the map's max (18) so cluster-tap's
-              // zoom-to-bounds has room to actually reach an unclustered
-              // state before hitting the ceiling.
-              disableClusteringAtZoom: 15,
+              // No disableClusteringAtZoom override (package default is 20,
+              // above our own maxZoom, so it never forces clustering off).
+              // A prior version capped this at 15, which broke exactly the
+              // case clustering exists for: accessories close enough in
+              // the real world that they're still within maxClusterRadius
+              // pixels of each other well past zoom 15 - those markers hit
+              // the cap and rendered as indistinguishable overlapping pins
+              // instead of a cluster badge, even though pixel distance
+              // alone (maxClusterRadius) would have kept clustering them
+              // correctly. Letting maxClusterRadius be the only deciding
+              // factor separates markers exactly when they're far enough
+              // apart on screen to tell apart, regardless of zoom level -
+              // and spiderfy still handles truly-coincident markers at max
+              // zoom.
               markers: _accessoryMarkersFor(accessories),
               // Centering is handled by hand below, only when actually
               // selecting (not deselecting) - the package's own

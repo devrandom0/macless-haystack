@@ -41,6 +41,11 @@ void main() {
                     maxClusterRadius: 45,
                     size: const Size(44, 44),
                     maxZoom: 18,
+                    // Deliberately lower than production's (now-removed)
+                    // config - this test needs clustering to actually
+                    // switch on partway through the zoom-out loop below to
+                    // exercise the merge-during-build race it guards
+                    // against, regardless of what production uses.
                     disableClusteringAtZoom: 15,
                     markers: [
                       Marker(
