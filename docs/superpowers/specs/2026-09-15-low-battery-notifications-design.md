@@ -44,7 +44,7 @@ bool isMoreSevere(
 
 **New file `lib/notifications/battery_notification_service.dart`**: wraps the `flutter_local_notifications` package.
 
-- `Future<void> init()` - creates the Android notification channel (id `low_battery`, importance default) and requests the `POST_NOTIFICATIONS` runtime permission (Android 13+; no-op on older versions). Called once from `main.dart` during startup, alongside the app's other service initialization.
+- `Future<void> init()` - creates the Android notification channel (id `low_battery`, importance default) and requests the `POST_NOTIFICATIONS` runtime permission (Android 13+; no-op on older versions). The permission request is fired without being awaited, since on Android 13+ it blocks on the user's response to the system dialog - awaiting it here would block `main()`'s call to `init()`, which runs before `runApp()`, so the first frame would never render behind a bare launch theme until the user answers. `init()` also seeds `NotificationNavigation.pendingAccessoryId` by calling `getNotificationAppLaunchDetails()`: `onDidReceiveNotificationResponse` (the tap-response callback below) only fires while the app process is already alive, so a tap that launches the app from a fully killed state needs this separate path instead. Called once from `main.dart` during startup, alongside the app's other service initialization.
 - `Future<void> notifyLowBattery(Accessory accessory)` - shows a notification with the accessory's `id` as payload:
   - `low`: title `'${accessory.name} battery is low'`, body `'Consider replacing or recharging its battery soon.'`
   - `criticalLow`: title `'${accessory.name} battery is critically low'`, body `'It may stop reporting its location soon.'`
@@ -65,7 +65,8 @@ bool isMoreSevere(
 1. A fetch completes (`loadLocationUpdates` in `dashboard.dart`, triggered by startup/manual/force refresh) and `AccessoryRegistry` updates `accessory.lastBatteryStatus` from the newest report, at its two existing update sites (`loadLocationReports` and `fillLocationHistory` in `accessory_registry.dart`).
 2. Immediately after each of those two updates, a new private helper `_maybeNotifyBatteryChange(Accessory accessory)` runs:
    - If the setting `lowBatteryNotificationsEnabled` is off, do nothing.
-   - If `accessory.lastBatteryStatus` is not low-or-worse (`isLowOrWorse` false, i.e. `ok`/`medium`/`unknown`/`null`), reset `accessory.lastNotifiedBatteryStatus = null` (clears the "already alerted" marker so a future drop alerts again) and return.
+   - If `accessory.lastBatteryStatus` is a known-good status (`ok`/`medium`), reset `accessory.lastNotifiedBatteryStatus = null` (clears the "already alerted" marker so a future drop alerts again) and return - this is a real recovery.
+   - If `accessory.lastBatteryStatus` is `unknown`/`null` (no reliable reading), leave `accessory.lastNotifiedBatteryStatus` untouched and return - a missing/unreadable report is not a recovery, and resetting the marker here would silently re-arm and re-notify on the next low reading even though nothing about the battery actually improved.
    - Otherwise, if `isMoreSevere(accessory.lastNotifiedBatteryStatus, accessory.lastBatteryStatus!)`, call `BatteryNotificationService.notifyLowBattery(accessory)` and set `accessory.lastNotifiedBatteryStatus = accessory.lastBatteryStatus`.
    - Otherwise (already notified at this severity), do nothing.
 3. `deleteData()` (accessory deactivation) also resets `lastNotifiedBatteryStatus = null`, alongside its existing `lastBatteryStatus = null` reset, so reactivating an accessory doesn't inherit a stale suppression state.
