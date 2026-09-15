@@ -131,6 +131,7 @@ endpoint/data/*.json
 endpoint/data/*.db
 endpoint/data/*.bin
 endpoint/venv/*
+endpoint/web_dist/
 *.iml
 .idea
 /macless_haystack/android/app/.cxx/**

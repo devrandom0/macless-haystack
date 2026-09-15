@@ -1,4 +1,4 @@
-FROM ghcr.io/cirruslabs/flutter:stable AS webbuild
+FROM --platform=$BUILDPLATFORM ghcr.io/cirruslabs/flutter:stable AS webbuild
 WORKDIR /src
 COPY macless_haystack macless_haystack
 WORKDIR /src/macless_haystack

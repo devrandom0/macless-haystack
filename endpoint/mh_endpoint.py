@@ -143,7 +143,7 @@ class ServerHandler(BaseHTTPRequestHandler):
         try:
             resolved = web_static.resolve_static_path(path, WEB_ROOT)
             data = resolved.read_bytes() if resolved is not None else None
-        except OSError as e:
+        except (OSError, ValueError, RuntimeError) as e:
             logger.warning(f"Error serving static file for {path}: {e}")
             self.send_response(500)
             self.addCORSHeaders()

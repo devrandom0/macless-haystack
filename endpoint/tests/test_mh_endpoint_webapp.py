@@ -74,6 +74,11 @@ def test_returns_404_when_web_dist_does_not_exist(server, no_auth, monkeypatch, 
     assert response.status == 404
 
 
+def test_returns_500_for_a_malformed_path(server, no_auth, web_root):
+    response, _ = _get(server, '/webapp/%00')
+    assert response.status == 500
+
+
 def test_webapp_requires_authentication_when_configured(server, web_root, monkeypatch):
     monkeypatch.setattr(mh_config, "getEndpointUser", lambda: "simo")
     monkeypatch.setattr(mh_config, "getEndpointPass", lambda: "hunter2")
