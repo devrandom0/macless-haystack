@@ -44,22 +44,24 @@ class NewKeyAction extends StatelessWidget {
                   title: const Text('Import from JSON file'),
                   leading: const Icon(Icons.description),
                   onTap: () async {
-                    PlatformFile? result = await FilePicker.pickFile(
+                    List<PlatformFile> results = await FilePicker.pickFiles(
                       type: FileType.custom,
                       allowedExtensions: ['json'],
-                      dialogTitle: 'Select accessory configuration',
+                      dialogTitle: 'Select accessory configuration file(s)',
                     );
 
-                    if (result != null) {
-                      Uint8List uploadfile;
+                    if (results.isNotEmpty) {
+                      List<Uint8List> fileBytesList = [];
                       try {
-                        uploadfile = await result.readAsBytes();
+                        for (var file in results) {
+                          fileBytesList.add(await file.readAsBytes());
+                        }
                       } catch (e) {
                         if (context.mounted) {
                           ScaffoldMessenger.of(context).showSnackBar(
                             const SnackBar(
                               content: Text('Could not read the selected '
-                                  'file.'),
+                                  'file(s).'),
                             ),
                           );
                         }
@@ -69,8 +71,8 @@ class NewKeyAction extends StatelessWidget {
                         Navigator.pushReplacement(
                             context,
                             MaterialPageRoute(
-                              builder: (context) =>
-                                  ItemFileImport(bytes: uploadfile),
+                              builder: (context) => ItemFileImport(
+                                  fileBytesList: fileBytesList),
                             ));
                       }
                     }

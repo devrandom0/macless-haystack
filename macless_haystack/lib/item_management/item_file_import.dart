@@ -12,16 +12,18 @@ import 'package:macless_haystack/item_management/loading_spinner.dart';
 import 'package:macless_haystack/widgets/app_error_state.dart';
 
 class ItemFileImport extends StatefulWidget {
-  /// The path to the file to import from.
-  final Uint8List bytes;
+  /// The contents of each file to import from.
+  final List<Uint8List> fileBytesList;
 
-  /// Lets the user select which accessories to import from a file.
+  /// Lets the user select which accessories to import from one or more
+  /// files.
   ///
-  /// Displays the accessories contained in the import file.
-  /// The user can then select the accessories to import.
+  /// Displays the accessories contained across all the import files,
+  /// combined into a single list. The user can then select the accessories
+  /// to import.
   const ItemFileImport({
     super.key,
-    required this.bytes,
+    required this.fileBytesList,
   });
 
   @override
@@ -50,13 +52,13 @@ class _ItemFileImportState extends State<ItemFileImport> {
   void initState() {
     super.initState();
 
-    _initStateAsync(widget.bytes);
+    _initStateAsync(widget.fileBytesList);
   }
 
-  void _initStateAsync(Uint8List bytes) async {
-    // Parse the JSON file and read all contained accessories
+  void _initStateAsync(List<Uint8List> fileBytesList) async {
+    // Parse the JSON files and read all contained accessories
     try {
-      var accessoryDTOs = await _parseAccessories(bytes);
+      var accessoryDTOs = await _parseAccessories(fileBytesList);
 
       setState(() {
         accessories = accessoryDTOs;
@@ -66,19 +68,24 @@ class _ItemFileImportState extends State<ItemFileImport> {
     } catch (e) {
       setState(() {
         hasError = true;
-        errorText =
-            'Could not parse JSON file. Please check if the file is formatted correctly.';
+        errorText = fileBytesList.length == 1
+            ? 'Could not parse JSON file. Please check if the file is formatted correctly.'
+            : 'Could not parse one of the selected JSON files. Please check '
+                'if all files are formatted correctly.';
       });
     }
   }
 
-  /// Parse the JSON encoded accessories from the file stored at [filePath].
-  Future<List<AccessoryDTO>> _parseAccessories(Uint8List bytes) async {
-    String encodedContent = utf8.decode(bytes);
-
-    List<dynamic> content = jsonDecode(encodedContent);
-    var accessoryDTOs =
-        content.map((json) => AccessoryDTO.fromJson(json)).toList();
+  /// Parse the JSON encoded accessories from each file's [fileBytesList],
+  /// combined into a single list.
+  Future<List<AccessoryDTO>> _parseAccessories(
+      List<Uint8List> fileBytesList) async {
+    var accessoryDTOs = <AccessoryDTO>[];
+    for (var bytes in fileBytesList) {
+      String encodedContent = utf8.decode(bytes);
+      List<dynamic> content = jsonDecode(encodedContent);
+      accessoryDTOs.addAll(content.map((json) => AccessoryDTO.fromJson(json)));
+    }
 
     return accessoryDTOs;
   }
