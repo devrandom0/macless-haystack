@@ -9,6 +9,7 @@ import 'package:macless_haystack/accessory/accessory_registry.dart';
 import 'package:macless_haystack/location/location_model.dart';
 import 'package:macless_haystack/map/map.dart';
 import 'package:macless_haystack/map/map_style_picker_button.dart';
+import 'package:macless_haystack/map/my_location_button.dart';
 import 'package:latlong2/latlong.dart';
 
 import '../callbacks.dart';
@@ -109,6 +110,14 @@ class _AccessoryMapListVerticalState extends State<AccessoryMapListVertical> {
                   top: 12,
                   right: 12,
                   child: SafeArea(bottom: false, child: MapStylePickerButton()),
+                ),
+                Positioned(
+                  top: 72,
+                  right: 12,
+                  child: SafeArea(
+                    bottom: false,
+                    child: MyLocationButton(onLocationFound: _centerPoint),
+                  ),
                 ),
                 DraggableScrollableSheet(
                   controller: _sheetController,
