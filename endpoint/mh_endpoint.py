@@ -12,6 +12,7 @@ import time
 from dataclasses import dataclass
 from datetime import datetime,  timezone
 from http.server import BaseHTTPRequestHandler, HTTPServer
+from pathlib import Path
 from urllib.parse import urlparse
 
 import requests
@@ -22,12 +23,15 @@ from history import crypto
 from history.registry import TrackedDeviceStore
 from history.store import HistoryStore
 from register import apple_cryptography, pypush_gsa_icloud
+import web_static
 
 logger = logging.getLogger()
 
 history_store = None
 tracked_device_store = None
 history_encryption_key = None
+
+WEB_ROOT = Path(__file__).resolve().parent / 'web_dist'
 
 PENDING_LOGIN_TIMEOUT_SECONDS = 600
 
@@ -107,6 +111,10 @@ class ServerHandler(BaseHTTPRequestHandler):
             return
 
         path = urlparse(self.path).path
+        if path.startswith('/webapp'):
+            self._serve_static(path)
+            return
+
         if path == '/history/devices':
             if tracked_device_store is None:
                 self.send_response(503)
@@ -130,6 +138,30 @@ class ServerHandler(BaseHTTPRequestHandler):
         self.send_header('Content-type', 'text/plain')
         self.end_headers()
         self.wfile.write(b"Nothing to see here")
+
+    def _serve_static(self, path):
+        try:
+            resolved = web_static.resolve_static_path(path, WEB_ROOT)
+            data = resolved.read_bytes() if resolved is not None else None
+        except OSError as e:
+            logger.warning(f"Error serving static file for {path}: {e}")
+            self.send_response(500)
+            self.addCORSHeaders()
+            self.end_headers()
+            return
+
+        if data is None:
+            self.send_response(404)
+            self.addCORSHeaders()
+            self.end_headers()
+            return
+
+        self.send_response(200)
+        self.addCORSHeaders()
+        self.send_header('Content-type', web_static.guess_content_type(resolved))
+        self.send_header('Cache-Control', 'no-cache')
+        self.end_headers()
+        self.wfile.write(data)
 
     def do_POST(self):
         if not self.authenticate():
