@@ -36,3 +36,31 @@ class AccessoryBatteryIcon extends StatelessWidget {
     }
   }
 }
+
+/// Whether [status] represents a battery level worth alerting on.
+///
+/// [AccessoryBatteryStatus.unknown] is declared after [criticalLow] in the
+/// enum but means "no data," not "worse than critical" - it must never be
+/// treated as low-or-worse, so this checks the two real low states
+/// explicitly rather than comparing by `Enum.index`.
+bool isLowOrWorse(AccessoryBatteryStatus? status) {
+  return status == AccessoryBatteryStatus.low ||
+      status == AccessoryBatteryStatus.criticalLow;
+}
+
+/// Whether [status] is strictly more severe than [previous].
+///
+/// Only meaningful when [status] is low-or-worse; callers are expected to
+/// have already checked that. [previous] is nullable to represent "never
+/// alerted yet," which is always more severe than any low state.
+bool isMoreSevere(
+  AccessoryBatteryStatus? previous,
+  AccessoryBatteryStatus status,
+) {
+  if (previous == null) return true;
+  const severityOrder = {
+    AccessoryBatteryStatus.low: 0,
+    AccessoryBatteryStatus.criticalLow: 1,
+  };
+  return (severityOrder[status] ?? -1) > (severityOrder[previous] ?? -1);
+}
