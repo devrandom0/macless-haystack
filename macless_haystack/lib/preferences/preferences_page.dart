@@ -94,6 +94,8 @@ class _PreferencesPageState extends State<PreferencesPage> {
           getFetchOnStartupTile(),
           getCompactAccessoryListTile(),
           getNumberofDaysTile(),
+          _sectionHeader(context, 'Notifications'),
+          getLowBatteryNotificationsTile(),
           _sectionHeader(context, 'General'),
           getTimeFormatTile(),
           getThemeModeTile(),
@@ -298,6 +300,15 @@ class _PreferencesPageState extends State<PreferencesPage> {
       settingKey: fetchLocationOnStartupKey,
       defaultValue: true,
       title: 'Fetch locations on startup',
+    );
+  }
+
+  Widget getLowBatteryNotificationsTile() {
+    return SwitchSettingsTile(
+      settingKey: lowBatteryNotificationsEnabledKey,
+      defaultValue: true,
+      title: 'Low battery notifications',
+      subtitle: 'Notify when a tracked accessory\'s battery is low',
     );
   }
 

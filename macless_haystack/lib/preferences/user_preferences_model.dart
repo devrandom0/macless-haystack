@@ -14,6 +14,8 @@ const String appleAuthEnabledKey = 'APPLE_AUTH_ENABLED';
 const String compactAccessoryListKey = 'COMPACT_ACCESSORY_LIST';
 const String mapTileProviderKey = 'MAP_TILE_PROVIDER';
 const String cartoApiKeyKey = 'CARTO_API_KEY';
+const String lowBatteryNotificationsEnabledKey =
+    'LOW_BATTERY_NOTIFICATIONS_ENABLED';
 
 class UserPreferences extends ChangeNotifier {
   /// If these settings are initialized.
