@@ -1,3 +1,6 @@
+import 'dart:io';
+
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_settings_screens/flutter_settings_screens.dart';
@@ -5,8 +8,13 @@ import 'package:logger/logger.dart';
 import 'package:macless_haystack/accessory/accessory_model.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:macless_haystack/history/days_selection_slider.dart';
+import 'package:macless_haystack/history/gpx_export.dart';
 import 'package:macless_haystack/history/location_popup.dart';
 import 'package:macless_haystack/preferences/user_preferences_model.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
+
+import 'package:universal_html/html.dart' as html;
 
 import 'dart:math';
 
@@ -91,6 +99,14 @@ class _AccessoryHistoryState extends State<AccessoryHistory> {
     return Scaffold(
       appBar: AppBar(
         title: Text(widget.accessory.name, overflow: TextOverflow.ellipsis),
+        actions: [
+          IconButton(
+            tooltip: 'Export history',
+            onPressed:
+                filteredEntries.isEmpty ? null : () => _exportHistory(filteredEntries),
+            icon: const Icon(Icons.ios_share),
+          ),
+        ],
         // The count reads clearly on its own line instead of shrinking the
         // whole title (including the accessory's own name) to fit.
         bottom: PreferredSize(
@@ -314,6 +330,39 @@ class _AccessoryHistoryState extends State<AccessoryHistory> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       mapReady();
     });
+  }
+
+  /// Exports [entries] - the currently-filtered history, matching what's
+  /// shown on the map - as a GPX file, shared via the OS share sheet (or
+  /// downloaded directly on web, where there's no share sheet).
+  Future<void> _exportHistory(List<Pair<dynamic, dynamic>> entries) async {
+    var gpx = buildGpxDocument(widget.accessory.name, entries);
+    var filename = '${_sanitizeFilename(widget.accessory.name)}_history.gpx';
+
+    if (kIsWeb) {
+      final blob = html.Blob([gpx], 'application/gpx+xml', 'native');
+      final url = html.Url.createObjectUrlFromBlob(blob);
+
+      html.AnchorElement(href: url)
+        ..setAttribute('download', filename)
+        ..click();
+
+      html.Url.revokeObjectUrl(url);
+    } else {
+      Directory tempDir = await getTemporaryDirectory();
+      File file = File('${tempDir.path}/$filename');
+      await file.writeAsString(gpx);
+
+      SharePlus.instance.share(
+        ShareParams(files: [XFile(file.path)], subject: filename),
+      );
+    }
+  }
+
+  /// Strips characters that aren't safe in a filename on common
+  /// filesystems, since [Accessory.name] is free-form user input.
+  String _sanitizeFilename(String name) {
+    return name.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_').trim();
   }
 
   List<Pair<dynamic, dynamic>> filterHistoryEntries() {
