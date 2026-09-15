@@ -231,13 +231,8 @@ class _ItemFileImportState extends State<ItemFileImport> {
                               _buildProperty('Color',
                                   accessory.colorComponents.toString()),
                               _buildProperty('Icon', accessory.icon),
-                              _buildProperty(
-                                  'Private Key',
-                                  accessory.privateKey.replaceRange(
-                                    4,
-                                    accessory.privateKey.length - 4,
-                                    '*' * (accessory.privateKey.length - 8),
-                                  )),
+                              _buildProperty('Private Key',
+                                  _maskPrivateKey(accessory.privateKey)),
                               _buildProperty(
                                   'Active', accessory.isActive.toString()),
                               _buildProperty(
@@ -254,6 +249,22 @@ class _ItemFileImportState extends State<ItemFileImport> {
               [],
         ),
       ),
+    );
+  }
+
+  /// Masks the middle of [privateKey] for display, keeping the first and
+  /// last 4 characters visible. Falls back to masking the whole string when
+  /// it's too short for that split - a real private key is always well
+  /// over 8 characters, so this only matters for a malformed/placeholder
+  /// value, which shouldn't crash the review screen.
+  String _maskPrivateKey(String privateKey) {
+    if (privateKey.length <= 8) {
+      return '*' * privateKey.length;
+    }
+    return privateKey.replaceRange(
+      4,
+      privateKey.length - 4,
+      '*' * (privateKey.length - 8),
     );
   }
 
