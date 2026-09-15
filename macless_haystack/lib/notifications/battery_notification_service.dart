@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:logger/logger.dart';
 import 'package:macless_haystack/accessory/accessory_battery.dart';
@@ -39,9 +41,12 @@ class BatteryNotificationService {
   var logger = Logger(printer: PrettyPrinter(methodCount: 0));
   bool _initialized = false;
 
-  /// Creates the Android notification channel and requests the
+  /// Creates the Android notification channel, requests the
   /// POST_NOTIFICATIONS runtime permission (Android 13+; a no-op on older
-  /// versions). Safe to call more than once - later calls are ignored.
+  /// versions), and seeds [NotificationNavigation.pendingAccessoryId] if
+  /// the app process was launched by tapping a low-battery notification
+  /// from a fully killed state. Safe to call more than once - later calls
+  /// are ignored.
   Future<void> init() async {
     if (_initialized) return;
     try {
@@ -63,15 +68,27 @@ class BatteryNotificationService {
         _channelName,
         description: _channelDescription,
       );
-      await _plugin
-          .resolvePlatformSpecificImplementation<
-              AndroidFlutterLocalNotificationsPlugin>()
-          ?.createNotificationChannel(channel);
+      final androidPlugin = _plugin.resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin>();
+      await androidPlugin?.createNotificationChannel(channel);
 
-      await _plugin
-          .resolvePlatformSpecificImplementation<
-              AndroidFlutterLocalNotificationsPlugin>()
-          ?.requestNotificationsPermission();
+      // Deliberately not awaited: on Android 13+, if the permission
+      // hasn't been granted yet, this blocks on the user's response to
+      // the system permission dialog. Awaiting it here would block
+      // main()'s call to this method, which runs before runApp() - the
+      // first frame would never render behind a bare launch theme until
+      // the user answers the dialog.
+      unawaited(androidPlugin?.requestNotificationsPermission());
+
+      // onDidReceiveNotificationResponse above only fires while the app
+      // process is already alive (foreground or background) - a tap that
+      // launches the app from a fully killed state arrives here instead.
+      final launchDetails = await _plugin.getNotificationAppLaunchDetails();
+      final launchPayload = launchDetails?.notificationResponse?.payload;
+      if (launchDetails?.didNotificationLaunchApp == true &&
+          launchPayload != null) {
+        NotificationNavigation.pendingAccessoryId.value = launchPayload;
+      }
 
       _initialized = true;
     } catch (e) {

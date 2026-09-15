@@ -64,6 +64,14 @@ class _AccessoryMapListVerticalState extends State<AccessoryMapListVertical> {
     });
     NotificationNavigation.pendingAccessoryId
         .addListener(_handlePendingNotificationAccessory);
+    // Handle an id that was already pending before this widget existed
+    // (e.g. seeded by BatteryNotificationService.init() reading
+    // getNotificationAppLaunchDetails() on a cold start) - addListener
+    // only fires for future changes, never for the value already present
+    // at registration. Safe to call directly here: this method only ever
+    // schedules a post-frame callback, it never touches state
+    // synchronously.
+    _handlePendingNotificationAccessory();
   }
 
   /// Centers the map on the accessory a low-battery notification was
@@ -75,6 +83,7 @@ class _AccessoryMapListVerticalState extends State<AccessoryMapListVertical> {
     if (accessoryId == null) return;
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      NotificationNavigation.pendingAccessoryId.value = null;
       if (!mounted) return;
       var registry = Provider.of<AccessoryRegistry>(context, listen: false);
       var location =
@@ -82,7 +91,6 @@ class _AccessoryMapListVerticalState extends State<AccessoryMapListVertical> {
       if (location != null) {
         _centerPoint(location);
       }
-      NotificationNavigation.pendingAccessoryId.value = null;
     });
   }
 

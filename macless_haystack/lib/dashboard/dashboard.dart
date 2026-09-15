@@ -115,6 +115,15 @@ class _DashboardState extends State<Dashboard> {
     }
     NotificationNavigation.pendingAccessoryId
         .addListener(_switchToMapTabForPendingNotification);
+    if (NotificationNavigation.pendingAccessoryId.value != null) {
+      // Same reasoning as accessory_map_list_vert.dart's initState: an id
+      // already pending at registration time is never delivered via
+      // addListener. Set the field directly instead of going through
+      // _switchToMapTabForPendingNotification's setState call - calling
+      // setState from initState is unsafe before the first build; the
+      // field's current value is picked up by that first build anyway.
+      _selectedIndex = 0;
+    }
   }
 
   @override

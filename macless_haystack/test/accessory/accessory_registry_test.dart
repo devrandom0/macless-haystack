@@ -614,6 +614,31 @@ void main() {
       verify(mockNotificationService.notifyLowBattery(accessory)).called(1);
     });
 
+    test('a report with no battery data does not reset an existing alert',
+        () async {
+      var accessory = freshAccessory();
+      await registry.fillLocationHistory(
+        [reportWithBattery(DateTime(2026, 1, 1), AccessoryBatteryStatus.low)],
+        accessory,
+      );
+      clearInteractions(mockNotificationService);
+
+      await registry.fillLocationHistory(
+        [reportWithBattery(DateTime(2026, 1, 2), null)],
+        accessory,
+      );
+
+      expect(accessory.lastNotifiedBatteryStatus, AccessoryBatteryStatus.low);
+      verifyNever(mockNotificationService.notifyLowBattery(any));
+
+      await registry.fillLocationHistory(
+        [reportWithBattery(DateTime(2026, 1, 3), AccessoryBatteryStatus.low)],
+        accessory,
+      );
+
+      verifyNever(mockNotificationService.notifyLowBattery(any));
+    });
+
     test('setting disabled suppresses notification', () async {
       registry.setLowBatteryNotificationsEnabledCheck = () => false;
       var accessory = freshAccessory();

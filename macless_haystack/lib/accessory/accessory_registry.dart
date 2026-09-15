@@ -96,7 +96,8 @@ class AccessoryRegistry extends ChangeNotifier {
           defaultValue: true) ??
       true;
 
-  /// Test-only seam: overrides the real notification service with a fake.
+  /// Overrides the notification service - used by [main] to wire in the
+  /// app's single shared instance, and by tests to inject a fake.
   set setBatteryNotificationService(BatteryNotificationService service) {
     _batteryNotificationService = service;
   }
@@ -109,15 +110,28 @@ class AccessoryRegistry extends ChangeNotifier {
   /// Notifies about [accessory]'s current [Accessory.lastBatteryStatus] if
   /// it just became low-or-worse for the first time, or escalated to a
   /// more severe low state, since the last time we notified. Resets the
-  /// "already notified" marker once the battery recovers, so a later drop
-  /// notifies again. See
+  /// "already notified" marker once the battery reports a known-good
+  /// status (`ok`/`medium`), so a later drop notifies again - a missing or
+  /// unreadable reading (`null`/`unknown`) is left alone, since that's not
+  /// a real recovery. See
   /// docs/superpowers/specs/2026-09-15-low-battery-notifications-design.md.
   Future<void> _maybeNotifyBatteryChange(Accessory accessory) async {
     if (!_isLowBatteryNotificationsEnabled()) return;
 
     var status = accessory.lastBatteryStatus;
-    if (!isLowOrWorse(status)) {
+    if (status == AccessoryBatteryStatus.ok ||
+        status == AccessoryBatteryStatus.medium) {
+      // A known-good reading is a real recovery - clear the marker so a
+      // later drop notifies again.
       accessory.lastNotifiedBatteryStatus = null;
+      return;
+    }
+    if (!isLowOrWorse(status)) {
+      // null or unknown: no reliable battery data right now. Leave the
+      // "already notified" marker untouched rather than treating a
+      // missing reading as a recovery - that would silently re-arm and
+      // re-notify on the next low reading even though nothing about the
+      // battery actually improved.
       return;
     }
 
