@@ -7,12 +7,14 @@ from web_static import resolve_static_path, guess_content_type
 
 @pytest.fixture
 def web_root(tmp_path):
-    (tmp_path / "index.html").write_text("<html>home</html>")
-    (tmp_path / "main.dart.js").write_text("// js")
-    sub = tmp_path / "assets"
+    root = tmp_path / "web_root"
+    root.mkdir()
+    (root / "index.html").write_text("<html>home</html>")
+    (root / "main.dart.js").write_text("// js")
+    sub = root / "assets"
     sub.mkdir()
     (sub / "AssetManifest.json").write_text("{}")
-    return tmp_path
+    return root
 
 
 def test_root_with_trailing_slash_resolves_to_index(web_root):
@@ -40,12 +42,14 @@ def test_resolves_a_nested_file(web_root):
 
 
 def test_rejects_traversal_outside_web_root(web_root):
-    result = resolve_static_path("/webapp/../../../../etc/passwd", web_root)
+    (web_root.parent / "secret.txt").write_text("should not be reachable")
+    result = resolve_static_path("/webapp/../secret.txt", web_root)
     assert result is None
 
 
 def test_rejects_url_encoded_traversal(web_root):
-    result = resolve_static_path("/webapp/%2e%2e/%2e%2e/etc/passwd", web_root)
+    (web_root.parent / "secret.txt").write_text("should not be reachable")
+    result = resolve_static_path("/webapp/%2e%2e/secret.txt", web_root)
     assert result is None
 
 
