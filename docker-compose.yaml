@@ -12,6 +12,9 @@ services:
 
   macless-haystack:
     image: moghaddas/macless-haystack:dev
+    build:
+      context: .
+      dockerfile: endpoint/Dockerfile
     container_name: macless-haystack
     restart: unless-stopped
     depends_on:
