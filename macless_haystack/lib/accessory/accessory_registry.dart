@@ -4,12 +4,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:logger/logger.dart';
+import 'package:macless_haystack/accessory/accessory_battery.dart';
 import 'package:macless_haystack/accessory/accessory_model.dart';
 import 'package:macless_haystack/accessory/secure_storage_upgrade.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:macless_haystack/findMy/find_my_controller.dart';
 import 'package:macless_haystack/findMy/models.dart';
 import 'package:flutter_settings_screens/flutter_settings_screens.dart';
+import 'package:macless_haystack/notifications/battery_notification_service.dart';
 import 'package:macless_haystack/preferences/user_preferences_model.dart';
 
 const accessoryStorageKey = 'ACCESSORIES';
@@ -85,6 +87,44 @@ class AccessoryRegistry extends ChangeNotifier {
 
   set setStorage(FlutterSecureStorage s) {
     _storage = s;
+  }
+
+  BatteryNotificationService _batteryNotificationService =
+      BatteryNotificationService();
+  bool Function() _isLowBatteryNotificationsEnabled = () =>
+      Settings.getValue<bool>(lowBatteryNotificationsEnabledKey,
+          defaultValue: true) ??
+      true;
+
+  /// Test-only seam: overrides the real notification service with a fake.
+  set setBatteryNotificationService(BatteryNotificationService service) {
+    _batteryNotificationService = service;
+  }
+
+  /// Test-only seam: overrides the real settings-backed enabled check.
+  set setLowBatteryNotificationsEnabledCheck(bool Function() check) {
+    _isLowBatteryNotificationsEnabled = check;
+  }
+
+  /// Notifies about [accessory]'s current [Accessory.lastBatteryStatus] if
+  /// it just became low-or-worse for the first time, or escalated to a
+  /// more severe low state, since the last time we notified. Resets the
+  /// "already notified" marker once the battery recovers, so a later drop
+  /// notifies again. See
+  /// docs/superpowers/specs/2026-09-15-low-battery-notifications-design.md.
+  Future<void> _maybeNotifyBatteryChange(Accessory accessory) async {
+    if (!_isLowBatteryNotificationsEnabled()) return;
+
+    var status = accessory.lastBatteryStatus;
+    if (!isLowOrWorse(status)) {
+      accessory.lastNotifiedBatteryStatus = null;
+      return;
+    }
+
+    if (isMoreSevere(accessory.lastNotifiedBatteryStatus, status!)) {
+      await _batteryNotificationService.notifyLowBattery(accessory);
+      accessory.lastNotifiedBatteryStatus = status;
+    }
   }
 
   /// Checks whether the flutter_secure_storage v11 upgrade left any stored
@@ -191,6 +231,7 @@ class AccessoryRegistry extends ChangeNotifier {
 
           // Update last battery status
           accessory.lastBatteryStatus = lastReport.batteryStatus;
+          await _maybeNotifyBatteryChange(accessory);
           accessory.hasChangedFlag = true;
         }
       }
@@ -326,6 +367,7 @@ class AccessoryRegistry extends ChangeNotifier {
 
         //Update alway battery status
         accessory.lastBatteryStatus = lastReport.batteryStatus;
+        await _maybeNotifyBatteryChange(accessory);
 
         accessory.hasChangedFlag = true;
 
@@ -373,6 +415,7 @@ class AccessoryRegistry extends ChangeNotifier {
 
   void deleteData(Accessory accessory) {
     accessory.lastBatteryStatus = null;
+    accessory.lastNotifiedBatteryStatus = null;
     accessory.lastLocation = null;
     accessory.hashesWithTS.clear();
     accessory.datePublished = DateTime(1970);

@@ -6,6 +6,7 @@ import 'package:macless_haystack/accessory/accessory_registry.dart';
 import 'package:macless_haystack/location/location_model.dart';
 import 'package:macless_haystack/map/map_tile_provider_model.dart';
 import 'package:macless_haystack/map/map_tile_source.dart';
+import 'package:macless_haystack/notifications/battery_notification_service.dart';
 import 'package:macless_haystack/preferences/theme_model.dart';
 import 'package:macless_haystack/preferences/user_preferences_model.dart';
 import 'package:macless_haystack/splashscreen.dart';
@@ -17,6 +18,8 @@ import 'package:intl/date_symbol_data_local.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Settings.init();
+  var batteryNotificationService = BatteryNotificationService();
+  await batteryNotificationService.init();
   await initializeDateFormatting();
   var initialThemeMode = themeModeFromString(
       Settings.getValue<String>(themeModeKey, defaultValue: themeModeSystemValue));
@@ -28,6 +31,7 @@ Future<void> main() async {
     initialThemeMode: initialThemeMode,
     initialMapTileProvider: initialMapTileProvider,
     initialCartoApiKey: initialCartoApiKey,
+    batteryNotificationService: batteryNotificationService,
   ));
 }
 
@@ -35,19 +39,25 @@ class MyApp extends StatelessWidget {
   final ThemeMode initialThemeMode;
   final String initialMapTileProvider;
   final String initialCartoApiKey;
+  final BatteryNotificationService batteryNotificationService;
 
   const MyApp({
     super.key,
     required this.initialThemeMode,
     required this.initialMapTileProvider,
     required this.initialCartoApiKey,
+    required this.batteryNotificationService,
   });
 
   @override
   Widget build(BuildContext context) {
     return MultiProvider(
       providers: [
-        ChangeNotifierProvider(create: (ctx) => AccessoryRegistry()),
+        ChangeNotifierProvider(create: (ctx) {
+          var registry = AccessoryRegistry();
+          registry.setBatteryNotificationService = batteryNotificationService;
+          return registry;
+        }),
         ChangeNotifierProvider(create: (ctx) => UserPreferences()),
         ChangeNotifierProvider(create: (ctx) => LocationModel()),
         ChangeNotifierProvider(create: (ctx) => ThemeModel(initialThemeMode)),
