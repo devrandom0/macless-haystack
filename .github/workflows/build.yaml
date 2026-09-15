@@ -63,7 +63,8 @@ jobs:
         if: github.ref == 'refs/heads/dev'
         uses: docker/build-push-action@v6
         with:
-          context: ./endpoint
+          context: .
+          file: ./endpoint/Dockerfile
           platforms: linux/amd64,linux/arm64
           push: true
           tags: christld/macless-haystack:latest-dev,christld/macless-haystack:v${{ env.VERSION }}-${{ github.sha }},
@@ -71,7 +72,8 @@ jobs:
         if: github.ref == 'refs/heads/main'
         uses: docker/build-push-action@v5
         with:
-          context: "{{defaultContext}}:endpoint"
+          context: .
+          file: ./endpoint/Dockerfile
           platforms: linux/amd64,linux/arm64
           push: true
           tags: christld/macless-haystack:latest,christld/macless-haystack:v${{ env.VERSION }},
