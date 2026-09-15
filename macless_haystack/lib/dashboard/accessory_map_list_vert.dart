@@ -150,26 +150,47 @@ class _AccessoryMapListVerticalState extends State<AccessoryMapListVertical> {
                           ),
                           const SizedBox(height: 6),
                           Expanded(
-                            child: Padding(
-                              // The Refresh FAB floats over this sheet at a
-                              // fixed bottom-right screen position
-                              // (Scaffold's default endFloat location, ~56
-                              // diameter + 16 margin), independent of the
-                              // sheet's own size or scroll offset - without
-                              // this, a row (its trailing distance/time
-                              // text in particular) landing in that corner
-                              // renders unreadable underneath the button,
-                              // in both a short unscrolled list and a long
-                              // one scrolled all the way down.
-                              padding: const EdgeInsets.only(bottom: 80),
-                              child: AccessoryList(
-                                scrollController: scrollController,
-                                loadLocationUpdates:
-                                    widget.loadLocationUpdates,
-                                saveOrderUpdatesCallback:
-                                    widget.saveOrderUpdatesCallback,
-                                centerOnPoint: _centerPoint,
-                              ),
+                            child: LayoutBuilder(
+                              builder: (context, constraints) {
+                                // The Refresh FAB floats over this sheet at
+                                // a fixed bottom-right screen position
+                                // (Scaffold's default endFloat location,
+                                // ~56 diameter + 16 margin), independent of
+                                // the sheet's own size or scroll offset -
+                                // without reserving space, a row (its
+                                // trailing distance/time text in
+                                // particular) landing in that corner
+                                // renders unreadable underneath the button.
+                                // But at the sheet's smallest (peek) size
+                                // there's barely any height available at
+                                // all - reserving a fixed amount there
+                                // squeezed the list to zero height, which
+                                // didn't just hide its content, it broke
+                                // the sheet's own drag-to-resize gesture
+                                // (nothing left to grab). Only reserve the
+                                // clearance when there's comfortably enough
+                                // room to spare it.
+                                const fabClearance = 80.0;
+                                const minContentHeight = 100.0;
+                                var bottomPadding =
+                                    constraints.maxHeight >=
+                                            fabClearance + minContentHeight
+                                        ? fabClearance
+                                        : 0.0;
+                                return Padding(
+                                  padding: EdgeInsets.only(
+                                    bottom: bottomPadding,
+                                  ),
+                                  child: AccessoryList(
+                                    scrollController: scrollController,
+                                    loadLocationUpdates:
+                                        widget.loadLocationUpdates,
+                                    saveOrderUpdatesCallback:
+                                        widget.saveOrderUpdatesCallback,
+                                    centerOnPoint: _centerPoint,
+                                  ),
+                                );
+                              },
                             ),
                           ),
                         ],
