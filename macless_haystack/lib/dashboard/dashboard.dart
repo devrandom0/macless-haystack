@@ -8,6 +8,7 @@ import 'package:macless_haystack/dashboard/accessory_map_list_vert.dart';
 import 'package:macless_haystack/item_management/item_management.dart';
 import 'package:macless_haystack/item_management/new_item_action.dart';
 import 'package:macless_haystack/location/location_model.dart';
+import 'package:macless_haystack/notifications/notification_navigation.dart';
 import 'package:macless_haystack/preferences/preferences_page.dart';
 import 'package:macless_haystack/preferences/user_preferences_model.dart';
 
@@ -111,6 +112,27 @@ class _DashboardState extends State<Dashboard> {
       defaultValue: true,
     )!) {
       loadLocationUpdates(null, showFeedback: false);
+    }
+    NotificationNavigation.pendingAccessoryId
+        .addListener(_switchToMapTabForPendingNotification);
+  }
+
+  @override
+  void dispose() {
+    NotificationNavigation.pendingAccessoryId
+        .removeListener(_switchToMapTabForPendingNotification);
+    super.dispose();
+  }
+
+  /// Switches to the Map tab when a low-battery notification is tapped -
+  /// AccessoryMapListVertical (already mounted at all times via the
+  /// IndexedStack below) independently centers the map on the accessory
+  /// itself; this only needs to make that tab visible.
+  void _switchToMapTabForPendingNotification() {
+    if (NotificationNavigation.pendingAccessoryId.value != null) {
+      setState(() {
+        _selectedIndex = 0;
+      });
     }
   }
 

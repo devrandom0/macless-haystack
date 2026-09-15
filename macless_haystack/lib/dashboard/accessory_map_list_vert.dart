@@ -10,6 +10,7 @@ import 'package:macless_haystack/location/location_model.dart';
 import 'package:macless_haystack/map/map.dart';
 import 'package:macless_haystack/map/map_style_picker_button.dart';
 import 'package:macless_haystack/map/my_location_button.dart';
+import 'package:macless_haystack/notifications/notification_navigation.dart';
 import 'package:latlong2/latlong.dart';
 
 import '../callbacks.dart';
@@ -61,6 +62,28 @@ class _AccessoryMapListVerticalState extends State<AccessoryMapListVertical> {
         _collapseSheetToPeek(above: _peekSize);
       }
     });
+    NotificationNavigation.pendingAccessoryId
+        .addListener(_handlePendingNotificationAccessory);
+  }
+
+  /// Centers the map on the accessory a low-battery notification was
+  /// tapped for, then clears the pending id - deferred to a post-frame
+  /// callback since this can fire mid-build (the listener is registered in
+  /// initState, and ValueNotifier calls listeners synchronously).
+  void _handlePendingNotificationAccessory() {
+    var accessoryId = NotificationNavigation.pendingAccessoryId.value;
+    if (accessoryId == null) return;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      var registry = Provider.of<AccessoryRegistry>(context, listen: false);
+      var location =
+          resolveNotifiedAccessoryLocation(accessoryId, registry.accessories);
+      if (location != null) {
+        _centerPoint(location);
+      }
+      NotificationNavigation.pendingAccessoryId.value = null;
+    });
   }
 
   /// Animates the sheet down to peek height, but only if it's currently
@@ -87,6 +110,8 @@ class _AccessoryMapListVerticalState extends State<AccessoryMapListVertical> {
   @override
   void dispose() {
     _mapEventSubscription?.cancel();
+    NotificationNavigation.pendingAccessoryId
+        .removeListener(_handlePendingNotificationAccessory);
     _sheetController.dispose();
     super.dispose();
   }
