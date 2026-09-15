@@ -150,12 +150,26 @@ class _AccessoryMapListVerticalState extends State<AccessoryMapListVertical> {
                           ),
                           const SizedBox(height: 6),
                           Expanded(
-                            child: AccessoryList(
-                              scrollController: scrollController,
-                              loadLocationUpdates: widget.loadLocationUpdates,
-                              saveOrderUpdatesCallback:
-                                  widget.saveOrderUpdatesCallback,
-                              centerOnPoint: _centerPoint,
+                            child: Padding(
+                              // The Refresh FAB floats over this sheet at a
+                              // fixed bottom-right screen position
+                              // (Scaffold's default endFloat location, ~56
+                              // diameter + 16 margin), independent of the
+                              // sheet's own size or scroll offset - without
+                              // this, a row (its trailing distance/time
+                              // text in particular) landing in that corner
+                              // renders unreadable underneath the button,
+                              // in both a short unscrolled list and a long
+                              // one scrolled all the way down.
+                              padding: const EdgeInsets.only(bottom: 80),
+                              child: AccessoryList(
+                                scrollController: scrollController,
+                                loadLocationUpdates:
+                                    widget.loadLocationUpdates,
+                                saveOrderUpdatesCallback:
+                                    widget.saveOrderUpdatesCallback,
+                                centerOnPoint: _centerPoint,
+                              ),
                             ),
                           ),
                         ],
