@@ -80,10 +80,11 @@ List<Accessory> mergeReorderedVisibleIntoFullGroup({
   required List<Accessory> fullGroup,
   required List<Accessory> reorderedVisible,
 }) {
-  var visibleIds = reorderedVisible.map((accessory) => accessory.id).toSet();
+  var visible = reorderedVisible.toSet();
   var nextVisibleIndex = 0;
   return fullGroup.map((accessory) {
-    if (visibleIds.contains(accessory.id)) {
+    if (visible.contains(accessory) &&
+        nextVisibleIndex < reorderedVisible.length) {
       return reorderedVisible[nextVisibleIndex++];
     }
     return accessory;

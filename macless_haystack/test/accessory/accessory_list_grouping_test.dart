@@ -159,8 +159,8 @@ void main() {
         reorderedVisible: [c, a, b], // user dragged c to the front
       );
 
-      // "hidden" must still sit between whichever two visible items it
-      // originally sat between (a and b), even though they moved.
+      // "hidden" must still occupy its original absolute slot (index 1)
+      // regardless of how the visible items around it get reordered.
       expect(result.map((x) => x.id), ['c', 'hidden', 'a', 'b']);
     });
 
@@ -174,6 +174,56 @@ void main() {
       );
 
       expect(result.map((x) => x.id), ['a', 'b']);
+    });
+
+    test(
+        'matches by object identity, not by id, so accessories sharing '
+        'an id (e.g. all "") are handled correctly', () {
+      var a = Accessory(
+          id: '',
+          name: 'a',
+          hashedPublicKey: 'hash-a',
+          datePublished: null,
+          hashesWithTS: {},
+          locationHistory: [],
+          lastBatteryStatus: null,
+          additionalKeys: []);
+      var c = Accessory(
+          id: '',
+          name: 'c',
+          hashedPublicKey: 'hash-c',
+          datePublished: null,
+          hashesWithTS: {},
+          locationHistory: [],
+          lastBatteryStatus: null,
+          additionalKeys: []);
+      var b = Accessory(
+          id: '',
+          name: 'b',
+          hashedPublicKey: 'hash-b',
+          datePublished: null,
+          hashesWithTS: {},
+          locationHistory: [],
+          lastBatteryStatus: null,
+          additionalKeys: []);
+      var d = Accessory(
+          id: '',
+          name: 'd',
+          hashedPublicKey: 'hash-d',
+          datePublished: null,
+          hashesWithTS: {},
+          locationHistory: [],
+          lastBatteryStatus: null,
+          additionalKeys: []);
+      // c and d are filtered out (not in reorderedVisible), a and b are
+      // dragged - all four share id: '', matching in-app-created
+      // accessories, which never get a real id assigned.
+      var result = mergeReorderedVisibleIntoFullGroup(
+        fullGroup: [a, c, b, d],
+        reorderedVisible: [b, a],
+      );
+
+      expect(result, [b, c, a, d]);
     });
   });
 }
