@@ -35,7 +35,7 @@ class AccessoryTagsInput extends StatefulWidget {
 
 class _AccessoryTagsInputState extends State<AccessoryTagsInput> {
   late List<String> _tags;
-  final TextEditingController _controller = TextEditingController();
+  TextEditingController? _fieldController;
 
   @override
   void initState() {
@@ -47,7 +47,7 @@ class _AccessoryTagsInputState extends State<AccessoryTagsInput> {
     var updated = tagsAfterAdding(_tags, value);
     setState(() {
       _tags = updated;
-      _controller.clear();
+      _fieldController?.clear();
     });
     widget.changeListener(updated);
   }
@@ -91,6 +91,7 @@ class _AccessoryTagsInputState extends State<AccessoryTagsInput> {
             onSelected: _addTag,
             fieldViewBuilder:
                 (context, fieldController, focusNode, onFieldSubmitted) {
+              _fieldController = fieldController;
               return TextField(
                 controller: fieldController,
                 focusNode: focusNode,
