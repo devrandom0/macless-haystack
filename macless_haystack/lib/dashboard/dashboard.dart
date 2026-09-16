@@ -11,6 +11,7 @@ import 'package:macless_haystack/location/location_model.dart';
 import 'package:macless_haystack/notifications/notification_navigation.dart';
 import 'package:macless_haystack/preferences/preferences_page.dart';
 import 'package:macless_haystack/preferences/user_preferences_model.dart';
+import 'package:macless_haystack/item_management/tag_management.dart';
 
 import '../accessory/accessory_model.dart';
 
@@ -248,6 +249,18 @@ class _DashboardState extends State<Dashboard> {
                     child: const Text('Force fetch from Apple'),
                   ),
                 ],
+              ),
+            if (_selectedIndex == 1)
+              IconButton(
+                tooltip: 'Manage tags',
+                icon: const Icon(Icons.label_outline),
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                        builder: (context) => const TagManagementScreen()),
+                  );
+                },
               ),
             IconButton(
               tooltip: 'Settings',
