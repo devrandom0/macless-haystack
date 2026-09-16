@@ -653,6 +653,52 @@ void main() {
     });
   });
 
+  group('tags', () {
+    test('allTags is empty when no accessory has any tags', () {
+      expect(registry.allTags, isEmpty);
+    });
+
+    test('allTags is the union of every accessory\'s tags, deduplicated', () {
+      var a = Accessory(
+          id: 'a',
+          name: 'A',
+          hashedPublicKey: 'hash-a',
+          datePublished: null,
+          hashesWithTS: {},
+          locationHistory: [],
+          lastBatteryStatus: null,
+          additionalKeys: [],
+          tags: ['Keys', 'Car']);
+      var b = Accessory(
+          id: 'b',
+          name: 'B',
+          hashedPublicKey: 'hash-b',
+          datePublished: null,
+          hashesWithTS: {},
+          locationHistory: [],
+          lastBatteryStatus: null,
+          additionalKeys: [],
+          tags: ['Car']);
+      registry.addAccessory(a);
+      registry.addAccessory(b);
+
+      expect(registry.allTags, {'Keys', 'Car'});
+
+      registry.removeAccessory(a);
+      registry.removeAccessory(b);
+    });
+
+    test('toggleTagFilter adds then removes a tag from activeTagFilter', () {
+      expect(registry.activeTagFilter, isEmpty);
+
+      registry.toggleTagFilter('Keys');
+      expect(registry.activeTagFilter, {'Keys'});
+
+      registry.toggleTagFilter('Keys');
+      expect(registry.activeTagFilter, isEmpty);
+    });
+  });
+
   test('deleteData resets lastNotifiedBatteryStatus', () {
     // deleteData fires off a history-storage read in the background;
     // stub it so that unrelated call doesn't surface as an unhandled

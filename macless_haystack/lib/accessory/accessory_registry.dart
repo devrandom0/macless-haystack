@@ -53,6 +53,26 @@ class AccessoryRegistry extends ChangeNotifier {
   UnmodifiableListView<Accessory> get accessories =>
       UnmodifiableListView(_accessories);
 
+  /// Every tag currently used by at least one accessory, for autocomplete
+  /// suggestions and the tag management screen. Derived, not stored -
+  /// there's no tag that exists independently of the accessories using it.
+  Set<String> get allTags =>
+      accessories.expand((accessory) => accessory.tags).toSet();
+
+  /// Tags currently selected to filter accessory views by. Empty means no
+  /// filter - every accessory matches. Session-only (not persisted).
+  Set<String> activeTagFilter = {};
+
+  /// Toggles [tag] in or out of [activeTagFilter] and notifies listeners.
+  void toggleTagFilter(String tag) {
+    if (activeTagFilter.contains(tag)) {
+      activeTagFilter.remove(tag);
+    } else {
+      activeTagFilter.add(tag);
+    }
+    notifyListeners();
+  }
+
   /// Loads the user's accessories from persistent storage.
   Future<void> loadAccessories() async {
     loading = true;

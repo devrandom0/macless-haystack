@@ -68,6 +68,37 @@ void main() {
     });
   });
 
+  group('matchesTagFilter', () {
+    Accessory withTags(List<String> tags) => Accessory(
+        id: '1',
+        name: 'Test',
+        hashedPublicKey: '',
+        datePublished: null,
+        hashesWithTS: {},
+        locationHistory: [],
+        lastBatteryStatus: null,
+        additionalKeys: [],
+        tags: tags);
+
+    test('an empty filter matches every accessory', () {
+      expect(matchesTagFilter(withTags([]), {}), isTrue);
+      expect(matchesTagFilter(withTags(['Keys']), {}), isTrue);
+    });
+
+    test('matches an accessory having the one filtered tag', () {
+      expect(matchesTagFilter(withTags(['Keys', 'Car']), {'Keys'}), isTrue);
+    });
+
+    test('does not match an accessory without any filtered tag', () {
+      expect(matchesTagFilter(withTags(['Car']), {'Keys'}), isFalse);
+    });
+
+    test('matches an accessory having any one of multiple filtered tags', () {
+      expect(
+          matchesTagFilter(withTags(['Car']), {'Keys', 'Car'}), isTrue);
+    });
+  });
+
   group('mergedOrderAfterGroupReorder', () {
     test('splices a reordered active group back in front of the inactives',
         () {

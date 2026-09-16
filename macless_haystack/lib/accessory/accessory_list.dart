@@ -31,6 +31,15 @@ String groupHeaderLabel(String title, int count) {
   return '$title ($count)';
 }
 
+/// Whether [accessory] matches [activeFilter] - true if the filter is
+/// empty (no filter applied) or the accessory has at least one of the
+/// selected tags (OR semantics: more selected tags broadens results,
+/// it doesn't narrow them).
+bool matchesTagFilter(Accessory accessory, Set<String> activeFilter) {
+  return activeFilter.isEmpty ||
+      accessory.tags.any((tag) => activeFilter.contains(tag));
+}
+
 /// Formats a distance in kilometers for display, e.g. '450 m' or '3.4 km'.
 String formatDistance(double km) {
   if (km < 1) {
