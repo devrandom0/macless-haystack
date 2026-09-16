@@ -82,4 +82,58 @@ void main() {
 
     expect(cloned.lastNotifiedBatteryStatus, AccessoryBatteryStatus.criticalLow);
   });
+
+  Accessory buildAccessoryWithTags(List<String> tags) {
+    final accessory = Accessory(
+        id: '1',
+        name: 'Test',
+        hashedPublicKey: '',
+        datePublished: null,
+        hashesWithTS: {},
+        locationHistory: [],
+        lastBatteryStatus: null,
+        additionalKeys: List.empty(),
+        tags: tags);
+    return accessory;
+  }
+
+  test('an accessory with no tags argument defaults to an empty list', () {
+    final accessory = Accessory(
+        id: '1',
+        name: 'Test',
+        hashedPublicKey: '',
+        datePublished: null,
+        hashesWithTS: {},
+        locationHistory: [],
+        lastBatteryStatus: null,
+        additionalKeys: List.empty());
+
+    expect(accessory.tags, isEmpty);
+  });
+
+  test('toJson/fromJson round-trips tags', () {
+    final accessory = buildAccessoryWithTags(['Keys', 'Car']);
+
+    final restored = Accessory.fromJson(accessory.toJson());
+
+    expect(restored.tags, ['Keys', 'Car']);
+  });
+
+  test('fromJson defaults to an empty list when tags is absent from the JSON', () {
+    final accessory = buildAccessoryWithTags(['Keys']);
+    final json = accessory.toJson();
+    json.remove('tags');
+
+    final restored = Accessory.fromJson(json);
+
+    expect(restored.tags, isEmpty);
+  });
+
+  test('clone copies tags', () {
+    final accessory = buildAccessoryWithTags(['Keys']);
+
+    final cloned = accessory.clone();
+
+    expect(cloned.tags, ['Keys']);
+  });
 }

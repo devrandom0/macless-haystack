@@ -54,6 +54,10 @@ class Accessory {
   String name;
   List<String> additionalKeys;
 
+  /// Free-form labels the user has assigned to organize/filter this
+  /// accessory (e.g. "Keys", "Car"). Case-sensitive; empty means untagged.
+  List<String> tags;
+
   /// The display icon of the accessory.
   String _icon;
 
@@ -104,7 +108,8 @@ class Accessory {
       required this.additionalKeys,
       required this.hashesWithTS,
       required this.lastBatteryStatus,
-      required this.locationHistory})
+      required this.locationHistory,
+      this.tags = const []})
       : _icon = icon,
         _lastLocation = lastLocation,
         super() {
@@ -131,7 +136,8 @@ class Accessory {
         hashesWithTS: hashesWithTS,
         additionalKeys: additionalKeys,
         locationHistory: locationHistory,
-        lastBatteryStatus: lastBatteryStatus);
+        lastBatteryStatus: lastBatteryStatus,
+        tags: tags);
     cloned.lastNotifiedBatteryStatus = lastNotifiedBatteryStatus;
     return cloned;
   }
@@ -147,6 +153,7 @@ class Accessory {
     hashesWithTS = newAccessory.hashesWithTS;
     locationHistory = newAccessory.locationHistory;
     additionalKeys = newAccessory.additionalKeys;
+    tags = newAccessory.tags;
   }
 
   /// The last known location of the accessory.
@@ -212,7 +219,8 @@ class Accessory {
             ? jsonDecode(json['hashesWithTS']) as Map<String, dynamic>
             : <String, dynamic>{},
         additionalKeys =
-            json['additionalKeys']?.cast<String>() ?? List.empty() {
+            json['additionalKeys']?.cast<String>() ?? List.empty(),
+        tags = json['tags']?.cast<String>() ?? List.empty() {
     _init();
   }
 
@@ -237,6 +245,7 @@ class Accessory {
         'color': color.toARGB32().toRadixString(16).padLeft(8, '0'),
         'hashesWithTS': jsonEncode(hashesWithTS),
         'additionalKeys': additionalKeys,
+        'tags': tags,
         ...lastBatteryStatus != null
             ? {'lastBatteryStatus': lastBatteryStatus!.name}
             : {},
