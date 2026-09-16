@@ -126,11 +126,31 @@ class AccessoryListItemState extends State<AccessoryListItem> {
                     ),
               subtitle: isCompact
                   ? null
-                  : Text(
-                      locationString + dateString,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.bodySmall,
+                  : Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          locationString + dateString,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                        if (widget.accessory.tags.isNotEmpty)
+                          Wrap(
+                            spacing: 4,
+                            children: widget.accessory.tags
+                                .map((tag) => Chip(
+                                      label: Text(tag,
+                                          style: Theme.of(context)
+                                              .textTheme
+                                              .labelSmall),
+                                      visualDensity: VisualDensity.compact,
+                                      materialTapTargetSize:
+                                          MaterialTapTargetSize.shrinkWrap,
+                                    ))
+                                .toList(),
+                          ),
+                      ],
                     ),
               trailing: isCompact ? _buildCompactTrailing(context) : widget.distance,
               dense: true,

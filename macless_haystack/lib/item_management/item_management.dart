@@ -63,7 +63,26 @@ class KeyManagement extends StatelessWidget {
                 visualDensity: VisualDensity.compact,
                 minVerticalPadding: 0,
                 title: Text(accessory.name),
-                subtitle: Text('Last seen: $lastSeen'),
+                subtitle: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Last seen: $lastSeen'),
+                    if (accessory.tags.isNotEmpty)
+                      Wrap(
+                        spacing: 4,
+                        children: accessory.tags
+                            .map((tag) => Chip(
+                                  label: Text(tag,
+                                      style:
+                                          Theme.of(context).textTheme.labelSmall),
+                                  visualDensity: VisualDensity.compact,
+                                  materialTapTargetSize:
+                                      MaterialTapTargetSize.shrinkWrap,
+                                ))
+                            .toList(),
+                      ),
+                  ],
+                ),
                 leading: AccessoryIcon(
                   icon: accessory.icon,
                   color: accessory.color,
