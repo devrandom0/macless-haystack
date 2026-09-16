@@ -59,16 +59,21 @@ class AccessoryRegistry extends ChangeNotifier {
   Set<String> get allTags =>
       accessories.expand((accessory) => accessory.tags).toSet();
 
+  final Set<String> _activeTagFilter = {};
+
   /// Tags currently selected to filter accessory views by. Empty means no
   /// filter - every accessory matches. Session-only (not persisted).
-  Set<String> activeTagFilter = {};
+  /// Intersected with [allTags] so a tag renamed or deleted elsewhere
+  /// (e.g. via the tag management screen) can't leave a stale, invisible
+  /// filter value silently hiding everything with no chip left to clear it.
+  Set<String> get activeTagFilter => _activeTagFilter.intersection(allTags);
 
-  /// Toggles [tag] in or out of [activeTagFilter] and notifies listeners.
+  /// Toggles [tag] in or out of the active tag filter and notifies listeners.
   void toggleTagFilter(String tag) {
-    if (activeTagFilter.contains(tag)) {
-      activeTagFilter.remove(tag);
+    if (_activeTagFilter.contains(tag)) {
+      _activeTagFilter.remove(tag);
     } else {
-      activeTagFilter.add(tag);
+      _activeTagFilter.add(tag);
     }
     notifyListeners();
   }

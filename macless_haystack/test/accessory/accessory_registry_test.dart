@@ -689,6 +689,18 @@ void main() {
     });
 
     test('toggleTagFilter adds then removes a tag from activeTagFilter', () {
+      var accessory = Accessory(
+          id: 'filter-test',
+          name: 'FilterTest',
+          hashedPublicKey: 'hash-filter-test',
+          datePublished: null,
+          hashesWithTS: {},
+          locationHistory: [],
+          lastBatteryStatus: null,
+          additionalKeys: [],
+          tags: ['Keys']);
+      registry.addAccessory(accessory);
+
       expect(registry.activeTagFilter, isEmpty);
 
       registry.toggleTagFilter('Keys');
@@ -696,6 +708,30 @@ void main() {
 
       registry.toggleTagFilter('Keys');
       expect(registry.activeTagFilter, isEmpty);
+
+      registry.removeAccessory(accessory);
+    });
+
+    test('activeTagFilter drops a tag once no accessory has it anymore', () {
+      var accessory = Accessory(
+          id: 'filter-test-2',
+          name: 'FilterTest2',
+          hashedPublicKey: 'hash-filter-test-2',
+          datePublished: null,
+          hashesWithTS: {},
+          locationHistory: [],
+          lastBatteryStatus: null,
+          additionalKeys: [],
+          tags: ['Keys']);
+      registry.addAccessory(accessory);
+      registry.toggleTagFilter('Keys');
+      expect(registry.activeTagFilter, {'Keys'});
+
+      accessory.tags = [];
+
+      expect(registry.activeTagFilter, isEmpty);
+
+      registry.removeAccessory(accessory);
     });
   });
 

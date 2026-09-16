@@ -98,7 +98,9 @@ class _AccessoryListState extends State<AccessoryList> {
   Widget build(BuildContext context) {
     return Consumer2<AccessoryRegistry, LocationModel>(
       builder: (context, accessoryRegistry, locationModel, child) {
-        var accessories = accessoryRegistry.accessories;
+        var accessories = accessoryRegistry.accessories
+            .where((a) => matchesTagFilter(a, accessoryRegistry.activeTagFilter))
+            .toList();
 
         // Show placeholder while accessories are loading
         if (accessoryRegistry.loading) {

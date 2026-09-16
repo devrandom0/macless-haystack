@@ -40,7 +40,7 @@ class _AccessoryTagsInputState extends State<AccessoryTagsInput> {
   @override
   void initState() {
     super.initState();
-    _tags = widget.initialTags;
+    _tags = List.of(widget.initialTags);
   }
 
   void _addTag(String value) {
@@ -98,7 +98,6 @@ class _AccessoryTagsInputState extends State<AccessoryTagsInput> {
                 decoration: const InputDecoration(labelText: 'Add tag'),
                 onSubmitted: (value) {
                   _addTag(value);
-                  onFieldSubmitted();
                 },
               );
             },

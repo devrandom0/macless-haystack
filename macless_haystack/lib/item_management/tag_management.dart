@@ -49,36 +49,40 @@ class TagManagementScreen extends StatelessWidget {
 
   Future<void> _rename(BuildContext context, String oldTag) async {
     var controller = TextEditingController(text: oldTag);
-    var newTag = await showDialog<String>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Rename tag'),
-        content: TextField(controller: controller, autofocus: true),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () {
-              var trimmed = controller.text.trim();
-              if (trimmed.isNotEmpty) {
-                Navigator.pop(dialogContext, trimmed);
-              }
-            },
-            child: const Text('Rename'),
-          ),
-        ],
-      ),
-    );
-    if (newTag == null || newTag == oldTag || !context.mounted) return;
+    try {
+      var newTag = await showDialog<String>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('Rename tag'),
+          content: TextField(controller: controller, autofocus: true),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () {
+                var trimmed = controller.text.trim();
+                if (trimmed.isNotEmpty) {
+                  Navigator.pop(dialogContext, trimmed);
+                }
+              },
+              child: const Text('Rename'),
+            ),
+          ],
+        ),
+      );
+      if (newTag == null || newTag == oldTag || !context.mounted) return;
 
-    var registry = Provider.of<AccessoryRegistry>(context, listen: false);
-    var updates = accessoriesAfterTagRename(registry.accessories, oldTag, newTag);
-    for (var i = 0; i < updates.length; i++) {
-      var original = registry.accessories
-          .firstWhere((accessory) => accessory.id == updates[i].id);
-      registry.editAccessory(original, updates[i]);
+      var registry = Provider.of<AccessoryRegistry>(context, listen: false);
+      var updates = accessoriesAfterTagRename(registry.accessories, oldTag, newTag);
+      for (var i = 0; i < updates.length; i++) {
+        var original = registry.accessories
+            .firstWhere((accessory) => accessory.id == updates[i].id);
+        registry.editAccessory(original, updates[i]);
+      }
+    } finally {
+      controller.dispose();
     }
   }
 

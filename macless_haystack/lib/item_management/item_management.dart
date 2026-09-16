@@ -39,13 +39,14 @@ class KeyManagement extends StatelessWidget {
           return const NoAccessoriesPlaceholder();
         }
 
-        var filterRow = accessoryRegistry.allTags.isEmpty
+        var sortedTags = accessoryRegistry.allTags.toList()..sort();
+        var filterRow = sortedTags.isEmpty
             ? null
             : Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                 child: Wrap(
                   spacing: 8,
-                  children: accessoryRegistry.allTags
+                  children: sortedTags
                       .map((tag) => FilterChip(
                             label: Text(tag),
                             selected:
