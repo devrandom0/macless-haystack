@@ -121,4 +121,59 @@ void main() {
       expect(result, [a1, a2, i2, i1]);
     });
   });
+
+  group('mergeReorderedVisibleIntoFullGroup', () {
+    Accessory buildAccessory(String id) => Accessory(
+        id: id,
+        name: id,
+        hashedPublicKey: 'hash-$id',
+        datePublished: null,
+        hashesWithTS: {},
+        locationHistory: [],
+        lastBatteryStatus: null,
+        additionalKeys: []);
+
+    test('with no hidden items, reflects the new order exactly', () {
+      var a = buildAccessory('a');
+      var b = buildAccessory('b');
+      var c = buildAccessory('c');
+
+      var result = mergeReorderedVisibleIntoFullGroup(
+        fullGroup: [a, b, c],
+        reorderedVisible: [c, a, b],
+      );
+
+      expect(result.map((x) => x.id), ['c', 'a', 'b']);
+    });
+
+    test('keeps a hidden item in its original relative position', () {
+      var a = buildAccessory('a');
+      var hidden = buildAccessory('hidden');
+      var b = buildAccessory('b');
+      var c = buildAccessory('c');
+
+      // "hidden" sits between a and b in the full group and is filtered
+      // out, so the user only ever sees/drags [a, b, c].
+      var result = mergeReorderedVisibleIntoFullGroup(
+        fullGroup: [a, hidden, b, c],
+        reorderedVisible: [c, a, b], // user dragged c to the front
+      );
+
+      // "hidden" must still sit between whichever two visible items it
+      // originally sat between (a and b), even though they moved.
+      expect(result.map((x) => x.id), ['c', 'hidden', 'a', 'b']);
+    });
+
+    test('an empty reorderedVisible leaves fullGroup unchanged', () {
+      var a = buildAccessory('a');
+      var b = buildAccessory('b');
+
+      var result = mergeReorderedVisibleIntoFullGroup(
+        fullGroup: [a, b],
+        reorderedVisible: [],
+      );
+
+      expect(result.map((x) => x.id), ['a', 'b']);
+    });
+  });
 }

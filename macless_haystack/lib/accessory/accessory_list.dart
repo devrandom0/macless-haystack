@@ -65,6 +65,31 @@ List<Accessory> mergedOrderAfterGroupReorder({
   return [...activeAccessories(allAccessories), ...reorderedGroup];
 }
 
+/// Merges [reorderedVisible] - one group's accessories, already reordered
+/// by the user, but containing only the accessories currently visible
+/// under a tag filter - back into [fullGroup] (that same group's full,
+/// unfiltered membership). Accessories hidden by the filter keep their
+/// original relative position in [fullGroup]; the visible accessories
+/// fill the remaining slots in their new, dragged order.
+///
+/// When no filter is active, `fullGroup` and the accessories underlying
+/// `reorderedVisible` are the same set, so this is a no-op pass-through
+/// to the new order - existing (no-filter) drag-reorder behavior is
+/// unchanged.
+List<Accessory> mergeReorderedVisibleIntoFullGroup({
+  required List<Accessory> fullGroup,
+  required List<Accessory> reorderedVisible,
+}) {
+  var visibleIds = reorderedVisible.map((accessory) => accessory.id).toSet();
+  var nextVisibleIndex = 0;
+  return fullGroup.map((accessory) {
+    if (visibleIds.contains(accessory.id)) {
+      return reorderedVisible[nextVisibleIndex++];
+    }
+    return accessory;
+  }).toList();
+}
+
 class AccessoryList extends StatefulWidget {
   final LoadLocationUpdatesCallback loadLocationUpdates;
   final SaveOrderUpdatesCallback saveOrderUpdatesCallback;
@@ -98,6 +123,7 @@ class _AccessoryListState extends State<AccessoryList> {
   Widget build(BuildContext context) {
     return Consumer2<AccessoryRegistry, LocationModel>(
       builder: (context, accessoryRegistry, locationModel, child) {
+        var allAccessories = accessoryRegistry.accessories;
         var accessories = accessoryRegistry.accessories
             .where((a) => matchesTagFilter(a, accessoryRegistry.activeTagFilter))
             .toList();
@@ -147,6 +173,8 @@ class _AccessoryListState extends State<AccessoryList> {
 
         var active = activeAccessories(accessories);
         var inactive = inactiveAccessories(accessories);
+        var fullActive = activeAccessories(allAccessories);
+        var fullInactive = inactiveAccessories(allAccessories);
         // A group that's empty can't show a header to re-expand, so drop
         // any stale collapsed flag now rather than surprising the user
         // with an already-collapsed section if it refills later.
@@ -174,7 +202,8 @@ class _AccessoryListState extends State<AccessoryList> {
                     title: 'Active',
                     group: active,
                     groupIsActive: true,
-                    allAccessories: accessories,
+                    allAccessories: allAccessories,
+                    fullGroup: fullActive,
                     locationModel: locationModel,
                   ),
                 if (inactive.isNotEmpty)
@@ -183,7 +212,8 @@ class _AccessoryListState extends State<AccessoryList> {
                     title: 'Inactive',
                     group: inactive,
                     groupIsActive: false,
-                    allAccessories: accessories,
+                    allAccessories: allAccessories,
+                    fullGroup: fullInactive,
                     locationModel: locationModel,
                   ),
               ],
@@ -200,6 +230,7 @@ class _AccessoryListState extends State<AccessoryList> {
     required List<Accessory> group,
     required bool groupIsActive,
     required List<Accessory> allAccessories,
+    required List<Accessory> fullGroup,
     required LocationModel locationModel,
   }) {
     final isCollapsed = _collapsedGroups.contains(keyPrefix);
@@ -264,9 +295,13 @@ class _AccessoryListState extends State<AccessoryList> {
           onReorderItem: (int oldIndex, int newIndex) {
             var copiedGroup = List<Accessory>.from(group);
             copiedGroup.insert(newIndex, copiedGroup.removeAt(oldIndex));
+            var mergedGroup = mergeReorderedVisibleIntoFullGroup(
+              fullGroup: fullGroup,
+              reorderedVisible: copiedGroup,
+            );
             widget.saveOrderUpdatesCallback(mergedOrderAfterGroupReorder(
               allAccessories: allAccessories,
-              reorderedGroup: copiedGroup,
+              reorderedGroup: mergedGroup,
               reorderedGroupIsActive: groupIsActive,
             ));
           },
