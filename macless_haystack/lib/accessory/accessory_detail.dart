@@ -9,6 +9,7 @@ import 'package:macless_haystack/accessory/accessory_registry.dart';
 import 'package:macless_haystack/history/archive_settings_validation.dart';
 import 'package:macless_haystack/history/history_archive_service.dart';
 import 'package:macless_haystack/item_management/accessory_name_input.dart';
+import 'package:macless_haystack/item_management/accessory_tags_input.dart';
 import 'package:macless_haystack/item_management/item_export.dart';
 import 'package:macless_haystack/preferences/user_preferences_model.dart';
 
@@ -449,6 +450,20 @@ class _AccessoryDetailState extends State<AccessoryDetail> {
                   setState(() {
                     newAccessory.name = value;
                   });
+                },
+              ),
+              AccessoryTagsInput(
+                initialTags: newAccessory.tags,
+                changeListener: (tags) {
+                  setState(() {
+                    newAccessory.tags = tags;
+                  });
+                  var accessoryRegistry =
+                      Provider.of<AccessoryRegistry>(context, listen: false);
+                  var updatedAccessory = widget.accessory.clone();
+                  updatedAccessory.tags = tags;
+                  accessoryRegistry.editAccessory(
+                      widget.accessory, updatedAccessory);
                 },
               ),
               SwitchListTile(

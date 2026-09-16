@@ -6,6 +6,7 @@ import 'package:macless_haystack/findMy/find_my_controller.dart';
 import 'package:macless_haystack/item_management/accessory_color_input.dart';
 import 'package:macless_haystack/item_management/accessory_icon_input.dart';
 import 'package:macless_haystack/item_management/accessory_name_input.dart';
+import 'package:macless_haystack/item_management/accessory_tags_input.dart';
 import 'package:macless_haystack/deployment/deployment_instructions.dart';
 
 class AccessoryGeneration extends StatefulWidget {
@@ -92,6 +93,14 @@ class _AccessoryGenerationState extends State<AccessoryGeneration> {
                       newAccessory.color = selectedColor;
                     });
                   }
+                },
+              ),
+              AccessoryTagsInput(
+                initialTags: newAccessory.tags,
+                changeListener: (tags) {
+                  setState(() {
+                    newAccessory.tags = tags;
+                  });
                 },
               ),
               const ListTile(
