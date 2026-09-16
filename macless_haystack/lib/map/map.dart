@@ -6,6 +6,7 @@ import 'package:flutter_map_marker_cluster/flutter_map_marker_cluster.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:macless_haystack/accessory/accessory_actions.dart';
 import 'package:macless_haystack/accessory/accessory_icon.dart';
+import 'package:macless_haystack/accessory/accessory_list.dart';
 import 'package:macless_haystack/accessory/accessory_model.dart';
 import 'package:macless_haystack/accessory/accessory_registry.dart';
 import 'package:macless_haystack/location/location_model.dart';
@@ -28,6 +29,21 @@ bool shouldFitToAccessoryLocations(
   return accessories.any(
     (accessory) => accessory.isActive && accessory.lastLocation != null,
   );
+}
+
+/// [accessories] filtered down to those matching [activeTagFilter] (see
+/// [matchesTagFilter] - empty filter keeps everything). Centralizing this
+/// one filter step means every function downstream of it
+/// (shouldFitToAccessoryLocations, fitToContent, selectedAccessory,
+/// accessoryMarkers) needs no changes of its own - they already just
+/// operate on whatever accessories list they're handed.
+List<Accessory> tagFilteredAccessories(
+  List<Accessory> accessories,
+  Set<String> activeTagFilter,
+) {
+  return accessories
+      .where((accessory) => matchesTagFilter(accessory, activeTagFilter))
+      .toList();
 }
 
 /// The accessory with id [selectedId], restricted to one that is still
@@ -240,16 +256,23 @@ class _AccessoryMapState extends State<AccessoryMap> {
 
     // Resize map to fit all accessories at initial location
     _hasFittedToAccessories = shouldFitToAccessoryLocations(
-      accessoryRegistry.accessories,
+      tagFilteredAccessories(
+          accessoryRegistry.accessories, accessoryRegistry.activeTagFilter),
       false,
     );
-    fitToContent(accessoryRegistry.accessories, locationModel.here);
+    fitToContent(
+        tagFilteredAccessories(
+            accessoryRegistry.accessories, accessoryRegistry.activeTagFilter),
+        locationModel.here);
 
     // Fit map if first location is known
     void listener() {
       // Only use the first location, cancel further updates
       cancelLocationUpdates?.call();
-      fitToContent(accessoryRegistry.accessories, locationModel.here);
+      fitToContent(
+          tagFilteredAccessories(accessoryRegistry.accessories,
+              accessoryRegistry.activeTagFilter),
+          locationModel.here);
     }
 
     locationModel.addListener(listener);
@@ -328,7 +351,8 @@ class _AccessoryMapState extends State<AccessoryMap> {
       // Zoom map to fit all accessories on first accessory update only -
       // later rebuilds (e.g. from a device location update streaming in)
       // must not override a pan/zoom the user has already made.
-      var accessories = accessoryRegistry.accessories;
+      var accessories = tagFilteredAccessories(
+          accessoryRegistry.accessories, accessoryRegistry.activeTagFilter);
       if (shouldFitToAccessoryLocations(accessories, _hasFittedToAccessories)) {
         _hasFittedToAccessories = true;
         // fitToContent moves the map controller, which must not happen

@@ -371,4 +371,31 @@ void main() {
       expect(markers.single.key, const ValueKey('b'));
     });
   });
+
+  group('tagFilteredAccessories', () {
+    Accessory withTags(String id, List<String> tags) => Accessory(
+        id: id,
+        name: 'Test $id',
+        hashedPublicKey: '',
+        datePublished: null,
+        hashesWithTS: {},
+        locationHistory: [],
+        lastBatteryStatus: null,
+        additionalKeys: [],
+        tags: tags);
+
+    test('an empty filter returns every accessory unchanged', () {
+      var a = withTags('a', ['Keys']);
+      var b = withTags('b', []);
+
+      expect(tagFilteredAccessories([a, b], {}), [a, b]);
+    });
+
+    test('keeps only accessories matching the active filter', () {
+      var a = withTags('a', ['Keys']);
+      var b = withTags('b', ['Car']);
+
+      expect(tagFilteredAccessories([a, b], {'Keys'}), [a]);
+    });
+  });
 }
