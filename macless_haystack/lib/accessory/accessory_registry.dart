@@ -19,9 +19,9 @@ const accessoryStorageKey = 'ACCESSORIES';
 const historyStorageKey = 'HISTORY';
 
 /// The entries in [result] that are still within [retentionDays] of now -
-/// anything older is dropped before being persisted locally, so local
-/// storage never retains more than the user has actually configured the
-/// app to fetch (matching [numberOfDaysToFetch]).
+/// anything older is dropped. [_storeHistory] calls this with
+/// `max(7, numberOfDaysToFetch)`, so raising the setting only ever grows
+/// local retention - it never shrinks below the original 7-day floor.
 List<Pair<dynamic, dynamic>> withinRetentionWindow(
   List<Pair<dynamic, dynamic>> result,
   int retentionDays,
