@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'package:geocoding/geocoding.dart';
@@ -397,11 +398,12 @@ class Accessory {
     return hashesWithTS.containsKey(hash.substring(hash.length - 10));
   }
 
-  void removeOldHashes() {
+  void removeOldHashes({int retentionDays = 7}) {
+    var windowDays = max(retentionDays, 7);
     hashesWithTS.removeWhere((key, value) {
-      int sevenDaysAgo =
-          DateTime.now().millisecondsSinceEpoch - (7 * 24 * 60 * 60 * 1000);
-      return value < sevenDaysAgo;
+      int cutoff = DateTime.now().millisecondsSinceEpoch -
+          (windowDays * 24 * 60 * 60 * 1000);
+      return value < cutoff;
     });
   }
 

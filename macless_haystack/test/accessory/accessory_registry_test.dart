@@ -783,6 +783,11 @@ void main() {
       expect(withinRetentionWindow([entry], 7), isEmpty);
       expect(withinRetentionWindow([entry], 30), [entry]);
     });
+
+    test('keeps an entry from exactly retentionDays ago (window truncates to midnight)', () {
+      var entry = entryEndingDaysAgo(7);
+      expect(withinRetentionWindow([entry], 7), [entry]);
+    });
   });
 }
 

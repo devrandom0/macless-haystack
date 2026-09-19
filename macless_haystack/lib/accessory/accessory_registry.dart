@@ -1,5 +1,6 @@
 import 'dart:collection';
 import 'dart:convert';
+import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -262,6 +263,8 @@ class AccessoryRegistry extends ChangeNotifier {
 
     var reportsForAccessories = await Future.wait(runningLocationRequests);
     int out = 0;
+    var retentionDays =
+        Settings.getValue<int>(numberOfDaysToFetch, defaultValue: 7) ?? 7;
     Map<Accessory, Future<List<Pair<dynamic, dynamic>>>> historyEntries = {};
     for (var i = 0; i < currentAccessories.length; i++) {
       var accessory = currentAccessories.elementAt(i);
@@ -291,12 +294,16 @@ class AccessoryRegistry extends ChangeNotifier {
           accessory.hasChangedFlag = true;
         }
       }
-      historyEntries[accessory] = fillLocationHistory(reports, accessory);
+      historyEntries[accessory] = fillLocationHistory(
+        reports,
+        accessory,
+        retentionDays: retentionDays,
+      );
     }
     // Store updated lastLocation and datePublished for accessories
     _storeAccessories();
 
-    _storeHistory(historyEntries);
+    _storeHistory(historyEntries, retentionDays);
 
     initialLoadFinished = true;
     notifyListeners();
@@ -305,15 +312,15 @@ class AccessoryRegistry extends ChangeNotifier {
 
   Future<void> _storeHistory(
     Map<Accessory, Future<List<Pair<dynamic, dynamic>>>> historyEntries,
+    int retentionDays,
   ) async {
     Map<String, List<Pair<dynamic, dynamic>>> historyEntriesAsJson = {};
+    var effectiveRetentionDays = max(7, retentionDays);
     for (var entry in historyEntries.entries) {
       Accessory key = entry.key;
       Future<List<Pair<dynamic, dynamic>>> future = entry.value;
       List<Pair<dynamic, dynamic>> result = await future;
-      var retentionDays =
-          Settings.getValue<int>(numberOfDaysToFetch, defaultValue: 7) ?? 7;
-      var filtered = withinRetentionWindow(result, retentionDays);
+      var filtered = withinRetentionWindow(result, effectiveRetentionDays);
       if (filtered.length != result.length) {
         logger.i(
           '${result.length - filtered.length} history elements have been filtered out and will be deleted due to age.',
@@ -369,8 +376,9 @@ class AccessoryRegistry extends ChangeNotifier {
 
   Future<List<Pair<dynamic, dynamic>>> fillLocationHistory(
     List<FindMyLocationReport> reports,
-    Accessory accessory,
-  ) async {
+    Accessory accessory, {
+    int? retentionDays,
+  }) async {
     List<FindMyLocationReport> decryptedReports = [];
     //Decrypt only reports that are not already decrypted
     Set<String> hashes = {};
@@ -393,7 +401,7 @@ class AccessoryRegistry extends ChangeNotifier {
       '${reports.length - count} reports decrypted. Decryption of $count reports skipped, because they are already fetched and decrypted.',
     );
     //All hashes, that are not in the reports anymore can be deleted, because they are out of time
-    accessory.removeOldHashes();
+    accessory.removeOldHashes(retentionDays: retentionDays ?? 7);
     //Sort by date
     decryptedReports.sort((a, b) {
       var aDate = a.timestamp ?? DateTime(1970);
