@@ -170,6 +170,10 @@ class _PreferencesPageState extends State<PreferencesPage> {
         5: "5 days",
         6: "6 days",
         7: "7 days",
+        10: "10 days",
+        14: "14 days",
+        21: "21 days",
+        30: "30 days",
       },
       selected: 7,
     );

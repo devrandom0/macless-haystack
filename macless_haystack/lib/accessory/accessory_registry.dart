@@ -17,6 +17,23 @@ import 'package:macless_haystack/preferences/user_preferences_model.dart';
 const accessoryStorageKey = 'ACCESSORIES';
 const historyStorageKey = 'HISTORY';
 
+/// The entries in [result] that are still within [retentionDays] of now -
+/// anything older is dropped before being persisted locally, so local
+/// storage never retains more than the user has actually configured the
+/// app to fetch (matching [numberOfDaysToFetch]).
+List<Pair<dynamic, dynamic>> withinRetentionWindow(
+  List<Pair<dynamic, dynamic>> result,
+  int retentionDays,
+) {
+  var nowMinusDays = DateTime.now().subtract(Duration(days: retentionDays));
+  var upperDayLimit = DateTime(
+    nowMinusDays.year,
+    nowMinusDays.month,
+    nowMinusDays.day,
+  );
+  return result.where((element) => element.end.isAfter(upperDayLimit)).toList();
+}
+
 /// How many of [reports] are new to [accessory] - i.e. not already in its
 /// persisted decrypted-hash set (see [Accessory.containsHash]).
 ///
@@ -294,15 +311,9 @@ class AccessoryRegistry extends ChangeNotifier {
       Accessory key = entry.key;
       Future<List<Pair<dynamic, dynamic>>> future = entry.value;
       List<Pair<dynamic, dynamic>> result = await future;
-      var nowMinusDays = DateTime.now().subtract(const Duration(days: 7));
-      var upperDayLimit = DateTime(
-        nowMinusDays.year,
-        nowMinusDays.month,
-        nowMinusDays.day,
-      );
-      var filtered = result
-          .where((element) => element.end.isAfter(upperDayLimit))
-          .toList();
+      var retentionDays =
+          Settings.getValue<int>(numberOfDaysToFetch, defaultValue: 7) ?? 7;
+      var filtered = withinRetentionWindow(result, retentionDays);
       if (filtered.length != result.length) {
         logger.i(
           '${result.length - filtered.length} history elements have been filtered out and will be deleted due to age.',

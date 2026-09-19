@@ -758,6 +758,32 @@ void main() {
 
     expect(accessory.lastNotifiedBatteryStatus, isNull);
   });
+
+  group('withinRetentionWindow', () {
+    Pair<dynamic, dynamic> entryEndingDaysAgo(int daysAgo) {
+      var end = DateTime.now().subtract(Duration(days: daysAgo));
+      return Pair(const LatLng(1, 1), end, end);
+    }
+
+    test('keeps an entry within the retention window', () {
+      var entry = entryEndingDaysAgo(3);
+
+      expect(withinRetentionWindow([entry], 7), [entry]);
+    });
+
+    test('drops an entry older than the retention window', () {
+      var entry = entryEndingDaysAgo(10);
+
+      expect(withinRetentionWindow([entry], 7), isEmpty);
+    });
+
+    test('a raised retention window keeps entries the old 7-day window would have dropped', () {
+      var entry = entryEndingDaysAgo(14);
+
+      expect(withinRetentionWindow([entry], 7), isEmpty);
+      expect(withinRetentionWindow([entry], 30), [entry]);
+    });
+  });
 }
 
 ///
