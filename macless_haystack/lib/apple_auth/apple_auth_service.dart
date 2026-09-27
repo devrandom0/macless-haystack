@@ -160,14 +160,25 @@ class AppleAuthService {
 
   /// Fetches whether the server currently has a valid Apple session, and
   /// whether a login is mid-flow. Does not enforce HTTPS - the response
-  /// carries no credential.
+  /// carries no credential. Makes no request at all for an empty or
+  /// authority-less [url] (nothing configured, or a malformed value),
+  /// and gives up after [_statusTimeout] rather than hanging - callers
+  /// that treat this as a best-effort signal can catch either the same
+  /// way.
+  static const _statusTimeout = Duration(seconds: 10);
+
   static Future<AppleAuthStatus> getStatus(String url, String endpointUser, String endpointPass,
       {http.Client? client}) async {
+    if (url.isEmpty || !Uri.parse(url).hasAuthority) {
+      throw ArgumentError.value(url, 'url', 'must be an absolute URL with a host');
+    }
     var effectiveClient = client ?? _createClient();
     try {
       var authHeader = _authHeader(endpointUser, endpointPass);
       var headers = {if (authHeader != null) "Authorization": authHeader};
-      var response = await effectiveClient.get(Uri.parse('$url/auth/apple/status'), headers: headers);
+      var response = await effectiveClient
+          .get(Uri.parse('$url/auth/apple/status'), headers: headers)
+          .timeout(_statusTimeout);
       if (response.statusCode != 200) {
         throw Exception('Apple auth status request failed with status code ${response.statusCode}');
       }
