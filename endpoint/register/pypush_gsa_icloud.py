@@ -456,7 +456,9 @@ def submit_sms_code(headers, sms_id, code, mode="sms"):
     submit_headers.update(generate_anisette_headers())
     body = {"phoneNumber": {"id": sms_id}, "mode": mode, "securityCode": {"code": code}}
 
-    # Send the 2FA code to Apple
+    # Send the 2FA code to Apple. A wrong code comes back as a plain 400/401,
+    # not a 200 missing X-Apple-DSID, so only a server error is a transport
+    # failure - a client error is Apple telling us the code is invalid.
     with requests.post(
             "https://gsa.apple.com/auth/verify/phone/securitycode",
             json=body,
@@ -464,18 +466,19 @@ def submit_sms_code(headers, sms_id, code, mode="sms"):
             verify=False,
             timeout=5,
     ) as resp:
-        resp.raise_for_status()
+        if resp.status_code >= 500:
+            resp.raise_for_status()
 
-    response = f"HTTP-Code: {resp.status_code} with {len(resp.text)} bytes"
-    logger.debug(response)
-    # Names only, never values - this response can carry session cookies
-    # (e.g. scnt, aasp) alongside the X-Apple-DSID this function checks for.
-    logger.debug(f"Response header names: {list(resp.headers.keys())}")
-    # Headers does not include Apple DSID, 2FA failed
-    if resp.ok and "X-Apple-DSID" in resp.headers:
-        logger.info("2FA successful")
-    else:
-        raise AppleAuthError("invalid_code")
+        response = f"HTTP-Code: {resp.status_code} with {len(resp.text)} bytes"
+        logger.debug(response)
+        # Names only, never values - this response can carry session cookies
+        # (e.g. scnt, aasp) alongside the X-Apple-DSID this function checks for.
+        logger.debug(f"Response header names: {list(resp.headers.keys())}")
+        # Headers does not include Apple DSID, 2FA failed
+        if resp.ok and "X-Apple-DSID" in resp.headers:
+            logger.info("2FA successful")
+        else:
+            raise AppleAuthError("invalid_code")
 
 
 def sms_second_factor(dsid, idms_token):

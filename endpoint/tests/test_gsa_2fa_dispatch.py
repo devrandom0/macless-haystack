@@ -271,6 +271,41 @@ def test_submit_sms_code_raises_apple_auth_error_when_dsid_header_missing():
             gsa.submit_sms_code({}, 7, "000000")
 
 
+def test_submit_sms_code_raises_apple_auth_error_not_http_error_on_400(caplog):
+    # A wrong code gets a plain 400/401 back from Apple, not a 200 with a
+    # missing X-Apple-DSID header - that must map to AppleAuthError so the
+    # caller reports invalid_code, not apple_unreachable via a RequestException.
+    submit_resp = _mock_response(status_code=400, ok=False, headers={})
+    submit_resp.raise_for_status.side_effect = requests.HTTPError("400 Client Error")
+
+    with patch.object(gsa, "generate_anisette_headers", return_value={}), \
+            patch.object(gsa.requests, "post", return_value=submit_resp):
+        with pytest.raises(gsa.AppleAuthError, match="invalid_code"):
+            gsa.submit_sms_code({}, 7, "000000")
+
+    submit_resp.raise_for_status.assert_not_called()
+
+
+def test_submit_sms_code_raises_apple_auth_error_not_http_error_on_401(caplog):
+    submit_resp = _mock_response(status_code=401, ok=False, headers={})
+    submit_resp.raise_for_status.side_effect = requests.HTTPError("401 Client Error")
+
+    with patch.object(gsa, "generate_anisette_headers", return_value={}), \
+            patch.object(gsa.requests, "post", return_value=submit_resp):
+        with pytest.raises(gsa.AppleAuthError, match="invalid_code"):
+            gsa.submit_sms_code({}, 7, "000000")
+
+
+def test_submit_sms_code_raises_http_error_on_server_error():
+    submit_resp = _mock_response(status_code=500, ok=False, headers={})
+    submit_resp.raise_for_status.side_effect = requests.HTTPError("500 Server Error")
+
+    with patch.object(gsa, "generate_anisette_headers", return_value={}), \
+            patch.object(gsa.requests, "post", return_value=submit_resp):
+        with pytest.raises(requests.HTTPError):
+            gsa.submit_sms_code({}, 7, "000000")
+
+
 def test_submit_sms_code_does_not_log_header_values(caplog):
     secret_cookie = "secret-session-cookie-value-should-never-be-logged"
     submit_resp = _mock_response(headers={"X-Apple-DSID": "dsid-1", "Set-Cookie": f"scnt={secret_cookie}"})
