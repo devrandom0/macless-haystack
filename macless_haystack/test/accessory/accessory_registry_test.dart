@@ -5,7 +5,9 @@ import 'package:latlong2/latlong.dart';
 import 'package:macless_haystack/accessory/accessory_battery.dart';
 import 'package:macless_haystack/accessory/accessory_model.dart';
 import 'package:macless_haystack/accessory/accessory_registry.dart';
+import 'package:macless_haystack/findMy/find_my_controller.dart';
 import 'package:macless_haystack/findMy/models.dart';
+import 'package:macless_haystack/findMy/reports_fetcher.dart';
 import 'package:macless_haystack/location/location_model.dart';
 import 'package:macless_haystack/notifications/battery_notification_service.dart';
 import 'package:mockito/annotations.dart';
@@ -489,6 +491,147 @@ void main() {
       countNewReports(reports, acc);
 
       expect(acc.containsHash('hash-aaaa1'), isFalse);
+    });
+  });
+
+  group('combineLocationReportResults', () {
+    Accessory freshAccessory() => Accessory(
+      id: '',
+      name: '',
+      hashedPublicKey: '',
+      datePublished: null,
+      hashesWithTS: {},
+      locationHistory: [],
+      lastBatteryStatus: null,
+      additionalKeys: List.empty(),
+    );
+
+    ComputedLocationReports resultWith({
+      List<FindMyLocationReport>? reports,
+      bool? appleSessionStale,
+    }) => (
+      reports: reports ?? [],
+      newCount: 0,
+      appleSessionStale: appleSessionStale,
+    );
+
+    test('is zero/null for an empty batch (no active accessories)', () {
+      var combined = combineLocationReportResults([], []);
+
+      expect(combined.newCount, 0);
+      expect(combined.appleSessionStale, isNull);
+    });
+
+    test('sums countNewReports across every accessory in the batch', () {
+      var accA = freshAccessory();
+      var accB = freshAccessory();
+      accB.addDecryptedHash('hash-known');
+      var results = [
+        resultWith(
+          reports: [
+            FindMyLocationReport.withHash(1, 2, DateTime(2024, 1, 1), 'hash-a'),
+          ],
+        ),
+        resultWith(
+          reports: [
+            FindMyLocationReport.withHash(1, 2, DateTime(2024, 1, 2), 'hash-known'),
+            FindMyLocationReport.withHash(1, 2, DateTime(2024, 1, 3), 'hash-new'),
+          ],
+        ),
+      ];
+
+      var combined = combineLocationReportResults(results, [accA, accB]);
+
+      expect(combined.newCount, 2);
+    });
+
+    test('appleSessionStale is null when every result has no opinion (older server)', () {
+      var results = [resultWith(), resultWith()];
+
+      var combined = combineLocationReportResults(
+        results,
+        [freshAccessory(), freshAccessory()],
+      );
+
+      expect(combined.appleSessionStale, isNull);
+    });
+
+    test('appleSessionStale is true when any result says so, even if others are null', () {
+      var results = [
+        resultWith(appleSessionStale: null),
+        resultWith(appleSessionStale: true),
+        resultWith(appleSessionStale: false),
+      ];
+
+      var combined = combineLocationReportResults(
+        results,
+        [freshAccessory(), freshAccessory(), freshAccessory()],
+      );
+
+      expect(combined.appleSessionStale, true);
+    });
+
+    test('appleSessionStale is false when every opinion says so', () {
+      var results = [
+        resultWith(appleSessionStale: false),
+        resultWith(appleSessionStale: false),
+      ];
+
+      var combined = combineLocationReportResults(
+        results,
+        [freshAccessory(), freshAccessory()],
+      );
+
+      expect(combined.appleSessionStale, false);
+    });
+  });
+
+  group('catchingExpiredAppleSession', () {
+    test('passes through a successful result unchanged', () async {
+      ComputedLocationReports expected = (
+        reports: [FindMyLocationReport.withHash(1, 2, DateTime(2024, 1, 1), 'hash-a')],
+        newCount: 1,
+        appleSessionStale: false,
+      );
+
+      var result = await catchingExpiredAppleSession(() async => expected);
+
+      expect(result, expected);
+    });
+
+    test('folds a thrown AppleSessionExpiredException into an empty, stale result', () async {
+      var result = await catchingExpiredAppleSession(
+        () async => throw const AppleSessionExpiredException(),
+      );
+
+      expect(result.reports, isEmpty);
+      expect(result.newCount, 0);
+      expect(result.appleSessionStale, true);
+    });
+
+    test('lets any other exception propagate', () {
+      expect(
+        () => catchingExpiredAppleSession(() async => throw Exception('boom')),
+        throwsException,
+      );
+    });
+
+    test('one accessory throwing AppleSessionExpiredException does not fail '
+        'Future.wait for the whole batch', () async {
+      ComputedLocationReports ok = (
+        reports: [FindMyLocationReport.withHash(1, 2, DateTime(2024, 1, 1), 'hash-a')],
+        newCount: 1,
+        appleSessionStale: false,
+      );
+
+      var results = await Future.wait([
+        catchingExpiredAppleSession(() async => ok),
+        catchingExpiredAppleSession(() async => throw const AppleSessionExpiredException()),
+      ]);
+
+      expect(results[0], ok);
+      expect(results[1].appleSessionStale, true);
+      expect(results[1].reports, isEmpty);
     });
   });
 

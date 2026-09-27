@@ -17,12 +17,14 @@ import 'package:pointycastle/src/utils.dart' as pc_utils;
 
 import '../preferences/user_preferences_model.dart';
 
-/// Decrypted location reports plus the server-side live-vs-cache count
-/// (see [LocationReportsResult], which this is derived from - the same
-/// "not necessarily new to this client" caveat applies).
+/// Decrypted location reports plus the server-side live-vs-cache count and
+/// stale-session flag (see [LocationReportsResult], which this is derived
+/// from - the same "not necessarily new to this client" caveat applies to
+/// [newCount]).
 typedef ComputedLocationReports = ({
   List<FindMyLocationReport> reports,
   int newCount,
+  bool? appleSessionStale,
 });
 
 class FindMyController {
@@ -102,7 +104,11 @@ class FindMyController {
     if (latest != null) {
       await latest.decrypt();
     }
-    return (reports: results, newCount: fetchResult.newCount);
+    return (
+      reports: results,
+      newCount: fetchResult.newCount,
+      appleSessionStale: fetchResult.appleSessionStale,
+    );
   }
 
   /// Loads the private key from the local cache or secure storage and adds it

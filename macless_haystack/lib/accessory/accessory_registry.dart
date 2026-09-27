@@ -11,6 +11,7 @@ import 'package:macless_haystack/accessory/secure_storage_upgrade.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:macless_haystack/findMy/find_my_controller.dart';
 import 'package:macless_haystack/findMy/models.dart';
+import 'package:macless_haystack/findMy/reports_fetcher.dart' show AppleSessionExpiredException;
 import 'package:flutter_settings_screens/flutter_settings_screens.dart';
 import 'package:macless_haystack/notifications/battery_notification_service.dart';
 import 'package:macless_haystack/preferences/user_preferences_model.dart';
@@ -47,6 +48,53 @@ List<Pair<dynamic, dynamic>> withinRetentionWindow(
 /// Read-only - marking hashes as seen is [fillLocationHistory]'s job.
 int countNewReports(List<FindMyLocationReport> reports, Accessory accessory) {
   return reports.where((r) => !accessory.containsHash(r.hash)).length;
+}
+
+/// Combines each accessory's own fetch result (in the same order as
+/// [accessories]) into the batch-level new-report count and the shared
+/// apple-session-stale signal.
+///
+/// [appleSessionStale] is null when nothing in the batch had an opinion -
+/// no accessories were fetched at all, or every result came from an older
+/// server - and otherwise true if any accessory's own result said so
+/// (it's one shared server-side session, not a per-accessory one).
+({int newCount, bool? appleSessionStale}) combineLocationReportResults(
+  List<ComputedLocationReports> reportsForAccessories,
+  Iterable<Accessory> accessories,
+) {
+  int newCount = 0;
+  for (var i = 0; i < reportsForAccessories.length; i++) {
+    newCount += countNewReports(
+      reportsForAccessories[i].reports,
+      accessories.elementAt(i),
+    );
+  }
+  var opinions = reportsForAccessories
+      .map((result) => result.appleSessionStale)
+      .whereType<bool>();
+  var appleSessionStale = opinions.isEmpty
+      ? null
+      : opinions.any((stale) => stale);
+  return (newCount: newCount, appleSessionStale: appleSessionStale);
+}
+
+/// Runs [compute], folding a thrown [AppleSessionExpiredException] into
+/// the same non-throwing result shape every other accessory's fetch
+/// returns - one accessory hitting the no-cache-fallback case must not
+/// make [Future.wait] abort the whole batch (or leak a raw exception past
+/// callers that only expect the report data itself to fail).
+Future<ComputedLocationReports> catchingExpiredAppleSession(
+  Future<ComputedLocationReports> Function() compute,
+) async {
+  try {
+    return await compute();
+  } on AppleSessionExpiredException {
+    return (
+      reports: <FindMyLocationReport>[],
+      newCount: 0,
+      appleSessionStale: true,
+    );
+  }
 }
 
 class AccessoryRegistry extends ChangeNotifier {
@@ -226,9 +274,12 @@ class AccessoryRegistry extends ChangeNotifier {
   ///
   /// Returns how many reports are genuinely new data, not just the total
   /// size of whatever was returned (which may be entirely already-known
-  /// cached reports). [force] bypasses the endpoint's freshness cache and
-  /// asks Apple directly.
-  Future<int> loadLocationReports(
+  /// cached reports), plus whether the server's Apple session is stale
+  /// (see [combineLocationReportResults] - null when nothing in the batch
+  /// had an opinion, e.g. no active accessories or an older server).
+  /// [force] bypasses the endpoint's freshness cache and asks Apple
+  /// directly.
+  Future<({int newCount, bool? appleSessionStale})> loadLocationReports(
     Iterable<Accessory> currentAccessories, {
     bool force = false,
   }) async {
@@ -253,23 +304,23 @@ class AccessoryRegistry extends ChangeNotifier {
 
       hashedPublicKeys.add(keyPair);
 
-      var locationRequest = FindMyController.computeResults(
-        hashedPublicKeys,
-        url,
-        force: force,
+      var locationRequest = catchingExpiredAppleSession(
+        () => FindMyController.computeResults(hashedPublicKeys, url, force: force),
       );
       runningLocationRequests.add(locationRequest);
     }
 
     var reportsForAccessories = await Future.wait(runningLocationRequests);
-    int out = 0;
+    var combined = combineLocationReportResults(
+      reportsForAccessories,
+      currentAccessories,
+    );
     var retentionDays =
         Settings.getValue<int>(numberOfDaysToFetch, defaultValue: 7) ?? 7;
     Map<Accessory, Future<List<Pair<dynamic, dynamic>>>> historyEntries = {};
     for (var i = 0; i < currentAccessories.length; i++) {
       var accessory = currentAccessories.elementAt(i);
       var reports = reportsForAccessories.elementAt(i).reports;
-      out += countNewReports(reports, accessory);
       logger.i(
         '${reports.length} reports fetched for ${accessory.hashedPublicKey} in total',
       );
@@ -307,7 +358,7 @@ class AccessoryRegistry extends ChangeNotifier {
 
     initialLoadFinished = true;
     notifyListeners();
-    return Future.value(out);
+    return combined;
   }
 
   Future<void> _storeHistory(

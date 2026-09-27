@@ -231,13 +231,31 @@ class ServerHandler(BaseHTTPRequestHandler):
         ids = list(body['ids'])
         logger.debug('Querying for ' + str(days) + ' days')
 
+        # None means this request never actually made a live Apple call
+        # (a full cache hit) - the response falls back to the persisted/
+        # global state for that case. When a live call does happen, this
+        # is set to its own outcome, so a concurrent archiver-thread fetch
+        # changing the global state in the background can't misattribute
+        # its result to a request that didn't make the call itself.
+        live_call_stale = None
+
         def fetch_from_apple(fetch_ids):
+            nonlocal live_call_stale
             data = {"search": [{"startDate": 1, "ids": fetch_ids}]}
-            with requests.post("https://gateway.icloud.com/acsnservice/fetch",
-                                auth=getAuth(regenerate=False, second_factor='sms'),
-                                headers=pypush_gsa_icloud.generate_anisette_headers(),
-                                json=data) as r:
-                _raise_for_status_marking_stale(r)
+            try:
+                with requests.post("https://gateway.icloud.com/acsnservice/fetch",
+                                    auth=getAuth(regenerate=False, second_factor='sms'),
+                                    headers=pypush_gsa_icloud.generate_anisette_headers(),
+                                    json=data) as r:
+                    _raise_for_status_marking_stale(r)
+            except RuntimeError:
+                live_call_stale = True
+                raise
+            except requests.exceptions.HTTPError:
+                live_call_stale = apple_session_stale
+                raise
+            else:
+                live_call_stale = False
             return json.loads(r.content.decode())['results']
 
         try:
@@ -246,11 +264,18 @@ class ServerHandler(BaseHTTPRequestHandler):
                 mh_config.getHistoryPollIntervalHours(), fetch_from_apple,
             )
 
+            apple_session_stale_for_response = (
+                live_call_stale if live_call_stale is not None else _apple_session_needs_login()
+            )
+
             self.send_response(200)
             self.addCORSHeaders()
             self.end_headers()
 
-            responseBody = json.dumps({"results": results, "new_count": new_count})
+            responseBody = json.dumps({
+                "results": results, "new_count": new_count,
+                "appleSessionStale": apple_session_stale_for_response,
+            })
             self.wfile.write(responseBody.encode())
         except requests.exceptions.ConnectTimeout:
             logger.error("Timeout to " + mh_config.getAnisetteServer() +
@@ -258,7 +283,15 @@ class ServerHandler(BaseHTTPRequestHandler):
             self.send_response(504)
         except Exception as e:
             logger.error(f"Unknown error occurred {e}", exc_info=True)
-            self.send_response(501)
+            # Only reachable when there's no working history store to fall
+            # back on (none configured, or its own sqlite fallback also
+            # failed) - fetch_reports_with_cache otherwise always swallows
+            # a failed live fetch and returns whatever's cached with a
+            # 200, appleSessionStale included, rather than raising.
+            if _is_apple_auth_exception(e):
+                self._send_json(503, {"error": "apple_session_expired"})
+            else:
+                self.send_response(501)
 
     def _handle_post_history_devices(self, body):
         if tracked_device_store is None or history_encryption_key is None:
@@ -463,14 +496,14 @@ class ServerHandler(BaseHTTPRequestHandler):
 
     def _handle_get_auth_apple_status(self):
         _expire_pending_login_if_stale()
-        logged_in = os.path.exists(mh_config.getConfigFile()) and not apple_session_stale
+        logged_in = not _apple_session_needs_login()
         self._send_json(200, {"loggedIn": logged_in, "pending": pending_apple_login is not None})
 
     def _handle_post_auth_apple_logout(self):
-        global apple_session_stale, pending_apple_login
+        global pending_apple_login
         # Clear in-memory state first, regardless of what happens below, so
         # a failed file removal never strands a pending login's password.
-        apple_session_stale = False
+        _mark_apple_session_stale(False)
         pending_apple_login = None
         try:
             os.remove(mh_config.getConfigFile())
@@ -514,21 +547,76 @@ def _complete_apple_login(g, username):
     """Finishes a successful GSA login: registers the device with mobileme
     and writes the resulting session to auth.json. Raises AppleAuthError on
     a bad account status, or a requests exception on a network failure."""
-    global apple_session_stale
     j = pypush_gsa_icloud.register_mobileme(g, username)
     with open(mh_config.getConfigFile(), "w") as f:
         json.dump(j, f)
-    apple_session_stale = False
+    _mark_apple_session_stale(False)
 
 
 def _raise_for_status_marking_stale(response):
-    global apple_session_stale
     try:
         response.raise_for_status()
     except requests.exceptions.HTTPError:
         if response.status_code in (401, 403):
-            apple_session_stale = True
+            _mark_apple_session_stale(True)
         raise
+    else:
+        _mark_apple_session_stale(False)
+
+
+def _apple_session_stale_marker_path():
+    return os.path.join(os.path.dirname(mh_config.getConfigFile()), "apple_session_stale")
+
+
+def _mark_apple_session_stale(stale):
+    """Updates the in-memory flag and its on-disk marker together, so a
+    process restart doesn't forget an already-detected expired session
+    until the next failed fetch rediscovers it. The marker's mere
+    presence is the signal - nothing worth protecting is ever written
+    into it, so its contents are never logged."""
+    global apple_session_stale
+    apple_session_stale = stale
+    marker_path = _apple_session_stale_marker_path()
+    try:
+        if stale:
+            Path(marker_path).touch()
+        else:
+            os.remove(marker_path)
+    except FileNotFoundError:
+        pass
+    except OSError as e:
+        logger.warning(f"Could not update the apple session stale marker: {e}")
+
+
+def _load_persisted_apple_session_stale():
+    """Restores the stale flag across a process restart - called once at
+    startup, see __main__."""
+    global apple_session_stale
+    apple_session_stale = os.path.exists(_apple_session_stale_marker_path())
+
+
+def _apple_session_needs_login():
+    """Whether the app should tell the user to log in again: either a live
+    Apple call has already failed on an expired session, or there's no
+    session at all and no config.ini appleid/appleid_pass for getAuth to
+    silently regenerate one from (see getAuth)."""
+    if apple_session_stale:
+        return True
+    if os.path.exists(mh_config.getConfigFile()):
+        return False
+    return not (mh_config.getUser() and mh_config.getPass())
+
+
+def _is_apple_auth_exception(e):
+    """Whether [e] itself is one of the two ways a live Apple fetch fails
+    on session/auth grounds - a 401/403 from Apple, or getAuth's own
+    RuntimeError when there's no session and no config.ini fallback - as
+    opposed to any unrelated failure (network error, bad payload, etc.)."""
+    if isinstance(e, requests.exceptions.HTTPError):
+        return e.response is not None and e.response.status_code in (401, 403)
+    if isinstance(e, RuntimeError):
+        return "No Apple session available" in str(e)
+    return False
 
 
 def getAuth(regenerate=False, second_factor='sms'):
@@ -573,6 +661,7 @@ def check_if_anisette_is_reachable(max_retries=3, retry_delay=10):
 
 if __name__ == "__main__":
     check_if_anisette_is_reachable()
+    _load_persisted_apple_session_stale()
     logging.info(f'Searching for token at ' + mh_config.getConfigFile())
     if not os.path.exists(mh_config.getConfigFile()):
         logging.info(f'No auth-token found.')

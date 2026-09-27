@@ -296,11 +296,15 @@ def test_history_devices_unavailable_when_store_not_configured(server):
     assert status == 503
 
 
-def test_root_post_behavior_is_unchanged(server, monkeypatch):
+def test_root_post_behavior_is_unchanged(server, tmp_path, monkeypatch):
+    # A cache hit (no live Apple call this request) falls back to whether
+    # the session needs a login at all - an existing auth.json says no.
+    monkeypatch.setattr(mh_config, "getConfigFile", lambda: str(tmp_path / "auth.json"))
+    (tmp_path / "auth.json").write_text('{"dsid": "d-1", "searchPartyToken": "t-1"}')
     monkeypatch.setattr(mh_endpoint.history_archiver, "fetch_reports_with_cache", lambda *a, **k: ([], 0))
     status, body = _post(server, '/', {"ids": ["hash-a"], "days": 7})
     assert status == 200
-    assert body == {"results": [], "new_count": 0}
+    assert body == {"results": [], "new_count": 0, "appleSessionStale": False}
 
 
 def test_history_devices_requires_auth_when_configured(server, monkeypatch):
