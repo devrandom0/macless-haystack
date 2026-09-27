@@ -311,6 +311,16 @@ def test_raise_for_status_marking_stale_sets_flag_on_401():
     assert mh_endpoint.apple_session_stale is True
 
 
+def test_raise_for_status_marking_stale_clears_flag_on_success():
+    mh_endpoint.apple_session_stale = True
+    response = MagicMock()
+    response.raise_for_status.return_value = None
+
+    mh_endpoint._raise_for_status_marking_stale(response)
+
+    assert mh_endpoint.apple_session_stale is False
+
+
 def test_raise_for_status_marking_stale_leaves_flag_alone_on_server_error():
     mh_endpoint.apple_session_stale = False
     response = MagicMock()

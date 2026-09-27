@@ -300,7 +300,7 @@ def test_root_post_behavior_is_unchanged(server, monkeypatch):
     monkeypatch.setattr(mh_endpoint.history_archiver, "fetch_reports_with_cache", lambda *a, **k: ([], 0))
     status, body = _post(server, '/', {"ids": ["hash-a"], "days": 7})
     assert status == 200
-    assert body == {"results": [], "new_count": 0}
+    assert body == {"results": [], "new_count": 0, "appleSessionStale": False}
 
 
 def test_history_devices_requires_auth_when_configured(server, monkeypatch):
