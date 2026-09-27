@@ -336,33 +336,14 @@ def _prompt_for_code(initial_prompt, resend_fn):
 
 
 def request_sms_code(dsid, idms_token):
-    headers = _common_2fa_headers(dsid, idms_token)
-    headers["X-Apple-App-Info"] = "com.apple.gs.xcode.auth"
-    headers["X-Xcode-Version"] = "11.2 (11B41)"
-
-    # Extract the "boot_args" from the auth page to get the id of the trusted phone number
-    pattern = r'<script.*class="boot_args">\s*(.*?)\s*</script>'
-    with requests.get("https://gsa.apple.com/auth", headers=headers, verify=False) as auth:
-        auth.raise_for_status()
+    headers, numbers = list_trusted_phone_numbers(dsid, idms_token)
+    if numbers:
+        sms_id = numbers[0]["id"]
+    else:
         sms_id = 1
-        match = re.search(pattern, auth.text, re.DOTALL)
-        if match:
-            boot_args = json.loads(match.group(1).strip())
-            try:
-                sms_id = boot_args["direct"]["phoneNumberVerification"]["trustedPhoneNumber"]["id"]
-            except KeyError as e:
-                # Never log the raw boot_args - it can carry the account's
-                # (partially masked) trusted phone number.
-                logger.debug(f"boot_args parsed but missing expected keys ({len(match.group(1))} bytes)")
-                logger.error("Key for sms id not found. Using the first phone number")
-        else:
-            # Never log the raw page - it's undocumented, unauthenticated-
-            # session-adjacent content from an authenticated Apple page.
-            logger.debug(f"boot_args script tag not found in auth page ({len(auth.text)} bytes)")
-            logger.error("Script for sms id not found. Using the first phone number")
+        logger.error("Key for sms id not found. Using the first phone number")
 
-        logger.info(f"Using phone with id {sms_id} for SMS2FA")
-
+    logger.info(f"Using phone with id {sms_id} for SMS2FA")
     return headers, sms_id
 
 
@@ -404,24 +385,27 @@ def list_trusted_phone_numbers(dsid, idms_token):
     """Fetches the auth page's boot_args and returns (headers, numbers) -
     headers ready for trigger_phone_second_factor/submit_sms_code, and the
     account's trusted phone numbers (masked, with their Apple-assigned ids).
-    An empty list means the page carried none Apple would recognize."""
+    `numbers` is None when the page itself couldn't be parsed (no boot_args
+    script tag, or not valid JSON) - callers need to tell that apart from a
+    well-formed page that just reports zero trusted phone numbers ([])."""
     headers = _common_2fa_headers(dsid, idms_token)
     headers["X-Apple-App-Info"] = "com.apple.gs.xcode.auth"
     headers["X-Xcode-Version"] = "11.2 (11B41)"
 
     pattern = r'<script.*class="boot_args">\s*(.*?)\s*</script>'
-    with requests.get("https://gsa.apple.com/auth", headers=headers, verify=False) as auth:
+    with requests.get("https://gsa.apple.com/auth", headers=headers, verify=False, timeout=10) as auth:
         auth.raise_for_status()
         match = re.search(pattern, auth.text, re.DOTALL)
         if not match:
-            # Never log the raw page - see request_sms_code.
+            # Never log the raw page - it's undocumented, unauthenticated-
+            # session-adjacent content from an authenticated Apple page.
             logger.debug(f"boot_args script tag not found in auth page ({len(auth.text)} bytes)")
-            return headers, []
+            return headers, None
         try:
             boot_args = json.loads(match.group(1).strip())
         except json.JSONDecodeError:
             logger.debug("boot_args script tag present but not valid JSON")
-            return headers, []
+            return headers, None
         numbers = _extract_trusted_phone_numbers(boot_args)
 
     return headers, numbers

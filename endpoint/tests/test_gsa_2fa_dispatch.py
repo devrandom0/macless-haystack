@@ -208,9 +208,34 @@ def test_request_sms_code_extracts_phone_id_from_boot_args():
             patch.object(gsa.requests, "get", return_value=auth_resp) as mock_get:
         headers, sms_id = gsa.request_sms_code("dsid-1", "token-1")
 
-    mock_get.assert_called_once_with("https://gsa.apple.com/auth", headers=headers, verify=False)
+    mock_get.assert_called_once_with(
+        "https://gsa.apple.com/auth", headers=headers, verify=False, timeout=10)
     assert sms_id == 7
     assert headers["X-Anisette"] == "1"
+
+
+def test_request_sms_code_uses_first_number_from_two_sv_shape():
+    boot_args = (
+        '{"direct": {"twoSV": {"phoneNumberVerification": '
+        '{"trustedPhoneNumbers": [{"id": 9}, {"id": 10}]}}}}'
+    )
+    auth_resp = _mock_response(text=f'<script class="boot_args">{boot_args}</script>')
+
+    with patch.object(gsa, "generate_anisette_headers", return_value={}), \
+            patch.object(gsa.requests, "get", return_value=auth_resp):
+        _, sms_id = gsa.request_sms_code("dsid-1", "token-1")
+
+    assert sms_id == 9
+
+
+def test_request_sms_code_falls_back_to_id_one_when_boot_args_unparseable():
+    auth_resp = _mock_response(text='<script class="boot_args">{not json</script>')
+
+    with patch.object(gsa, "generate_anisette_headers", return_value={}), \
+            patch.object(gsa.requests, "get", return_value=auth_resp):
+        _, sms_id = gsa.request_sms_code("dsid-1", "token-1")
+
+    assert sms_id == 1
 
 
 def test_request_sms_code_defaults_to_phone_id_one_when_boot_args_missing():
@@ -426,23 +451,38 @@ def test_list_trusted_phone_numbers_parses_boot_args():
             patch.object(gsa.requests, "get", return_value=auth_resp) as mock_get:
         headers, numbers = gsa.list_trusted_phone_numbers("dsid-1", "token-1")
 
-    mock_get.assert_called_once_with("https://gsa.apple.com/auth", headers=headers, verify=False)
+    mock_get.assert_called_once_with(
+        "https://gsa.apple.com/auth", headers=headers, verify=False, timeout=10)
     assert numbers == [{"id": 7, "number": "+1 •••• •••1234"}]
     assert headers["X-Anisette"] == "1"
 
 
-def test_list_trusted_phone_numbers_returns_empty_list_when_boot_args_missing():
+def test_list_trusted_phone_numbers_returns_none_when_boot_args_missing():
+    # None (as opposed to []) means the auth page itself couldn't be parsed -
+    # the caller needs to tell that apart from a well-formed page reporting
+    # zero trusted phone numbers.
     auth_resp = _mock_response(text="<html>no script here</html>")
 
     with patch.object(gsa, "generate_anisette_headers", return_value={}), \
             patch.object(gsa.requests, "get", return_value=auth_resp):
         _, numbers = gsa.list_trusted_phone_numbers("dsid-1", "token-1")
 
-    assert numbers == []
+    assert numbers is None
 
 
-def test_list_trusted_phone_numbers_returns_empty_list_on_malformed_json():
+def test_list_trusted_phone_numbers_returns_none_on_malformed_json():
     auth_resp = _mock_response(text='<script class="boot_args">{not json</script>')
+
+    with patch.object(gsa, "generate_anisette_headers", return_value={}), \
+            patch.object(gsa.requests, "get", return_value=auth_resp):
+        _, numbers = gsa.list_trusted_phone_numbers("dsid-1", "token-1")
+
+    assert numbers is None
+
+
+def test_list_trusted_phone_numbers_returns_empty_list_when_boot_args_has_no_phone_numbers():
+    boot_args = '{"direct": {"unexpected": "x"}}'
+    auth_resp = _mock_response(text=f'<script class="boot_args">{boot_args}</script>')
 
     with patch.object(gsa, "generate_anisette_headers", return_value={}), \
             patch.object(gsa.requests, "get", return_value=auth_resp):
