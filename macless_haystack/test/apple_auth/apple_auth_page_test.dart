@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -140,6 +141,102 @@ void main() {
     var textMeButton =
         tester.widget<TextButton>(find.widgetWithText(TextButton, 'Text me instead'));
     expect(textMeButton.onPressed, isNotNull);
+  });
+
+  testWidgets('a failed verify after a resend resets the hint and cooldown', (tester) async {
+    var client = MockClient((request) async {
+      if (request.url.path == '/auth/apple/login') {
+        return http.Response('{"status":"code_required","method":"trusted_device"}', 200);
+      }
+      if (request.url.path == '/auth/apple/resend') {
+        return http.Response('{"status":"code_required","method":"sms","phone":"+1 ***1234"}', 200);
+      }
+      if (request.url.path == '/auth/apple/verify') {
+        return http.Response('{"error":"invalid_code"}', 401);
+      }
+      fail('unexpected request to ${request.url.path}');
+    });
+
+    await _pumpToCodeStep(tester, client: client);
+    await tester.tap(find.widgetWithText(TextButton, 'Text me instead'));
+    await tester.pumpAndSettle();
+    expect(find.text('Code sent by SMS to +1 ***1234'), findsOneWidget);
+
+    await tester.enterText(find.widgetWithText(TextField, '2FA code'), '000000');
+    await tester.tap(find.widgetWithText(ElevatedButton, 'Submit code'));
+    await tester.pumpAndSettle();
+
+    // Back on the credentials step - log in again to reach a fresh code step.
+    await tester.enterText(find.widgetWithText(TextFormField, 'Apple ID'), 'id@example.com');
+    await tester.enterText(find.widgetWithText(TextFormField, 'Password'), 'hunter2');
+    await tester.tap(find.widgetWithText(ElevatedButton, 'Log in'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Enter the code shown on your trusted device'), findsOneWidget);
+    expect(find.text('Code sent by SMS to +1 ***1234'), findsNothing);
+    var textMeButton = tester.widget<TextButton>(find.widgetWithText(TextButton, 'Text me instead'));
+    expect(textMeButton.onPressed, isNotNull);
+  });
+
+  testWidgets('Submit and Use a different Apple ID disable while a resend is in flight', (tester) async {
+    var resendCompleter = Completer<http.Response>();
+    var client = MockClient((request) async {
+      if (request.url.path == '/auth/apple/login') {
+        return http.Response('{"status":"code_required","method":"sms"}', 200);
+      }
+      if (request.url.path == '/auth/apple/resend') {
+        return resendCompleter.future;
+      }
+      fail('unexpected request to ${request.url.path}');
+    });
+
+    await _pumpToCodeStep(tester, client: client);
+    await tester.tap(find.widgetWithText(TextButton, 'Text me instead'));
+    await tester.pump(); // request started, still pending
+
+    var submitButton = tester.widget<ElevatedButton>(find.widgetWithText(ElevatedButton, 'Submit code'));
+    var useOtherIdButton =
+        tester.widget<TextButton>(find.widgetWithText(TextButton, 'Use a different Apple ID'));
+    expect(submitButton.onPressed, isNull);
+    expect(useOtherIdButton.onPressed, isNull);
+
+    resendCompleter.complete(http.Response('{"status":"code_required","method":"sms","phone":null}', 200));
+    await tester.pumpAndSettle();
+
+    submitButton = tester.widget<ElevatedButton>(find.widgetWithText(ElevatedButton, 'Submit code'));
+    expect(submitButton.onPressed, isNotNull);
+  });
+
+  testWidgets('a resend response that arrives after the page is gone is ignored', (tester) async {
+    // Submit and "Use a different Apple ID" are disabled while resending
+    // (see the test above), so the only way to leave mid-resend is the
+    // page-level back navigation, which - like the system back gesture -
+    // bypasses in-page button state entirely.
+    var resendCompleter = Completer<http.Response>();
+    var client = MockClient((request) async {
+      if (request.url.path == '/auth/apple/login') {
+        return http.Response('{"status":"code_required","method":"sms"}', 200);
+      }
+      if (request.url.path == '/auth/apple/resend') {
+        return resendCompleter.future;
+      }
+      fail('unexpected request to ${request.url.path}');
+    });
+
+    await _pumpToCodeStep(tester, client: client);
+    await tester.tap(find.widgetWithText(TextButton, 'Text me instead'));
+    await tester.pump();
+
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+    expect(find.byType(AppleAuthPage), findsNothing);
+
+    // The response finally arrives after the page is gone - must not throw
+    // (setState after dispose) or do anything observable.
+    resendCompleter.complete(http.Response('{"status":"code_required","method":"sms","phone":"+1 ***1234"}', 200));
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('the 2FA code field keeps working after a resend', (tester) async {
