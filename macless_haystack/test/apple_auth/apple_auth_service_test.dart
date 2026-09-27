@@ -169,6 +169,25 @@ void main() {
     );
   });
 
+  test('resendCode throws AppleAuthException (not a TypeError) when method is missing', () async {
+    var client = MockClient((request) async => http.Response('{"status":"code_required","phone":null}', 200));
+
+    expect(
+      () => AppleAuthService.resendCode(httpsUrl, '', '', AppleResendMode.sms, client: client),
+      throwsA(isA<AppleAuthException>()),
+    );
+  });
+
+  test('resendCode throws AppleAuthException (not a TypeError) when method is not a string', () async {
+    var client = MockClient(
+        (request) async => http.Response('{"status":"code_required","method":7,"phone":null}', 200));
+
+    expect(
+      () => AppleAuthService.resendCode(httpsUrl, '', '', AppleResendMode.sms, client: client),
+      throwsA(isA<AppleAuthException>()),
+    );
+  });
+
   test('logout posts to /auth/apple/logout with basic auth', () async {
     String? authHeader;
     var client = MockClient((request) async {

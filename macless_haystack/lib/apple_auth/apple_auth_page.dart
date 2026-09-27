@@ -60,6 +60,10 @@ class _AppleAuthPageState extends State<AppleAuthPage> {
   AppleResendMode? _resendMode;
   DateTime? _resendCooldownUntil;
   Timer? _resendCooldownTimer;
+  // Bumped by _resetResendState so a resend response that arrives after the
+  // step already moved on (a different login attempt, or back to
+  // credentials) is recognized as stale and ignored.
+  int _resendGeneration = 0;
 
   @override
   void initState() {
@@ -125,6 +129,14 @@ class _AppleAuthPageState extends State<AppleAuthPage> {
         case 'invalid_mode':
         case 'invalid_phone_id':
           return "Couldn't request a new code. Please try again.";
+        case 'resend_too_soon':
+          return 'Please wait a moment before requesting another code.';
+        case 'too_many_resends':
+          return 'Too many code requests. Please log in again.';
+        case 'apple_refused_code':
+          return "Apple couldn't send a new code right now. Please try again.";
+        case 'apple_page_unrecognized':
+          return "Couldn't reach Apple's verification page. Please try again.";
         default:
           return e.message ?? 'Login failed.';
       }
@@ -146,6 +158,7 @@ class _AppleAuthPageState extends State<AppleAuthPage> {
       );
       if (!mounted) return;
       if (result.authenticated) {
+        _resetResendState();
         Navigator.of(context).pop();
         return;
       }
@@ -164,7 +177,6 @@ class _AppleAuthPageState extends State<AppleAuthPage> {
   }
 
   void _useDifferentAppleId() {
-    _resendCooldownTimer?.cancel();
     setState(() {
       _step = _AppleAuthStep.credentials;
       _error = null;
@@ -172,11 +184,22 @@ class _AppleAuthPageState extends State<AppleAuthPage> {
       // previous attempt's now-stale code pre-filled.
       _codeController.clear();
       _method = null;
-      _resending = false;
-      _resendPhone = null;
-      _resendMode = null;
-      _resendCooldownUntil = null;
+      _resetResendState();
     });
+  }
+
+  /// Clears the resend hint/cooldown/timer and invalidates any resend
+  /// request still in flight, so its response is ignored if it arrives
+  /// after the step has moved on. Called whenever the code step is left
+  /// (back to credentials, or a completed login) and on a fresh attempt.
+  void _resetResendState() {
+    _resendGeneration++;
+    _resendCooldownTimer?.cancel();
+    _resendCooldownTimer = null;
+    _resending = false;
+    _resendPhone = null;
+    _resendMode = null;
+    _resendCooldownUntil = null;
   }
 
   bool get _resendOnCooldown =>
@@ -184,6 +207,7 @@ class _AppleAuthPageState extends State<AppleAuthPage> {
 
   Future<void> _resendCode(AppleResendMode mode) async {
     if (_resending || _resendOnCooldown) return;
+    final generation = _resendGeneration;
     setState(() {
       _resending = true;
       _error = null;
@@ -193,11 +217,11 @@ class _AppleAuthPageState extends State<AppleAuthPage> {
         widget.endpointUrl, widget.endpointUser, widget.endpointPass, mode,
         client: widget.httpClient,
       );
-      if (!mounted) return;
+      if (!mounted || generation != _resendGeneration) return;
       _resendCooldownTimer?.cancel();
       var cooldownUntil = DateTime.now().add(_resendCooldown);
       _resendCooldownTimer = Timer(_resendCooldown, () {
-        if (mounted) setState(() {});
+        if (mounted && generation == _resendGeneration) setState(() {});
       });
       setState(() {
         _resending = false;
@@ -206,7 +230,7 @@ class _AppleAuthPageState extends State<AppleAuthPage> {
         _resendCooldownUntil = cooldownUntil;
       });
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted || generation != _resendGeneration) return;
       setState(() {
         _resending = false;
         _error = _describeError(e);
@@ -227,6 +251,7 @@ class _AppleAuthPageState extends State<AppleAuthPage> {
         client: widget.httpClient,
       );
       if (!mounted) return;
+      _resetResendState();
       Navigator.of(context).pop();
     } catch (e) {
       if (!mounted) return;
@@ -237,6 +262,7 @@ class _AppleAuthPageState extends State<AppleAuthPage> {
         _step = _AppleAuthStep.credentials;
         _error = _describeError(e);
         _submitting = false;
+        _resetResendState();
       });
     }
   }
@@ -385,7 +411,7 @@ class _AppleAuthPageState extends State<AppleAuthPage> {
                   ),
                   const SizedBox(height: 16),
                   ElevatedButton(
-                    onPressed: (_submitting || _loggingOut) ? null : _submitCode,
+                    onPressed: (_submitting || _loggingOut || _resending) ? null : _submitCode,
                     child: _submitting
                         ? const SizedBox(
                             height: 16, width: 16, child: CircularProgressIndicator(strokeWidth: 2))
@@ -414,7 +440,7 @@ class _AppleAuthPageState extends State<AppleAuthPage> {
                   ),
                   const SizedBox(height: 8),
                   TextButton(
-                    onPressed: _submitting ? null : _useDifferentAppleId,
+                    onPressed: (_submitting || _resending) ? null : _useDifferentAppleId,
                     child: const Text('Use a different Apple ID'),
                   ),
                 ],

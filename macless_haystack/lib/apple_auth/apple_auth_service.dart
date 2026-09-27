@@ -183,8 +183,12 @@ class AppleAuthService {
       'mode': mode == AppleResendMode.voice ? 'voice' : 'sms',
     }, client: client);
 
+    var methodValue = decoded['method'];
+    if (methodValue is! String) {
+      throw AppleAuthException('unknown_method', 'Missing or invalid resend method in response');
+    }
     return AppleResendResult(
-      method: _parseResendMode(decoded['method']),
+      method: _parseResendMode(methodValue),
       phone: decoded['phone'] as String?,
     );
   }
