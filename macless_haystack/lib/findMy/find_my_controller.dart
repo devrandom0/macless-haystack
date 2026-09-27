@@ -24,7 +24,7 @@ import '../preferences/user_preferences_model.dart';
 typedef ComputedLocationReports = ({
   List<FindMyLocationReport> reports,
   int newCount,
-  bool appleSessionStale,
+  bool? appleSessionStale,
 });
 
 class FindMyController {

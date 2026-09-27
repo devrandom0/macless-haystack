@@ -50,6 +50,53 @@ int countNewReports(List<FindMyLocationReport> reports, Accessory accessory) {
   return reports.where((r) => !accessory.containsHash(r.hash)).length;
 }
 
+/// Combines each accessory's own fetch result (in the same order as
+/// [accessories]) into the batch-level new-report count and the shared
+/// apple-session-stale signal.
+///
+/// [appleSessionStale] is null when nothing in the batch had an opinion -
+/// no accessories were fetched at all, or every result came from an older
+/// server - and otherwise true if any accessory's own result said so
+/// (it's one shared server-side session, not a per-accessory one).
+({int newCount, bool? appleSessionStale}) combineLocationReportResults(
+  List<ComputedLocationReports> reportsForAccessories,
+  Iterable<Accessory> accessories,
+) {
+  int newCount = 0;
+  for (var i = 0; i < reportsForAccessories.length; i++) {
+    newCount += countNewReports(
+      reportsForAccessories[i].reports,
+      accessories.elementAt(i),
+    );
+  }
+  var opinions = reportsForAccessories
+      .map((result) => result.appleSessionStale)
+      .whereType<bool>();
+  var appleSessionStale = opinions.isEmpty
+      ? null
+      : opinions.any((stale) => stale);
+  return (newCount: newCount, appleSessionStale: appleSessionStale);
+}
+
+/// Runs [compute], folding a thrown [AppleSessionExpiredException] into
+/// the same non-throwing result shape every other accessory's fetch
+/// returns - one accessory hitting the no-cache-fallback case must not
+/// make [Future.wait] abort the whole batch (or leak a raw exception past
+/// callers that only expect the report data itself to fail).
+Future<ComputedLocationReports> catchingExpiredAppleSession(
+  Future<ComputedLocationReports> Function() compute,
+) async {
+  try {
+    return await compute();
+  } on AppleSessionExpiredException {
+    return (
+      reports: <FindMyLocationReport>[],
+      newCount: 0,
+      appleSessionStale: true,
+    );
+  }
+}
+
 class AccessoryRegistry extends ChangeNotifier {
   var _storage = const FlutterSecureStorage();
   List<Accessory> _accessories = [];
@@ -227,12 +274,12 @@ class AccessoryRegistry extends ChangeNotifier {
   ///
   /// Returns how many reports are genuinely new data, not just the total
   /// size of whatever was returned (which may be entirely already-known
-  /// cached reports), plus whether the server's Apple session is stale (see
-  /// [ComputedLocationReports.appleSessionStale] - this ORs it across every
-  /// accessory fetched, since a stale session is a single, shared server
-  /// state, not a per-accessory one). [force] bypasses the endpoint's
-  /// freshness cache and asks Apple directly.
-  Future<({int newCount, bool appleSessionStale})> loadLocationReports(
+  /// cached reports), plus whether the server's Apple session is stale
+  /// (see [combineLocationReportResults] - null when nothing in the batch
+  /// had an opinion, e.g. no active accessories or an older server).
+  /// [force] bypasses the endpoint's freshness cache and asks Apple
+  /// directly.
+  Future<({int newCount, bool? appleSessionStale})> loadLocationReports(
     Iterable<Accessory> currentAccessories, {
     bool force = false,
   }) async {
@@ -257,18 +304,16 @@ class AccessoryRegistry extends ChangeNotifier {
 
       hashedPublicKeys.add(keyPair);
 
-      var locationRequest = _computeResultsCatchingExpiredSession(
-        hashedPublicKeys,
-        url,
-        force: force,
+      var locationRequest = catchingExpiredAppleSession(
+        () => FindMyController.computeResults(hashedPublicKeys, url, force: force),
       );
       runningLocationRequests.add(locationRequest);
     }
 
     var reportsForAccessories = await Future.wait(runningLocationRequests);
-    int out = 0;
-    var appleSessionStale = reportsForAccessories.any(
-      (result) => result.appleSessionStale,
+    var combined = combineLocationReportResults(
+      reportsForAccessories,
+      currentAccessories,
     );
     var retentionDays =
         Settings.getValue<int>(numberOfDaysToFetch, defaultValue: 7) ?? 7;
@@ -276,7 +321,6 @@ class AccessoryRegistry extends ChangeNotifier {
     for (var i = 0; i < currentAccessories.length; i++) {
       var accessory = currentAccessories.elementAt(i);
       var reports = reportsForAccessories.elementAt(i).reports;
-      out += countNewReports(reports, accessory);
       logger.i(
         '${reports.length} reports fetched for ${accessory.hashedPublicKey} in total',
       );
@@ -314,33 +358,7 @@ class AccessoryRegistry extends ChangeNotifier {
 
     initialLoadFinished = true;
     notifyListeners();
-    return (newCount: out, appleSessionStale: appleSessionStale);
-  }
-
-  /// Runs [FindMyController.computeResults], folding a thrown
-  /// [AppleSessionExpiredException] into the same non-throwing result shape
-  /// every other accessory's fetch returns - one accessory hitting the
-  /// no-cache-fallback case must not make [Future.wait] abort the whole
-  /// batch or throw a raw exception past callers that only expect the
-  /// report data itself to fail.
-  Future<ComputedLocationReports> _computeResultsCatchingExpiredSession(
-    List<FindMyKeyPair> hashedPublicKeys,
-    String? url, {
-    bool force = false,
-  }) async {
-    try {
-      return await FindMyController.computeResults(
-        hashedPublicKeys,
-        url,
-        force: force,
-      );
-    } on AppleSessionExpiredException {
-      return (
-        reports: <FindMyLocationReport>[],
-        newCount: 0,
-        appleSessionStale: true,
-      );
-    }
+    return combined;
   }
 
   Future<void> _storeHistory(
