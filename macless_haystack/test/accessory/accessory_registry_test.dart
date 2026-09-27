@@ -1,5 +1,6 @@
 import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:flutter_settings_screens/flutter_settings_screens.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:macless_haystack/accessory/accessory_battery.dart';
@@ -12,6 +13,7 @@ import 'package:macless_haystack/location/location_model.dart';
 import 'package:macless_haystack/notifications/battery_notification_service.dart';
 import 'package:mockito/annotations.dart';
 import 'package:mockito/mockito.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:test/test.dart';
 
 import 'accessory_registry_test.mocks.dart';
@@ -930,6 +932,60 @@ void main() {
     test('keeps an entry from exactly retentionDays ago (window truncates to midnight)', () {
       var entry = entryEndingDaysAgo(7);
       expect(withinRetentionWindow([entry], 7), [entry]);
+    });
+  });
+
+  group('loadLocationReports', () {
+    // Unlike the rest of this file, loadLocationReports itself reads
+    // Settings directly (endpointUrl, numberOfDaysToFetch) - a real
+    // Settings.init() with an in-memory store is used here rather than
+    // adding yet another test-only seam for it. This swaps a plain Dart
+    // object (no platform channel), so it needs no Flutter test binding.
+    setUpAll(() async {
+      SharedPreferences.setMockInitialValues({});
+      await Settings.init();
+    });
+
+    Accessory freshAccessory() => Accessory(
+        id: 'load-location-reports-test',
+        name: 'Test',
+        hashedPublicKey: '',
+        datePublished: null,
+        hashesWithTS: {},
+        locationHistory: [],
+        lastBatteryStatus: null,
+        additionalKeys: List.empty())
+      ..locationModel = locationModel;
+
+    /// A report that reads as already-decrypted ([FindMyLocationReport
+    /// .isEncrypted] is false), same as the other tests in this file -
+    /// but [FindMyLocationReport.decrypt] still awaits a real 1ms delay
+    /// regardless, which is what makes this test able to catch
+    /// [AccessoryRegistry.loadLocationReports] returning before that
+    /// settles.
+    FindMyLocationReport freshReport() => FindMyLocationReport.withHash(
+          1,
+          2,
+          DateTime(2024, 1, 1, 8, 0, 0),
+          DateTime.now().microsecondsSinceEpoch.toString(),
+        );
+
+    test(
+        'locationHistory holds the new entries by the time loadLocationReports returns',
+        () async {
+      var accessory = freshAccessory();
+      registry.setFetchReportsForAccessory =
+          (Accessory accessory, String? url, {required bool force}) async {
+        return (
+          reports: [freshReport()],
+          newCount: 1,
+          appleSessionStale: null,
+        );
+      };
+
+      await registry.loadLocationReports([accessory]);
+
+      expect(accessory.locationHistory, hasLength(1));
     });
   });
 }
