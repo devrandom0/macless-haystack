@@ -298,7 +298,7 @@ class ServerHandler(BaseHTTPRequestHandler):
         except requests.exceptions.ConnectTimeout:
             logger.error("Timeout to " + mh_config.getAnisetteServer() +
                          ", is your anisette running and accepting Connections?")
-            self.send_response(504)
+            self._send_json(504, {"error": "anisette_timeout"})
         except Exception as e:
             logger.error(f"Unknown error occurred {e}", exc_info=True)
             # Only reachable when there's no working history store to fall
@@ -309,7 +309,7 @@ class ServerHandler(BaseHTTPRequestHandler):
             if _is_apple_auth_exception(e):
                 self._send_json(503, {"error": "apple_session_expired"})
             else:
-                self.send_response(501)
+                self._send_json(501, {"error": "internal_error"})
 
     def _handle_post_history_devices(self, body):
         if tracked_device_store is None or history_encryption_key is None:
