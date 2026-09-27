@@ -2,6 +2,7 @@ import 'dart:math';
 import 'dart:ui' show lerpDouble;
 
 import 'package:flutter/material.dart';
+import 'package:flutter_settings_screens/flutter_settings_screens.dart';
 import 'package:flutter_slidable/flutter_slidable.dart';
 import 'package:provider/provider.dart';
 import 'package:latlong2/latlong.dart';
@@ -11,6 +12,7 @@ import 'package:macless_haystack/accessory/accessory_list_item_placeholder.dart'
 import 'package:macless_haystack/accessory/accessory_registry.dart';
 import 'package:macless_haystack/accessory/no_accessories.dart';
 import 'package:macless_haystack/location/location_model.dart';
+import 'package:macless_haystack/preferences/user_preferences_model.dart';
 
 import '../callbacks.dart';
 import 'accessory_model.dart';
@@ -334,6 +336,12 @@ class _AccessoryListState extends State<AccessoryList> {
           LengthUnit.Kilometer, locationModel.here!, accessory.lastLocation!);
       trailing = Text(formatDistance(km));
     }
+    // The compact list row (the default) is too short for a swipe action's
+    // icon+label column - it renders, but gets clipped top and bottom.
+    // Icon-only actions fit within that row height instead.
+    var isCompact =
+        Settings.getValue<bool>(compactAccessoryListKey, defaultValue: true) ??
+            true;
     // Get human readable location
     Widget tile = Slidable(
       key: ValueKey(accessory),
@@ -354,7 +362,7 @@ class _AccessoryListState extends State<AccessoryList> {
                         Theme.of(context).colorScheme.surfaceContainerHighest,
                     foregroundColor: Theme.of(context).colorScheme.primary,
                     icon: Icons.refresh,
-                    label: 'Refresh',
+                    label: isCompact ? null : 'Refresh',
                   ),
                 ]),
       endActionPane: ActionPane(
@@ -367,14 +375,14 @@ class _AccessoryListState extends State<AccessoryList> {
                   Theme.of(context).colorScheme.surfaceContainerHighest,
               foregroundColor: Theme.of(context).colorScheme.primary,
               icon: Icons.directions,
-              label: 'Navigate',
+              label: isCompact ? null : 'Navigate',
             ),
           if (accessory.isActive)
             SlidableAction(
               onPressed: (context) => openAccessoryHistory(context, accessory),
               backgroundColor: Theme.of(context).colorScheme.primary,
               icon: Icons.history,
-              label: 'History',
+              label: isCompact ? null : 'History',
             ),
           if (accessory.isActive)
             SlidableAction(
@@ -383,7 +391,7 @@ class _AccessoryListState extends State<AccessoryList> {
                   Theme.of(context).colorScheme.surfaceContainerHighest,
               foregroundColor: Theme.of(context).colorScheme.primary,
               icon: Icons.share,
-              label: 'Share',
+              label: isCompact ? null : 'Share',
             ),
           if (!accessory.isActive)
             SlidableAction(
@@ -397,7 +405,7 @@ class _AccessoryListState extends State<AccessoryList> {
               backgroundColor: Theme.of(context).colorScheme.primary,
               foregroundColor: Theme.of(context).colorScheme.onPrimary,
               icon: Icons.toggle_on_outlined,
-              label: 'Activate',
+              label: isCompact ? null : 'Activate',
             ),
         ],
       ),
