@@ -616,11 +616,28 @@ def test_trigger_phone_second_factor_rejects_unknown_mode():
         gsa.trigger_phone_second_factor({}, 7, "carrier_pigeon")
 
 
-def test_trigger_phone_second_factor_raises_on_http_error():
-    trigger_resp = _mock_response(status_code=400, ok=False)
-    trigger_resp.raise_for_status.side_effect = requests.HTTPError("400 Client Error")
+def test_trigger_phone_second_factor_raises_http_error_on_server_error():
+    trigger_resp = _mock_response(status_code=500, ok=False)
+    trigger_resp.raise_for_status.side_effect = requests.HTTPError("500 Server Error")
 
     with patch.object(gsa, "generate_anisette_headers", return_value={}), \
             patch.object(gsa.requests, "put", return_value=trigger_resp):
         with pytest.raises(requests.HTTPError):
             gsa.trigger_phone_second_factor({}, 7, "sms")
+
+
+def test_trigger_phone_second_factor_raises_apple_phone_trigger_rejected_on_client_error():
+    # Apple answers a rate-limited/precondition-failed trigger with a plain
+    # 4xx (412/423/429 have all been observed) - that's Apple actively
+    # refusing to send a code, not a network/transport failure, so it must
+    # not surface as the generic apple_unreachable a RequestException maps to.
+    trigger_resp = _mock_response(status_code=429, ok=False)
+    trigger_resp.raise_for_status.side_effect = requests.HTTPError("429 Client Error")
+
+    with patch.object(gsa, "generate_anisette_headers", return_value={}), \
+            patch.object(gsa.requests, "put", return_value=trigger_resp):
+        with pytest.raises(gsa.ApplePhoneTriggerRejected) as exc_info:
+            gsa.trigger_phone_second_factor({}, 7, "sms")
+
+    assert exc_info.value.status_code == 429
+    trigger_resp.raise_for_status.assert_not_called()

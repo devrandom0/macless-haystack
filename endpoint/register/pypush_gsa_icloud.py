@@ -30,6 +30,16 @@ class AppleAuthError(Exception):
     type, or a non-zero account status from Apple."""
 
 
+class ApplePhoneTriggerRejected(Exception):
+    """Raised when Apple answers a phone-code trigger with a plain 4xx -
+    it actively refused to send a code (rate-limited, precondition failed),
+    as opposed to a network failure or a 5xx from Apple's own infrastructure."""
+
+    def __init__(self, status_code):
+        self.status_code = status_code
+        super().__init__(f"apple_refused_code:{status_code}")
+
+
 @dataclass
 class NeedsSecondFactor:
     method: str
@@ -428,7 +438,9 @@ def list_trusted_phone_numbers(dsid, idms_token):
 def trigger_phone_second_factor(headers, phone_id, mode):
     """Asks Apple to send a new 2FA code to a trusted phone number, by SMS
     or voice call. `headers` comes from list_trusted_phone_numbers/
-    request_sms_code."""
+    request_sms_code. Raises ApplePhoneTriggerRejected (not an HTTPError) on
+    a 4xx - Apple refusing/rate-limiting the request, as opposed to a 5xx or
+    a network failure, both of which still propagate as a RequestException."""
     assert mode in ("sms", "voice")
     # Anisette metadata is meant to be single-use; regenerate it right before sending,
     # same as submit_sms_code/submit_trusted_device_code do before their own request.
@@ -443,9 +455,13 @@ def trigger_phone_second_factor(headers, phone_id, mode):
             verify=False,
             timeout=5,
     ) as resp:
-        resp.raise_for_status()
+        if resp.status_code >= 500:
+            resp.raise_for_status()
+        if resp.status_code >= 400:
+            raise ApplePhoneTriggerRejected(resp.status_code)
 
-    logger.debug(f"HTTP-Code: {resp.status_code} with {len(resp.text)} bytes")
+        logger.debug(f"HTTP-Code: {resp.status_code} with {len(resp.text)} bytes")
+
     logger.info(f"Requested {mode} 2FA code for phone id {phone_id}")
 
 
