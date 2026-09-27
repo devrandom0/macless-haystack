@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_settings_screens/flutter_settings_screens.dart';
 import 'package:logger/logger.dart';
+import 'package:macless_haystack/apple_auth/apple_auth_page.dart';
+import 'package:macless_haystack/apple_auth/apple_auth_service.dart';
 import 'package:macless_haystack/item_management/refresh_action.dart';
 import 'package:provider/provider.dart';
 import 'package:macless_haystack/accessory/accessory_registry.dart';
@@ -55,7 +57,7 @@ class Dashboard extends StatefulWidget {
   }
 }
 
-class _DashboardState extends State<Dashboard> {
+class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
   /// A list of the tabs displayed in the bottom tab bar.
   ///
   /// Only the per-tab chrome (icon/label/action button) lives here - the
@@ -92,9 +94,16 @@ class _DashboardState extends State<Dashboard> {
     const KeyManagement(),
   ];
 
+  /// Whether the server's Apple session is known to be expired - drives the
+  /// persistent "log in again" MaterialBanner. Set from either a fetch's
+  /// own appleSessionStale flag or an explicit /auth/apple/status check
+  /// (see [_checkAppleSessionStatus]), whichever last had an opinion.
+  bool _appleSessionExpired = false;
+
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
 
     // Initialize models and preferences
     var userPreferences = Provider.of<UserPreferences>(context, listen: false);
@@ -125,13 +134,102 @@ class _DashboardState extends State<Dashboard> {
       // field's current value is picked up by that first build anyway.
       _selectedIndex = 0;
     }
+    _checkAppleSessionStatus();
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     NotificationNavigation.pendingAccessoryId
         .removeListener(_switchToMapTabForPendingNotification);
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _checkAppleSessionStatus();
+    }
+  }
+
+  /// Checks the server's Apple auth status directly, independent of any
+  /// fetch, so a session that expired while the app was backgrounded shows
+  /// up as soon as it's resumed rather than waiting for the next refresh.
+  /// An endpoint that fails or doesn't have the status route at all (404,
+  /// older server) is ignored silently - this is a best-effort extra
+  /// signal, not the primary one (see [loadLocationUpdates]).
+  Future<void> _checkAppleSessionStatus() async {
+    try {
+      var url = Settings.getValue<String>(
+        endpointUrl,
+        defaultValue: 'http://localhost:6176',
+      )!;
+      var user = Settings.getValue<String>(endpointUser, defaultValue: '')!;
+      var pass = Settings.getValue<String>(endpointPass, defaultValue: '')!;
+      var status = await AppleAuthService.getStatus(url, user, pass);
+      _setAppleSessionExpired(!status.loggedIn);
+    } catch (_) {
+      // Best-effort only - ignored silently, see method doc.
+    }
+  }
+
+  /// Shows or hides the persistent "Apple ID login expired" banner and
+  /// keeps [_appleSessionExpired] in sync with the last thing that had an
+  /// opinion about it (a fetch's own flag, or [_checkAppleSessionStatus]).
+  void _setAppleSessionExpired(bool expired) {
+    if (!mounted || _appleSessionExpired == expired) return;
+    setState(() => _appleSessionExpired = expired);
+    if (expired) {
+      _showAppleSessionExpiredBanner();
+    } else {
+      ScaffoldMessenger.of(context).hideCurrentMaterialBanner();
+    }
+  }
+
+  void _showAppleSessionExpiredBanner() {
+    ScaffoldMessenger.of(context).showMaterialBanner(
+      MaterialBanner(
+        content: const Text(
+          'Apple ID login expired, locations are not updating.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () async {
+              ScaffoldMessenger.of(context).hideCurrentMaterialBanner();
+              var url = Settings.getValue<String>(
+                endpointUrl,
+                defaultValue: 'http://localhost:6176',
+              )!;
+              var user = Settings.getValue<String>(
+                endpointUser,
+                defaultValue: '',
+              )!;
+              var pass = Settings.getValue<String>(
+                endpointPass,
+                defaultValue: '',
+              )!;
+              await Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (context) => AppleAuthPage(
+                    endpointUrl: url,
+                    endpointUser: user,
+                    endpointPass: pass,
+                    initialLoggedIn: false,
+                  ),
+                ),
+              );
+              _checkAppleSessionStatus();
+            },
+            child: const Text('Re-login'),
+          ),
+          TextButton(
+            onPressed: () =>
+                ScaffoldMessenger.of(context).hideCurrentMaterialBanner(),
+            child: const Text('Dismiss'),
+          ),
+        ],
+      ),
+    );
   }
 
   /// Switches to the Map tab when a low-battery notification is tapped -
@@ -170,13 +268,14 @@ class _DashboardState extends State<Dashboard> {
       accessories = [accessory];
     }
     try {
-      var newCount = await accessoryRegistry.loadLocationReports(
+      var result = await accessoryRegistry.loadLocationReports(
         accessories.where((a) => a.isActive),
         force: force,
       );
+      _setAppleSessionExpired(result.appleSessionStale);
       var message = fetchFeedbackMessage(
         showFeedback: showFeedback,
-        newCount: newCount,
+        newCount: result.newCount,
         inactiveSkipped: inactive,
         force: force,
       );
