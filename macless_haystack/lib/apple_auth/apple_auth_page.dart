@@ -1,4 +1,7 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 import 'package:macless_haystack/apple_auth/apple_auth_service.dart';
 
 /// Login wizard for the server's Apple ID session: username/password,
@@ -17,12 +20,17 @@ class AppleAuthPage extends StatefulWidget {
   /// placeholder hint in the credentials fields, never affects behavior.
   final bool initialLoggedIn;
 
+  /// Overrides the HTTP client used for every AppleAuthService call. Only
+  /// meant for tests - production always leaves this null.
+  final http.Client? httpClient;
+
   const AppleAuthPage({
     super.key,
     required this.endpointUrl,
     required this.endpointUser,
     required this.endpointPass,
     this.initialLoggedIn = false,
+    this.httpClient,
   });
 
   @override
@@ -37,6 +45,8 @@ class _AppleAuthPageState extends State<AppleAuthPage> {
   final _passwordController = TextEditingController();
   final _codeController = TextEditingController();
 
+  static const _resendCooldown = Duration(seconds: 30);
+
   _AppleAuthStep _step = _AppleAuthStep.credentials;
   AppleAuthMethod? _method;
   bool _submitting = false;
@@ -44,6 +54,12 @@ class _AppleAuthPageState extends State<AppleAuthPage> {
   bool _obscurePassword = true;
   String? _error;
   late bool _showLoggedInHint;
+
+  bool _resending = false;
+  String? _resendPhone;
+  AppleResendMode? _resendMode;
+  DateTime? _resendCooldownUntil;
+  Timer? _resendCooldownTimer;
 
   @override
   void initState() {
@@ -56,6 +72,7 @@ class _AppleAuthPageState extends State<AppleAuthPage> {
     _usernameController.dispose();
     _passwordController.dispose();
     _codeController.dispose();
+    _resendCooldownTimer?.cancel();
     super.dispose();
   }
 
@@ -65,7 +82,8 @@ class _AppleAuthPageState extends State<AppleAuthPage> {
       _error = null;
     });
     try {
-      await AppleAuthService.logout(widget.endpointUrl, widget.endpointUser, widget.endpointPass);
+      await AppleAuthService.logout(widget.endpointUrl, widget.endpointUser, widget.endpointPass,
+          client: widget.httpClient);
       if (!mounted) return;
       setState(() {
         _showLoggedInHint = false;
@@ -102,6 +120,11 @@ class _AppleAuthPageState extends State<AppleAuthPage> {
           return "Couldn't reach Apple. Please try again.";
         case 'account_error':
           return e.message ?? 'Apple rejected this account.';
+        case 'no_trusted_phone':
+          return 'Apple has no trusted phone number on file for this account.';
+        case 'invalid_mode':
+        case 'invalid_phone_id':
+          return "Couldn't request a new code. Please try again.";
         default:
           return e.message ?? 'Login failed.';
       }
@@ -119,6 +142,7 @@ class _AppleAuthPageState extends State<AppleAuthPage> {
       var result = await AppleAuthService.login(
         widget.endpointUrl, widget.endpointUser, widget.endpointPass,
         _usernameController.text.trim(), _passwordController.text,
+        client: widget.httpClient,
       );
       if (!mounted) return;
       if (result.authenticated) {
@@ -140,6 +164,7 @@ class _AppleAuthPageState extends State<AppleAuthPage> {
   }
 
   void _useDifferentAppleId() {
+    _resendCooldownTimer?.cancel();
     setState(() {
       _step = _AppleAuthStep.credentials;
       _error = null;
@@ -147,7 +172,46 @@ class _AppleAuthPageState extends State<AppleAuthPage> {
       // previous attempt's now-stale code pre-filled.
       _codeController.clear();
       _method = null;
+      _resending = false;
+      _resendPhone = null;
+      _resendMode = null;
+      _resendCooldownUntil = null;
     });
+  }
+
+  bool get _resendOnCooldown =>
+      _resendCooldownUntil != null && DateTime.now().isBefore(_resendCooldownUntil!);
+
+  Future<void> _resendCode(AppleResendMode mode) async {
+    if (_resending || _resendOnCooldown) return;
+    setState(() {
+      _resending = true;
+      _error = null;
+    });
+    try {
+      var result = await AppleAuthService.resendCode(
+        widget.endpointUrl, widget.endpointUser, widget.endpointPass, mode,
+        client: widget.httpClient,
+      );
+      if (!mounted) return;
+      _resendCooldownTimer?.cancel();
+      var cooldownUntil = DateTime.now().add(_resendCooldown);
+      _resendCooldownTimer = Timer(_resendCooldown, () {
+        if (mounted) setState(() {});
+      });
+      setState(() {
+        _resending = false;
+        _resendMode = result.method;
+        _resendPhone = result.phone;
+        _resendCooldownUntil = cooldownUntil;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _resending = false;
+        _error = _describeError(e);
+      });
+    }
   }
 
   Future<void> _submitCode() async {
@@ -160,6 +224,7 @@ class _AppleAuthPageState extends State<AppleAuthPage> {
       await AppleAuthService.verifyCode(
         widget.endpointUrl, widget.endpointUser, widget.endpointPass,
         _codeController.text.trim(),
+        client: widget.httpClient,
       );
       if (!mounted) return;
       Navigator.of(context).pop();
@@ -177,6 +242,16 @@ class _AppleAuthPageState extends State<AppleAuthPage> {
   }
 
   String _methodLabel() {
+    if (_resendMode == AppleResendMode.voice) {
+      return _resendPhone != null
+          ? "You'll get a call at ${_resendPhone!}"
+          : "You'll get a call with your code";
+    }
+    if (_resendMode == AppleResendMode.sms) {
+      return _resendPhone != null
+          ? 'Code sent by SMS to ${_resendPhone!}'
+          : 'Code sent by SMS';
+    }
     return _method == AppleAuthMethod.trustedDevice
         ? 'Enter the code shown on your trusted device'
         : 'Enter the SMS code sent to your phone';
@@ -315,6 +390,27 @@ class _AppleAuthPageState extends State<AppleAuthPage> {
                         ? const SizedBox(
                             height: 16, width: 16, child: CircularProgressIndicator(strokeWidth: 2))
                         : const Text('Submit code'),
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextButton(
+                          onPressed: (_submitting || _resending || _resendOnCooldown)
+                              ? null
+                              : () => _resendCode(AppleResendMode.sms),
+                          child: const Text('Text me instead'),
+                        ),
+                      ),
+                      Expanded(
+                        child: TextButton(
+                          onPressed: (_submitting || _resending || _resendOnCooldown)
+                              ? null
+                              : () => _resendCode(AppleResendMode.voice),
+                          child: const Text('Call me instead'),
+                        ),
+                      ),
+                    ],
                   ),
                   const SizedBox(height: 8),
                   TextButton(
