@@ -47,6 +47,11 @@ class PendingAppleLogin:
     # requiring the user to re-enter their password mid-flow.
     dsid: str = None
     idms_token: str = None
+    # Throttle state for /auth/apple/resend - deliberately separate from
+    # started_at, so a resend never extends how long the password stays
+    # in memory.
+    last_resend_at: float = None
+    resend_count: int = 0
 
 
 pending_apple_login = None
@@ -494,6 +499,14 @@ class ServerHandler(BaseHTTPRequestHandler):
             self._send_json(400, {"error": "invalid_mode"})
             return
 
+        if pending.resend_count >= MAX_RESENDS_PER_LOGIN:
+            self._send_json(429, {"error": "too_many_resends"})
+            return
+        if pending.last_resend_at is not None and \
+                time.time() - pending.last_resend_at < RESEND_COOLDOWN_SECONDS:
+            self._send_json(429, {"error": "resend_too_soon"})
+            return
+
         try:
             headers, numbers = pypush_gsa_icloud.list_trusted_phone_numbers(
                 pending.dsid, pending.idms_token)
@@ -528,6 +541,7 @@ class ServerHandler(BaseHTTPRequestHandler):
         pending_apple_login = replace(
             pending, method="secondaryAuth",
             state={"headers": headers, "sms_id": phone["id"], "mode": mode},
+            last_resend_at=time.time(), resend_count=pending.resend_count + 1,
         )
         self._send_json(200, {"status": "code_required", "method": mode, "phone": phone["number"]})
 
@@ -563,6 +577,8 @@ _SECOND_FACTOR_METHOD_NAMES = {
 }
 
 _RESEND_MODES = ("sms", "voice")
+RESEND_COOLDOWN_SECONDS = 30
+MAX_RESENDS_PER_LOGIN = 5
 
 
 def _has_legacy_credentials(endpoint_user, endpoint_pass):

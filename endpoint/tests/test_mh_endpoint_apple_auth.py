@@ -173,12 +173,14 @@ def test_post_apple_login_requires_basic_auth_when_endpoint_credentials_configur
 
 
 def _set_pending(method="secondaryAuth", state=None, username="user@example.com",
-                  password="hunter2", age_seconds=0, dsid="d-1", idms_token="t-1"):
+                  password="hunter2", age_seconds=0, dsid="d-1", idms_token="t-1",
+                  last_resend_at=None, resend_count=0):
     mh_endpoint.pending_apple_login = mh_endpoint.PendingAppleLogin(
         method=method, state=state or {"headers": {}, "sms_id": 7},
         username=username, password=password,
         started_at=time.time() - age_seconds,
         dsid=dsid, idms_token=idms_token,
+        last_resend_at=last_resend_at, resend_count=resend_count,
     )
 
 
@@ -296,6 +298,56 @@ def test_post_apple_resend_returns_400_when_mode_unrecognized(server):
 
     assert status == 400
     assert body == {"error": "invalid_mode"}
+
+
+def test_post_apple_resend_returns_429_when_resent_too_soon(server):
+    _set_pending(last_resend_at=time.time() - 5)
+
+    with patch.object(mh_endpoint.pypush_gsa_icloud, "list_trusted_phone_numbers") as mock_list:
+        status, body = _post(server, '/auth/apple/resend', {"mode": "sms"})
+
+    assert status == 429
+    assert body == {"error": "resend_too_soon"}
+    mock_list.assert_not_called()
+
+
+def test_post_apple_resend_allows_resend_once_cooldown_elapses(server):
+    _set_pending(last_resend_at=time.time() - 31)
+
+    with patch.object(mh_endpoint.pypush_gsa_icloud, "list_trusted_phone_numbers",
+                       return_value=({}, _numbers((1, "+1 •••1234")))), \
+            patch.object(mh_endpoint.pypush_gsa_icloud, "trigger_phone_second_factor"):
+        status, body = _post(server, '/auth/apple/resend', {"mode": "sms"})
+
+    assert status == 200
+
+
+def test_post_apple_resend_returns_429_after_five_resends(server):
+    _set_pending(last_resend_at=time.time() - 3600, resend_count=5)
+
+    with patch.object(mh_endpoint.pypush_gsa_icloud, "list_trusted_phone_numbers") as mock_list:
+        status, body = _post(server, '/auth/apple/resend', {"mode": "sms"})
+
+    assert status == 429
+    assert body == {"error": "too_many_resends"}
+    mock_list.assert_not_called()
+
+
+def test_post_apple_resend_success_increments_resend_count_and_timestamp(server):
+    _set_pending(resend_count=2)
+    original_started_at = mh_endpoint.pending_apple_login.started_at
+
+    with patch.object(mh_endpoint.pypush_gsa_icloud, "list_trusted_phone_numbers",
+                       return_value=({}, _numbers((1, "+1 •••1234")))), \
+            patch.object(mh_endpoint.pypush_gsa_icloud, "trigger_phone_second_factor"):
+        status, body = _post(server, '/auth/apple/resend', {"mode": "sms"})
+
+    assert status == 200
+    assert mh_endpoint.pending_apple_login.resend_count == 3
+    assert mh_endpoint.pending_apple_login.last_resend_at is not None
+    assert time.time() - mh_endpoint.pending_apple_login.last_resend_at < 5
+    # A resend must not extend how long the password stays in memory.
+    assert mh_endpoint.pending_apple_login.started_at == original_started_at
 
 
 def test_post_apple_resend_returns_502_when_apple_unreachable_listing_numbers(server):
