@@ -11,6 +11,7 @@ import 'package:macless_haystack/accessory/secure_storage_upgrade.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:macless_haystack/findMy/find_my_controller.dart';
 import 'package:macless_haystack/findMy/models.dart';
+import 'package:macless_haystack/findMy/reports_fetcher.dart' show AppleSessionExpiredException;
 import 'package:flutter_settings_screens/flutter_settings_screens.dart';
 import 'package:macless_haystack/notifications/battery_notification_service.dart';
 import 'package:macless_haystack/preferences/user_preferences_model.dart';
@@ -226,9 +227,12 @@ class AccessoryRegistry extends ChangeNotifier {
   ///
   /// Returns how many reports are genuinely new data, not just the total
   /// size of whatever was returned (which may be entirely already-known
-  /// cached reports). [force] bypasses the endpoint's freshness cache and
-  /// asks Apple directly.
-  Future<int> loadLocationReports(
+  /// cached reports), plus whether the server's Apple session is stale (see
+  /// [ComputedLocationReports.appleSessionStale] - this ORs it across every
+  /// accessory fetched, since a stale session is a single, shared server
+  /// state, not a per-accessory one). [force] bypasses the endpoint's
+  /// freshness cache and asks Apple directly.
+  Future<({int newCount, bool appleSessionStale})> loadLocationReports(
     Iterable<Accessory> currentAccessories, {
     bool force = false,
   }) async {
@@ -253,7 +257,7 @@ class AccessoryRegistry extends ChangeNotifier {
 
       hashedPublicKeys.add(keyPair);
 
-      var locationRequest = FindMyController.computeResults(
+      var locationRequest = _computeResultsCatchingExpiredSession(
         hashedPublicKeys,
         url,
         force: force,
@@ -263,6 +267,9 @@ class AccessoryRegistry extends ChangeNotifier {
 
     var reportsForAccessories = await Future.wait(runningLocationRequests);
     int out = 0;
+    var appleSessionStale = reportsForAccessories.any(
+      (result) => result.appleSessionStale,
+    );
     var retentionDays =
         Settings.getValue<int>(numberOfDaysToFetch, defaultValue: 7) ?? 7;
     Map<Accessory, Future<List<Pair<dynamic, dynamic>>>> historyEntries = {};
@@ -307,7 +314,33 @@ class AccessoryRegistry extends ChangeNotifier {
 
     initialLoadFinished = true;
     notifyListeners();
-    return Future.value(out);
+    return (newCount: out, appleSessionStale: appleSessionStale);
+  }
+
+  /// Runs [FindMyController.computeResults], folding a thrown
+  /// [AppleSessionExpiredException] into the same non-throwing result shape
+  /// every other accessory's fetch returns - one accessory hitting the
+  /// no-cache-fallback case must not make [Future.wait] abort the whole
+  /// batch or throw a raw exception past callers that only expect the
+  /// report data itself to fail.
+  Future<ComputedLocationReports> _computeResultsCatchingExpiredSession(
+    List<FindMyKeyPair> hashedPublicKeys,
+    String? url, {
+    bool force = false,
+  }) async {
+    try {
+      return await FindMyController.computeResults(
+        hashedPublicKeys,
+        url,
+        force: force,
+      );
+    } on AppleSessionExpiredException {
+      return (
+        reports: <FindMyLocationReport>[],
+        newCount: 0,
+        appleSessionStale: true,
+      );
+    }
   }
 
   Future<void> _storeHistory(
