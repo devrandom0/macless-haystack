@@ -164,6 +164,75 @@ void main() {
     );
   });
 
+  test('resendCode throws AppleAuthHttpsRequiredException and makes no request over http', () async {
+    var client = MockClient((request) async {
+      fail('should not make a network request when the endpoint URL is not https');
+    });
+
+    expect(
+      () => AppleAuthService.resendCode(httpUrl, '', '', AppleResendMode.sms, client: client),
+      throwsA(isA<AppleAuthHttpsRequiredException>()),
+    );
+  });
+
+  test('resendCode posts the requested mode and returns the parsed result', () async {
+    Map<String, dynamic>? capturedBody;
+    var client = MockClient((request) async {
+      capturedBody = jsonDecode(request.body);
+      expect(request.url.toString(), '$httpsUrl/auth/apple/resend');
+      expect(request.method, 'POST');
+      return http.Response('{"status":"code_required","method":"sms","phone":"+1 ***1234"}', 200);
+    });
+
+    var result = await AppleAuthService.resendCode(httpsUrl, '', '', AppleResendMode.sms, client: client);
+
+    expect(capturedBody, {'mode': 'sms'});
+    expect(result.method, AppleResendMode.sms);
+    expect(result.phone, '+1 ***1234');
+  });
+
+  test('resendCode posts voice mode and tolerates a null phone', () async {
+    Map<String, dynamic>? capturedBody;
+    var client = MockClient((request) async {
+      capturedBody = jsonDecode(request.body);
+      return http.Response('{"status":"code_required","method":"voice","phone":null}', 200);
+    });
+
+    var result = await AppleAuthService.resendCode(httpsUrl, '', '', AppleResendMode.voice, client: client);
+
+    expect(capturedBody, {'mode': 'voice'});
+    expect(result.method, AppleResendMode.voice);
+    expect(result.phone, null);
+  });
+
+  test('resendCode throws AppleAuthException with the server error code on failure', () async {
+    var client = MockClient((request) async => http.Response('{"error":"no_trusted_phone"}', 400));
+
+    expect(
+      () => AppleAuthService.resendCode(httpsUrl, '', '', AppleResendMode.sms, client: client),
+      throwsA(predicate((e) => e is AppleAuthException && e.errorCode == 'no_trusted_phone')),
+    );
+  });
+
+  test('resendCode throws AppleAuthException (not a TypeError) when method is missing', () async {
+    var client = MockClient((request) async => http.Response('{"status":"code_required","phone":null}', 200));
+
+    expect(
+      () => AppleAuthService.resendCode(httpsUrl, '', '', AppleResendMode.sms, client: client),
+      throwsA(isA<AppleAuthException>()),
+    );
+  });
+
+  test('resendCode throws AppleAuthException (not a TypeError) when method is not a string', () async {
+    var client = MockClient(
+        (request) async => http.Response('{"status":"code_required","method":7,"phone":null}', 200));
+
+    expect(
+      () => AppleAuthService.resendCode(httpsUrl, '', '', AppleResendMode.sms, client: client),
+      throwsA(isA<AppleAuthException>()),
+    );
+  });
+
   test('logout posts to /auth/apple/logout with basic auth', () async {
     String? authHeader;
     var client = MockClient((request) async {

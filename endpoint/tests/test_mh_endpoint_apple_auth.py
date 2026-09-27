@@ -119,6 +119,8 @@ def test_post_apple_login_returns_code_required_for_second_factor(server):
     assert mh_endpoint.pending_apple_login.method == "secondaryAuth"
     assert mh_endpoint.pending_apple_login.username == "user@example.com"
     assert mh_endpoint.pending_apple_login.password == "hunter2"
+    assert mh_endpoint.pending_apple_login.dsid == "d-1"
+    assert mh_endpoint.pending_apple_login.idms_token == "t-1"
 
 
 def test_post_apple_login_returns_401_on_bad_credentials(server):
@@ -173,11 +175,14 @@ def test_post_apple_login_requires_basic_auth_when_endpoint_credentials_configur
 
 
 def _set_pending(method="secondaryAuth", state=None, username="user@example.com",
-                  password="hunter2", age_seconds=0):
+                  password="hunter2", age_seconds=0, dsid="d-1", idms_token="t-1",
+                  last_resend_at=None, resend_count=0):
     mh_endpoint.pending_apple_login = mh_endpoint.PendingAppleLogin(
         method=method, state=state or {"headers": {}, "sms_id": 7},
         username=username, password=password,
         started_at=time.time() - age_seconds,
+        dsid=dsid, idms_token=idms_token,
+        last_resend_at=last_resend_at, resend_count=resend_count,
     )
 
 
@@ -256,6 +261,261 @@ def test_post_apple_verify_keeps_pending_state_on_network_error(server):
 
     assert status == 502
     assert mh_endpoint.pending_apple_login is not None
+
+
+def _numbers(*entries):
+    return [{"id": i, "number": n} for i, n in entries]
+
+
+def test_post_apple_resend_returns_409_when_nothing_pending(server):
+    status, body = _post(server, '/auth/apple/resend', {"mode": "sms"})
+
+    assert status == 409
+    assert body == {"error": "no_pending_login"}
+
+
+def test_post_apple_resend_returns_410_when_pending_login_expired(server):
+    _set_pending(age_seconds=mh_endpoint.PENDING_LOGIN_TIMEOUT_SECONDS + 1)
+
+    status, body = _post(server, '/auth/apple/resend', {"mode": "sms"})
+
+    assert status == 410
+    assert body == {"error": "login_expired"}
+    assert mh_endpoint.pending_apple_login is None
+
+
+def test_post_apple_resend_returns_400_when_mode_missing(server):
+    _set_pending()
+
+    status, body = _post(server, '/auth/apple/resend', {})
+
+    assert status == 400
+    assert body == {"error": "invalid_mode"}
+
+
+def test_post_apple_resend_returns_400_when_mode_unrecognized(server):
+    _set_pending()
+
+    status, body = _post(server, '/auth/apple/resend', {"mode": "carrier_pigeon"})
+
+    assert status == 400
+    assert body == {"error": "invalid_mode"}
+
+
+def test_post_apple_resend_returns_429_when_resent_too_soon(server):
+    _set_pending(last_resend_at=time.time() - 5)
+
+    with patch.object(mh_endpoint.pypush_gsa_icloud, "list_trusted_phone_numbers") as mock_list:
+        status, body = _post(server, '/auth/apple/resend', {"mode": "sms"})
+
+    assert status == 429
+    assert body == {"error": "resend_too_soon"}
+    mock_list.assert_not_called()
+
+
+def test_post_apple_resend_allows_resend_once_cooldown_elapses(server):
+    _set_pending(last_resend_at=time.time() - 31)
+
+    with patch.object(mh_endpoint.pypush_gsa_icloud, "list_trusted_phone_numbers",
+                       return_value=({}, _numbers((1, "+1 •••1234")))), \
+            patch.object(mh_endpoint.pypush_gsa_icloud, "trigger_phone_second_factor"):
+        status, body = _post(server, '/auth/apple/resend', {"mode": "sms"})
+
+    assert status == 200
+
+
+def test_post_apple_resend_returns_429_after_five_resends(server):
+    _set_pending(last_resend_at=time.time() - 3600, resend_count=5)
+
+    with patch.object(mh_endpoint.pypush_gsa_icloud, "list_trusted_phone_numbers") as mock_list:
+        status, body = _post(server, '/auth/apple/resend', {"mode": "sms"})
+
+    assert status == 429
+    assert body == {"error": "too_many_resends"}
+    mock_list.assert_not_called()
+
+
+def test_post_apple_resend_success_increments_resend_count_and_timestamp(server):
+    _set_pending(resend_count=2)
+    original_started_at = mh_endpoint.pending_apple_login.started_at
+
+    with patch.object(mh_endpoint.pypush_gsa_icloud, "list_trusted_phone_numbers",
+                       return_value=({}, _numbers((1, "+1 •••1234")))), \
+            patch.object(mh_endpoint.pypush_gsa_icloud, "trigger_phone_second_factor"):
+        status, body = _post(server, '/auth/apple/resend', {"mode": "sms"})
+
+    assert status == 200
+    assert mh_endpoint.pending_apple_login.resend_count == 3
+    assert mh_endpoint.pending_apple_login.last_resend_at is not None
+    assert time.time() - mh_endpoint.pending_apple_login.last_resend_at < 5
+    # A resend must not extend how long the password stays in memory.
+    assert mh_endpoint.pending_apple_login.started_at == original_started_at
+
+
+def test_post_apple_resend_returns_502_when_apple_unreachable_listing_numbers(server):
+    _set_pending()
+
+    with patch.object(mh_endpoint.pypush_gsa_icloud, "list_trusted_phone_numbers",
+                       side_effect=requests.exceptions.ConnectTimeout()):
+        status, body = _post(server, '/auth/apple/resend', {"mode": "sms"})
+
+    assert status == 502
+    assert body == {"error": "apple_unreachable"}
+
+
+def test_post_apple_resend_returns_400_when_no_trusted_phone_numbers(server):
+    # An empty list means the auth page parsed fine and genuinely reported
+    # zero trusted numbers.
+    _set_pending()
+
+    with patch.object(mh_endpoint.pypush_gsa_icloud, "list_trusted_phone_numbers",
+                       return_value=({}, [])):
+        status, body = _post(server, '/auth/apple/resend', {"mode": "sms"})
+
+    assert status == 400
+    assert body == {"error": "no_trusted_phone"}
+
+
+def test_post_apple_resend_returns_502_when_boot_args_page_unrecognized(server):
+    # None (as opposed to []) means the auth page itself couldn't be parsed -
+    # that's an apple-side problem worth telling apart from "no phone on file".
+    _set_pending()
+
+    with patch.object(mh_endpoint.pypush_gsa_icloud, "list_trusted_phone_numbers",
+                       return_value=({}, None)):
+        status, body = _post(server, '/auth/apple/resend', {"mode": "sms"})
+
+    assert status == 502
+    assert body == {"error": "apple_page_unrecognized"}
+
+
+def test_post_apple_resend_returns_400_when_phone_id_is_a_bool(server):
+    # bool is a subclass of int in Python - True/False would otherwise
+    # silently match phone id 1/0.
+    _set_pending()
+
+    with patch.object(mh_endpoint.pypush_gsa_icloud, "list_trusted_phone_numbers",
+                       return_value=({}, _numbers((1, "+1 •••1234")))) as mock_list:
+        status, body = _post(server, '/auth/apple/resend', {"mode": "sms", "phoneId": True})
+
+    assert status == 400
+    assert body == {"error": "invalid_phone_id"}
+    mock_list.assert_called_once()
+
+
+def test_post_apple_resend_returns_400_when_phone_id_is_not_an_int(server):
+    _set_pending()
+
+    with patch.object(mh_endpoint.pypush_gsa_icloud, "list_trusted_phone_numbers",
+                       return_value=({}, _numbers((1, "+1 •••1234")))):
+        status, body = _post(server, '/auth/apple/resend', {"mode": "sms", "phoneId": "1"})
+
+    assert status == 400
+    assert body == {"error": "invalid_phone_id"}
+
+
+def test_post_apple_resend_returns_400_for_unknown_phone_id(server):
+    _set_pending()
+
+    with patch.object(mh_endpoint.pypush_gsa_icloud, "list_trusted_phone_numbers",
+                       return_value=({}, _numbers((1, "+1 •••1234")))):
+        status, body = _post(server, '/auth/apple/resend', {"mode": "sms", "phoneId": 99})
+
+    assert status == 400
+    assert body == {"error": "invalid_phone_id"}
+
+
+def test_post_apple_resend_defaults_to_first_trusted_phone(server):
+    _set_pending(dsid="d-1", idms_token="t-1")
+
+    with patch.object(mh_endpoint.pypush_gsa_icloud, "list_trusted_phone_numbers",
+                       return_value=({"h": "1"}, _numbers((1, "+1 •••1234"), (2, "+1 •••5678")))) as mock_list, \
+            patch.object(mh_endpoint.pypush_gsa_icloud, "trigger_phone_second_factor") as mock_trigger:
+        status, body = _post(server, '/auth/apple/resend', {"mode": "sms"})
+
+    mock_list.assert_called_once_with("d-1", "t-1")
+    mock_trigger.assert_called_once_with({"h": "1"}, 1, "sms")
+    assert status == 200
+    assert body == {"status": "code_required", "method": "sms", "phone": "+1 •••1234"}
+    assert mh_endpoint.pending_apple_login.method == "secondaryAuth"
+    assert mh_endpoint.pending_apple_login.state == {"headers": {"h": "1"}, "sms_id": 1, "mode": "sms"}
+
+
+def test_post_apple_resend_uses_requested_phone_id(server):
+    _set_pending()
+
+    with patch.object(mh_endpoint.pypush_gsa_icloud, "list_trusted_phone_numbers",
+                       return_value=({}, _numbers((1, "+1 •••1234"), (2, "+1 •••5678")))), \
+            patch.object(mh_endpoint.pypush_gsa_icloud, "trigger_phone_second_factor") as mock_trigger:
+        status, body = _post(server, '/auth/apple/resend', {"mode": "voice", "phoneId": 2})
+
+    mock_trigger.assert_called_once_with({}, 2, "voice")
+    assert status == 200
+    assert body == {"status": "code_required", "method": "voice", "phone": "+1 •••5678"}
+
+
+def test_post_apple_resend_returns_502_when_trigger_fails(server):
+    _set_pending()
+
+    with patch.object(mh_endpoint.pypush_gsa_icloud, "list_trusted_phone_numbers",
+                       return_value=({}, _numbers((1, "+1 •••1234")))), \
+            patch.object(mh_endpoint.pypush_gsa_icloud, "trigger_phone_second_factor",
+                          side_effect=requests.exceptions.ConnectTimeout()):
+        status, body = _post(server, '/auth/apple/resend', {"mode": "sms"})
+
+    assert status == 502
+    assert body == {"error": "apple_unreachable"}
+    # A failed trigger shouldn't discard the still-valid pending login.
+    assert mh_endpoint.pending_apple_login is not None
+
+
+def test_post_apple_resend_returns_429_when_apple_refuses_the_trigger(server):
+    _set_pending()
+    rejected = mh_endpoint.pypush_gsa_icloud.ApplePhoneTriggerRejected(429)
+
+    with patch.object(mh_endpoint.pypush_gsa_icloud, "list_trusted_phone_numbers",
+                       return_value=({}, _numbers((1, "+1 •••1234")))), \
+            patch.object(mh_endpoint.pypush_gsa_icloud, "trigger_phone_second_factor",
+                          side_effect=rejected):
+        status, body = _post(server, '/auth/apple/resend', {"mode": "sms"})
+
+    assert status == 429
+    assert body == {"error": "apple_refused_code", "status": 429}
+    # A refused trigger shouldn't discard the still-valid pending login either.
+    assert mh_endpoint.pending_apple_login is not None
+
+
+def test_post_apple_resend_returns_429_when_apple_refuses_the_trigger_with_412(server):
+    _set_pending()
+    rejected = mh_endpoint.pypush_gsa_icloud.ApplePhoneTriggerRejected(412)
+
+    with patch.object(mh_endpoint.pypush_gsa_icloud, "list_trusted_phone_numbers",
+                       return_value=({}, _numbers((1, "+1 •••1234")))), \
+            patch.object(mh_endpoint.pypush_gsa_icloud, "trigger_phone_second_factor",
+                          side_effect=rejected):
+        status, body = _post(server, '/auth/apple/resend', {"mode": "sms"})
+
+    assert status == 429
+    assert body == {"error": "apple_refused_code", "status": 412}
+
+
+def test_post_apple_resend_switched_pending_login_verifies_with_new_mode(server):
+    _set_pending()
+
+    with patch.object(mh_endpoint.pypush_gsa_icloud, "list_trusted_phone_numbers",
+                       return_value=({"h": "1"}, _numbers((1, "+1 •••1234")))), \
+            patch.object(mh_endpoint.pypush_gsa_icloud, "trigger_phone_second_factor"):
+        _post(server, '/auth/apple/resend', {"mode": "voice"})
+
+    with patch.object(mh_endpoint.pypush_gsa_icloud, "submit_second_factor_code") as mock_submit, \
+            patch.object(mh_endpoint.pypush_gsa_icloud, "gsa_authenticate", return_value={"adsid": "a-1"}), \
+            patch.object(mh_endpoint.pypush_gsa_icloud, "register_mobileme",
+                          return_value={"dsid": "d-1", "searchPartyToken": "spt-1"}):
+        status, body = _post(server, '/auth/apple/verify', {"code": "654321"})
+
+    assert status == 200
+    mock_submit.assert_called_once_with(
+        "secondaryAuth", {"headers": {"h": "1"}, "sms_id": 1, "mode": "voice"}, "654321")
 
 
 def test_get_apple_status_reports_not_logged_in_when_no_auth_json(server):

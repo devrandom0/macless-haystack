@@ -30,6 +30,16 @@ class AppleAuthError(Exception):
     type, or a non-zero account status from Apple."""
 
 
+class ApplePhoneTriggerRejected(Exception):
+    """Raised when Apple answers a phone-code trigger with a plain 4xx -
+    it actively refused to send a code (rate-limited, precondition failed),
+    as opposed to a network failure or a 5xx from Apple's own infrastructure."""
+
+    def __init__(self, status_code):
+        self.status_code = status_code
+        super().__init__(f"apple_refused_code:{status_code}")
+
+
 @dataclass
 class NeedsSecondFactor:
     method: str
@@ -336,44 +346,135 @@ def _prompt_for_code(initial_prompt, resend_fn):
 
 
 def request_sms_code(dsid, idms_token):
+    headers, numbers = list_trusted_phone_numbers(dsid, idms_token)
+    if numbers:
+        sms_id = numbers[0]["id"]
+    else:
+        sms_id = 1
+        logger.error("Key for sms id not found. Using the first phone number")
+
+    logger.info(f"Using phone with id {sms_id} for SMS2FA")
+    return headers, sms_id
+
+
+_MASKED_PHONE_NUMBER_FIELDS = ("numberWithDialCode", "obfuscatedNumber", "lastTwoDigits")
+
+
+def _masked_phone_number(entry):
+    """Returns the first of _MASKED_PHONE_NUMBER_FIELDS present as a string
+    on `entry`, or None. Deliberately does not fall back to a plain "number"
+    field - unlike the others, that one isn't documented as masked, so
+    surfacing it could leak the account's real phone number to the client."""
+    for field in _MASKED_PHONE_NUMBER_FIELDS:
+        value = entry.get(field)
+        if isinstance(value, str):
+            return value
+    return None
+
+
+def _extract_trusted_phone_numbers(boot_args):
+    """Returns a list of {'id', 'number'} dicts from the auth page's
+    boot_args, supporting both the classic direct.phoneNumberVerification
+    shape and the newer direct.twoSV.phoneNumberVerification shape some
+    accounts get. Each shape can carry a single trustedPhoneNumber and/or a
+    trustedPhoneNumbers list; entries with the same id are only kept once."""
+    direct = boot_args.get("direct", {})
+    two_sv = direct.get("twoSV", {})
+    candidates = [
+        direct.get("phoneNumberVerification"),
+        two_sv.get("phoneNumberVerification") if isinstance(two_sv, dict) else None,
+    ]
+
+    numbers = []
+    seen_ids = set()
+    for candidate in candidates:
+        if not isinstance(candidate, dict):
+            continue
+        entries = list(candidate.get("trustedPhoneNumbers") or [])
+        single = candidate.get("trustedPhoneNumber")
+        if isinstance(single, dict):
+            entries.append(single)
+        for entry in entries:
+            if not isinstance(entry, dict) or "id" not in entry:
+                continue
+            phone_id = entry["id"]
+            if phone_id in seen_ids:
+                continue
+            seen_ids.add(phone_id)
+            numbers.append({"id": phone_id, "number": _masked_phone_number(entry)})
+    return numbers
+
+
+def list_trusted_phone_numbers(dsid, idms_token):
+    """Fetches the auth page's boot_args and returns (headers, numbers) -
+    headers ready for trigger_phone_second_factor/submit_sms_code, and the
+    account's trusted phone numbers (masked, with their Apple-assigned ids).
+    `numbers` is None when the page itself couldn't be parsed (no boot_args
+    script tag, or not valid JSON) - callers need to tell that apart from a
+    well-formed page that just reports zero trusted phone numbers ([])."""
     headers = _common_2fa_headers(dsid, idms_token)
     headers["X-Apple-App-Info"] = "com.apple.gs.xcode.auth"
     headers["X-Xcode-Version"] = "11.2 (11B41)"
 
-    # Extract the "boot_args" from the auth page to get the id of the trusted phone number
     pattern = r'<script.*class="boot_args">\s*(.*?)\s*</script>'
-    with requests.get("https://gsa.apple.com/auth", headers=headers, verify=False) as auth:
+    with requests.get("https://gsa.apple.com/auth", headers=headers, verify=False, timeout=10) as auth:
         auth.raise_for_status()
-        sms_id = 1
         match = re.search(pattern, auth.text, re.DOTALL)
-        if match:
-            boot_args = json.loads(match.group(1).strip())
-            try:
-                sms_id = boot_args["direct"]["phoneNumberVerification"]["trustedPhoneNumber"]["id"]
-            except KeyError as e:
-                # Never log the raw boot_args - it can carry the account's
-                # (partially masked) trusted phone number.
-                logger.debug(f"boot_args parsed but missing expected keys ({len(match.group(1))} bytes)")
-                logger.error("Key for sms id not found. Using the first phone number")
-        else:
+        if not match:
             # Never log the raw page - it's undocumented, unauthenticated-
             # session-adjacent content from an authenticated Apple page.
             logger.debug(f"boot_args script tag not found in auth page ({len(auth.text)} bytes)")
-            logger.error("Script for sms id not found. Using the first phone number")
+            return headers, None
+        try:
+            boot_args = json.loads(match.group(1).strip())
+        except json.JSONDecodeError:
+            logger.debug("boot_args script tag present but not valid JSON")
+            return headers, None
+        numbers = _extract_trusted_phone_numbers(boot_args)
 
-        logger.info(f"Using phone with id {sms_id} for SMS2FA")
-
-    return headers, sms_id
+    return headers, numbers
 
 
-def submit_sms_code(headers, sms_id, code):
+def trigger_phone_second_factor(headers, phone_id, mode):
+    """Asks Apple to send a new 2FA code to a trusted phone number, by SMS
+    or voice call. `headers` comes from list_trusted_phone_numbers/
+    request_sms_code. Raises ApplePhoneTriggerRejected (not an HTTPError) on
+    a 4xx - Apple refusing/rate-limiting the request, as opposed to a 5xx or
+    a network failure, both of which still propagate as a RequestException."""
+    assert mode in ("sms", "voice")
+    # Anisette metadata is meant to be single-use; regenerate it right before sending,
+    # same as submit_sms_code/submit_trusted_device_code do before their own request.
+    trigger_headers = dict(headers)
+    trigger_headers.update(generate_anisette_headers())
+    body = {"phoneNumber": {"id": phone_id}, "mode": mode}
+
+    with requests.put(
+            "https://gsa.apple.com/auth/verify/phone/",
+            json=body,
+            headers=trigger_headers,
+            verify=False,
+            timeout=5,
+    ) as resp:
+        if resp.status_code >= 500:
+            resp.raise_for_status()
+        if resp.status_code >= 400:
+            raise ApplePhoneTriggerRejected(resp.status_code)
+
+        logger.debug(f"HTTP-Code: {resp.status_code} with {len(resp.text)} bytes")
+
+    logger.info(f"Requested {mode} 2FA code for phone id {phone_id}")
+
+
+def submit_sms_code(headers, sms_id, code, mode="sms"):
     # Anisette metadata is meant to be single-use; the trigger/wait/resend round trip
     # before this can stretch well past that, so regenerate it right before submitting.
     submit_headers = dict(headers)
     submit_headers.update(generate_anisette_headers())
-    body = {"phoneNumber": {"id": sms_id}, "mode": "sms", "securityCode": {"code": code}}
+    body = {"phoneNumber": {"id": sms_id}, "mode": mode, "securityCode": {"code": code}}
 
-    # Send the 2FA code to Apple
+    # Send the 2FA code to Apple. A wrong code comes back as a plain 400/401,
+    # not a 200 missing X-Apple-DSID, so only a server error is a transport
+    # failure - a client error is Apple telling us the code is invalid.
     with requests.post(
             "https://gsa.apple.com/auth/verify/phone/securitycode",
             json=body,
@@ -381,18 +482,19 @@ def submit_sms_code(headers, sms_id, code):
             verify=False,
             timeout=5,
     ) as resp:
-        resp.raise_for_status()
+        if resp.status_code >= 500:
+            resp.raise_for_status()
 
-    response = f"HTTP-Code: {resp.status_code} with {len(resp.text)} bytes"
-    logger.debug(response)
-    # Names only, never values - this response can carry session cookies
-    # (e.g. scnt, aasp) alongside the X-Apple-DSID this function checks for.
-    logger.debug(f"Response header names: {list(resp.headers.keys())}")
-    # Headers does not include Apple DSID, 2FA failed
-    if resp.ok and "X-Apple-DSID" in resp.headers:
-        logger.info("2FA successful")
-    else:
-        raise AppleAuthError("invalid_code")
+        response = f"HTTP-Code: {resp.status_code} with {len(resp.text)} bytes"
+        logger.debug(response)
+        # Names only, never values - this response can carry session cookies
+        # (e.g. scnt, aasp) alongside the X-Apple-DSID this function checks for.
+        logger.debug(f"Response header names: {list(resp.headers.keys())}")
+        # Headers does not include Apple DSID, 2FA failed
+        if resp.ok and "X-Apple-DSID" in resp.headers:
+            logger.info("2FA successful")
+        else:
+            raise AppleAuthError("invalid_code")
 
 
 def sms_second_factor(dsid, idms_token):
@@ -502,6 +604,7 @@ def submit_second_factor_code(method, state, code):
     if method == "trustedDeviceSecondaryAuth":
         submit_trusted_device_code(state["headers"], code)
     elif method == "secondaryAuth":
-        submit_sms_code(state["headers"], state["sms_id"], code)
+        mode = state.get("mode", "sms")
+        submit_sms_code(state["headers"], state["sms_id"], code, mode)
     else:
         raise AppleAuthError(f"unknown_auth_value:{method}")

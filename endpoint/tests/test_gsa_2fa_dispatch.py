@@ -208,9 +208,34 @@ def test_request_sms_code_extracts_phone_id_from_boot_args():
             patch.object(gsa.requests, "get", return_value=auth_resp) as mock_get:
         headers, sms_id = gsa.request_sms_code("dsid-1", "token-1")
 
-    mock_get.assert_called_once_with("https://gsa.apple.com/auth", headers=headers, verify=False)
+    mock_get.assert_called_once_with(
+        "https://gsa.apple.com/auth", headers=headers, verify=False, timeout=10)
     assert sms_id == 7
     assert headers["X-Anisette"] == "1"
+
+
+def test_request_sms_code_uses_first_number_from_two_sv_shape():
+    boot_args = (
+        '{"direct": {"twoSV": {"phoneNumberVerification": '
+        '{"trustedPhoneNumbers": [{"id": 9}, {"id": 10}]}}}}'
+    )
+    auth_resp = _mock_response(text=f'<script class="boot_args">{boot_args}</script>')
+
+    with patch.object(gsa, "generate_anisette_headers", return_value={}), \
+            patch.object(gsa.requests, "get", return_value=auth_resp):
+        _, sms_id = gsa.request_sms_code("dsid-1", "token-1")
+
+    assert sms_id == 9
+
+
+def test_request_sms_code_falls_back_to_id_one_when_boot_args_unparseable():
+    auth_resp = _mock_response(text='<script class="boot_args">{not json</script>')
+
+    with patch.object(gsa, "generate_anisette_headers", return_value={}), \
+            patch.object(gsa.requests, "get", return_value=auth_resp):
+        _, sms_id = gsa.request_sms_code("dsid-1", "token-1")
+
+    assert sms_id == 1
 
 
 def test_request_sms_code_defaults_to_phone_id_one_when_boot_args_missing():
@@ -243,6 +268,41 @@ def test_submit_sms_code_raises_apple_auth_error_when_dsid_header_missing():
     with patch.object(gsa, "generate_anisette_headers", return_value={}), \
             patch.object(gsa.requests, "post", return_value=submit_resp):
         with pytest.raises(gsa.AppleAuthError, match="invalid_code"):
+            gsa.submit_sms_code({}, 7, "000000")
+
+
+def test_submit_sms_code_raises_apple_auth_error_not_http_error_on_400(caplog):
+    # A wrong code gets a plain 400/401 back from Apple, not a 200 with a
+    # missing X-Apple-DSID header - that must map to AppleAuthError so the
+    # caller reports invalid_code, not apple_unreachable via a RequestException.
+    submit_resp = _mock_response(status_code=400, ok=False, headers={})
+    submit_resp.raise_for_status.side_effect = requests.HTTPError("400 Client Error")
+
+    with patch.object(gsa, "generate_anisette_headers", return_value={}), \
+            patch.object(gsa.requests, "post", return_value=submit_resp):
+        with pytest.raises(gsa.AppleAuthError, match="invalid_code"):
+            gsa.submit_sms_code({}, 7, "000000")
+
+    submit_resp.raise_for_status.assert_not_called()
+
+
+def test_submit_sms_code_raises_apple_auth_error_not_http_error_on_401(caplog):
+    submit_resp = _mock_response(status_code=401, ok=False, headers={})
+    submit_resp.raise_for_status.side_effect = requests.HTTPError("401 Client Error")
+
+    with patch.object(gsa, "generate_anisette_headers", return_value={}), \
+            patch.object(gsa.requests, "post", return_value=submit_resp):
+        with pytest.raises(gsa.AppleAuthError, match="invalid_code"):
+            gsa.submit_sms_code({}, 7, "000000")
+
+
+def test_submit_sms_code_raises_http_error_on_server_error():
+    submit_resp = _mock_response(status_code=500, ok=False, headers={})
+    submit_resp.raise_for_status.side_effect = requests.HTTPError("500 Server Error")
+
+    with patch.object(gsa, "generate_anisette_headers", return_value={}), \
+            patch.object(gsa.requests, "post", return_value=submit_resp):
+        with pytest.raises(requests.HTTPError):
             gsa.submit_sms_code({}, 7, "000000")
 
 
@@ -316,9 +376,268 @@ def test_submit_second_factor_code_dispatches_sms():
     with patch.object(gsa, "submit_sms_code") as mock_submit:
         gsa.submit_second_factor_code("secondaryAuth", {"headers": {"h": "1"}, "sms_id": 7}, "654321")
 
-    mock_submit.assert_called_once_with({"h": "1"}, 7, "654321")
+    mock_submit.assert_called_once_with({"h": "1"}, 7, "654321", "sms")
+
+
+def test_submit_second_factor_code_dispatches_voice_when_state_carries_that_mode():
+    with patch.object(gsa, "submit_sms_code") as mock_submit:
+        gsa.submit_second_factor_code(
+            "secondaryAuth", {"headers": {"h": "1"}, "sms_id": 7, "mode": "voice"}, "654321")
+
+    mock_submit.assert_called_once_with({"h": "1"}, 7, "654321", "voice")
 
 
 def test_submit_second_factor_code_raises_for_unknown_method():
     with pytest.raises(gsa.AppleAuthError):
         gsa.submit_second_factor_code("somethingElse", {}, "654321")
+
+
+def test_submit_sms_code_sends_voice_mode_when_requested():
+    submit_resp = _mock_response(headers={"X-Apple-DSID": "dsid-1"}, ok=True)
+
+    with patch.object(gsa, "generate_anisette_headers", return_value={}), \
+            patch.object(gsa.requests, "post", return_value=submit_resp) as mock_post:
+        gsa.submit_sms_code({}, 7, "654321", "voice")
+
+    assert mock_post.call_args.kwargs["json"] == {
+        "phoneNumber": {"id": 7}, "mode": "voice", "securityCode": {"code": "654321"},
+    }
+
+
+def test_extract_trusted_phone_numbers_from_classic_shape():
+    boot_args = {
+        "direct": {
+            "phoneNumberVerification": {
+                "trustedPhoneNumber": {"id": 1, "numberWithDialCode": "+1 •••• •••1234"},
+            },
+        },
+    }
+
+    numbers = gsa._extract_trusted_phone_numbers(boot_args)
+
+    assert numbers == [{"id": 1, "number": "+1 •••• •••1234"}]
+
+
+def test_extract_trusted_phone_numbers_from_two_sv_shape():
+    boot_args = {
+        "direct": {
+            "twoSV": {
+                "phoneNumberVerification": {
+                    "trustedPhoneNumbers": [
+                        {"id": 2, "numberWithDialCode": "+1 •••• •••5678"},
+                        {"id": 3, "numberWithDialCode": "+1 •••• •••9012"},
+                    ],
+                },
+            },
+        },
+    }
+
+    numbers = gsa._extract_trusted_phone_numbers(boot_args)
+
+    assert numbers == [
+        {"id": 2, "number": "+1 •••• •••5678"},
+        {"id": 3, "number": "+1 •••• •••9012"},
+    ]
+
+
+def test_extract_trusted_phone_numbers_merges_both_shapes_without_duplicates():
+    boot_args = {
+        "direct": {
+            "phoneNumberVerification": {
+                "trustedPhoneNumber": {"id": 1, "numberWithDialCode": "+1 •••• •••1234"},
+            },
+            "twoSV": {
+                "phoneNumberVerification": {
+                    "trustedPhoneNumbers": [
+                        {"id": 1, "numberWithDialCode": "+1 •••• •••1234"},
+                        {"id": 2, "numberWithDialCode": "+1 •••• •••5678"},
+                    ],
+                },
+            },
+        },
+    }
+
+    numbers = gsa._extract_trusted_phone_numbers(boot_args)
+
+    assert numbers == [
+        {"id": 1, "number": "+1 •••• •••1234"},
+        {"id": 2, "number": "+1 •••• •••5678"},
+    ]
+
+
+def test_extract_trusted_phone_numbers_returns_empty_list_when_absent():
+    assert gsa._extract_trusted_phone_numbers({"direct": {}}) == []
+
+
+def test_extract_trusted_phone_numbers_ignores_entries_missing_id():
+    boot_args = {"direct": {"phoneNumberVerification": {"trustedPhoneNumber": {"numberWithDialCode": "x"}}}}
+
+    assert gsa._extract_trusted_phone_numbers(boot_args) == []
+
+
+def test_extract_trusted_phone_numbers_accepts_obfuscated_number_field():
+    boot_args = {
+        "direct": {
+            "phoneNumberVerification": {
+                "trustedPhoneNumber": {"id": 1, "obfuscatedNumber": "(•••) •••-••34"},
+            },
+        },
+    }
+
+    assert gsa._extract_trusted_phone_numbers(boot_args) == [{"id": 1, "number": "(•••) •••-••34"}]
+
+
+def test_extract_trusted_phone_numbers_accepts_last_two_digits_field():
+    boot_args = {
+        "direct": {
+            "phoneNumberVerification": {
+                "trustedPhoneNumber": {"id": 1, "lastTwoDigits": "34"},
+            },
+        },
+    }
+
+    assert gsa._extract_trusted_phone_numbers(boot_args) == [{"id": 1, "number": "34"}]
+
+
+def test_extract_trusted_phone_numbers_never_falls_back_to_unmasked_number_field():
+    # "number" (unlike numberWithDialCode/obfuscatedNumber/lastTwoDigits) is
+    # not documented as masked - never surface it, even as a last resort.
+    boot_args = {
+        "direct": {
+            "phoneNumberVerification": {
+                "trustedPhoneNumber": {"id": 1, "number": "+15551234567"},
+            },
+        },
+    }
+
+    assert gsa._extract_trusted_phone_numbers(boot_args) == [{"id": 1, "number": None}]
+
+
+def test_extract_trusted_phone_numbers_ignores_non_string_masked_fields():
+    boot_args = {
+        "direct": {
+            "phoneNumberVerification": {
+                "trustedPhoneNumber": {"id": 1, "numberWithDialCode": 5551234},
+            },
+        },
+    }
+
+    assert gsa._extract_trusted_phone_numbers(boot_args) == [{"id": 1, "number": None}]
+
+
+def test_list_trusted_phone_numbers_parses_boot_args():
+    boot_args = (
+        '{"direct": {"phoneNumberVerification": '
+        '{"trustedPhoneNumber": {"id": 7, "numberWithDialCode": "+1 •••• •••1234"}}}}'
+    )
+    auth_resp = _mock_response(text=f'<script class="boot_args">{boot_args}</script>')
+
+    with patch.object(gsa, "generate_anisette_headers", return_value={"X-Anisette": "1"}), \
+            patch.object(gsa.requests, "get", return_value=auth_resp) as mock_get:
+        headers, numbers = gsa.list_trusted_phone_numbers("dsid-1", "token-1")
+
+    mock_get.assert_called_once_with(
+        "https://gsa.apple.com/auth", headers=headers, verify=False, timeout=10)
+    assert numbers == [{"id": 7, "number": "+1 •••• •••1234"}]
+    assert headers["X-Anisette"] == "1"
+
+
+def test_list_trusted_phone_numbers_returns_none_when_boot_args_missing():
+    # None (as opposed to []) means the auth page itself couldn't be parsed -
+    # the caller needs to tell that apart from a well-formed page reporting
+    # zero trusted phone numbers.
+    auth_resp = _mock_response(text="<html>no script here</html>")
+
+    with patch.object(gsa, "generate_anisette_headers", return_value={}), \
+            patch.object(gsa.requests, "get", return_value=auth_resp):
+        _, numbers = gsa.list_trusted_phone_numbers("dsid-1", "token-1")
+
+    assert numbers is None
+
+
+def test_list_trusted_phone_numbers_returns_none_on_malformed_json():
+    auth_resp = _mock_response(text='<script class="boot_args">{not json</script>')
+
+    with patch.object(gsa, "generate_anisette_headers", return_value={}), \
+            patch.object(gsa.requests, "get", return_value=auth_resp):
+        _, numbers = gsa.list_trusted_phone_numbers("dsid-1", "token-1")
+
+    assert numbers is None
+
+
+def test_list_trusted_phone_numbers_returns_empty_list_when_boot_args_has_no_phone_numbers():
+    boot_args = '{"direct": {"unexpected": "x"}}'
+    auth_resp = _mock_response(text=f'<script class="boot_args">{boot_args}</script>')
+
+    with patch.object(gsa, "generate_anisette_headers", return_value={}), \
+            patch.object(gsa.requests, "get", return_value=auth_resp):
+        _, numbers = gsa.list_trusted_phone_numbers("dsid-1", "token-1")
+
+    assert numbers == []
+
+
+def test_list_trusted_phone_numbers_does_not_log_boot_args_or_page_content(caplog):
+    secret_marker = "secret-phone-number-payload-should-never-be-logged"
+    boot_args = f'{{"direct": {{"unexpected": "{secret_marker}"}}}}'
+    auth_resp = _mock_response(text=f'<script class="boot_args">{boot_args}</script>')
+
+    with caplog.at_level(logging.DEBUG), \
+            patch.object(gsa, "generate_anisette_headers", return_value={}), \
+            patch.object(gsa.requests, "get", return_value=auth_resp):
+        gsa.list_trusted_phone_numbers("dsid-1", "token-1")
+
+    assert secret_marker not in caplog.text
+
+
+def test_trigger_phone_second_factor_sends_sms_mode():
+    trigger_resp = _mock_response()
+
+    with patch.object(gsa, "generate_anisette_headers", return_value={"X-Anisette": "1"}), \
+            patch.object(gsa.requests, "put", return_value=trigger_resp) as mock_put:
+        gsa.trigger_phone_second_factor({"h": "1"}, 7, "sms")
+
+    assert mock_put.call_args.args[0] == "https://gsa.apple.com/auth/verify/phone/"
+    assert mock_put.call_args.kwargs["json"] == {"phoneNumber": {"id": 7}, "mode": "sms"}
+    assert mock_put.call_args.kwargs["headers"]["X-Anisette"] == "1"
+
+
+def test_trigger_phone_second_factor_sends_voice_mode():
+    trigger_resp = _mock_response()
+
+    with patch.object(gsa, "generate_anisette_headers", return_value={}), \
+            patch.object(gsa.requests, "put", return_value=trigger_resp) as mock_put:
+        gsa.trigger_phone_second_factor({}, 7, "voice")
+
+    assert mock_put.call_args.kwargs["json"] == {"phoneNumber": {"id": 7}, "mode": "voice"}
+
+
+def test_trigger_phone_second_factor_rejects_unknown_mode():
+    with pytest.raises(AssertionError):
+        gsa.trigger_phone_second_factor({}, 7, "carrier_pigeon")
+
+
+def test_trigger_phone_second_factor_raises_http_error_on_server_error():
+    trigger_resp = _mock_response(status_code=500, ok=False)
+    trigger_resp.raise_for_status.side_effect = requests.HTTPError("500 Server Error")
+
+    with patch.object(gsa, "generate_anisette_headers", return_value={}), \
+            patch.object(gsa.requests, "put", return_value=trigger_resp):
+        with pytest.raises(requests.HTTPError):
+            gsa.trigger_phone_second_factor({}, 7, "sms")
+
+
+def test_trigger_phone_second_factor_raises_apple_phone_trigger_rejected_on_client_error():
+    # Apple answers a rate-limited/precondition-failed trigger with a plain
+    # 4xx (412/423/429 have all been observed) - that's Apple actively
+    # refusing to send a code, not a network/transport failure, so it must
+    # not surface as the generic apple_unreachable a RequestException maps to.
+    trigger_resp = _mock_response(status_code=429, ok=False)
+    trigger_resp.raise_for_status.side_effect = requests.HTTPError("429 Client Error")
+
+    with patch.object(gsa, "generate_anisette_headers", return_value={}), \
+            patch.object(gsa.requests, "put", return_value=trigger_resp):
+        with pytest.raises(gsa.ApplePhoneTriggerRejected) as exc_info:
+            gsa.trigger_phone_second_factor({}, 7, "sms")
+
+    assert exc_info.value.status_code == 429
+    trigger_resp.raise_for_status.assert_not_called()

@@ -51,6 +51,28 @@ class AppleLoginResult {
   const AppleLoginResult.codeRequired(this.codeRequiredMethod) : authenticated = false;
 }
 
+enum AppleResendMode { sms, voice }
+
+/// The response to a resend request: the delivery method Apple actually
+/// used, and the (masked) phone number it went to, if the server reports one.
+class AppleResendResult {
+  final AppleResendMode method;
+  final String? phone;
+
+  const AppleResendResult({required this.method, this.phone});
+}
+
+AppleResendMode _parseResendMode(String mode) {
+  switch (mode) {
+    case 'sms':
+      return AppleResendMode.sms;
+    case 'voice':
+      return AppleResendMode.voice;
+    default:
+      throw AppleAuthException('unknown_method', 'Unrecognized resend method: $mode');
+  }
+}
+
 class AppleAuthStatus {
   final bool loggedIn;
   final bool pending;
@@ -147,6 +169,28 @@ class AppleAuthService {
       {http.Client? client}) async {
     _requireHttps(url);
     await _post(url, '/auth/apple/verify', endpointUser, endpointPass, {'code': code}, client: client);
+  }
+
+  /// Asks the server to resend the 2FA code for a login started with
+  /// [login], as an SMS or voice call to a trusted phone number instead of
+  /// the trusted-device push. Same HTTPS and error-handling rules as
+  /// [login]; a subsequent [verifyCode] call submits the phone code.
+  static Future<AppleResendResult> resendCode(
+      String url, String endpointUser, String endpointPass, AppleResendMode mode,
+      {http.Client? client}) async {
+    _requireHttps(url);
+    var decoded = await _post(url, '/auth/apple/resend', endpointUser, endpointPass, {
+      'mode': mode == AppleResendMode.voice ? 'voice' : 'sms',
+    }, client: client);
+
+    var methodValue = decoded['method'];
+    if (methodValue is! String) {
+      throw AppleAuthException('unknown_method', 'Missing or invalid resend method in response');
+    }
+    return AppleResendResult(
+      method: _parseResendMode(methodValue),
+      phone: decoded['phone'] as String?,
+    );
   }
 
   /// Ends the server's current Apple session (deletes its saved session

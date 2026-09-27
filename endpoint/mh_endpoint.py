@@ -9,7 +9,7 @@ import ssl
 import sys
 import threading
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime,  timezone
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
@@ -43,6 +43,15 @@ class PendingAppleLogin:
     username: str
     password: str
     started_at: float
+    # Kept around so /auth/apple/resend can request a phone code without
+    # requiring the user to re-enter their password mid-flow.
+    dsid: str = None
+    idms_token: str = None
+    # Throttle state for /auth/apple/resend - deliberately separate from
+    # started_at, so a resend never extends how long the password stays
+    # in memory.
+    last_resend_at: float = None
+    resend_count: int = 0
 
 
 pending_apple_login = None
@@ -217,6 +226,15 @@ class ServerHandler(BaseHTTPRequestHandler):
                 self._send_json(400, {"error": str(e)})
                 return
             self._handle_post_auth_apple_verify(body)
+            return
+
+        if path == '/auth/apple/resend':
+            try:
+                body = json.loads(post_body)
+            except json.JSONDecodeError as e:
+                self._send_json(400, {"error": str(e)})
+                return
+            self._handle_post_auth_apple_resend(body)
             return
 
         if path == '/auth/apple/logout':
@@ -412,7 +430,7 @@ class ServerHandler(BaseHTTPRequestHandler):
                 return
             pending_apple_login = PendingAppleLogin(
                 method=result.method, state=state, username=username, password=password,
-                started_at=time.time(),
+                started_at=time.time(), dsid=result.dsid, idms_token=result.idms_token,
             )
             self._send_json(200, {
                 "status": "code_required",
@@ -494,6 +512,78 @@ class ServerHandler(BaseHTTPRequestHandler):
         pending_apple_login = None
         self._send_json(200, {"status": "authenticated"})
 
+    def _handle_post_auth_apple_resend(self, body):
+        global pending_apple_login
+
+        pending = pending_apple_login
+        if pending is None:
+            self._send_json(409, {"error": "no_pending_login"})
+            return
+        if time.time() - pending.started_at > PENDING_LOGIN_TIMEOUT_SECONDS:
+            pending_apple_login = None
+            self._send_json(410, {"error": "login_expired"})
+            return
+
+        try:
+            mode = body['mode']
+            if mode not in _RESEND_MODES:
+                raise ValueError("invalid mode")
+        except (KeyError, TypeError, ValueError):
+            self._send_json(400, {"error": "invalid_mode"})
+            return
+
+        if pending.resend_count >= MAX_RESENDS_PER_LOGIN:
+            self._send_json(429, {"error": "too_many_resends"})
+            return
+        if pending.last_resend_at is not None and \
+                time.time() - pending.last_resend_at < RESEND_COOLDOWN_SECONDS:
+            self._send_json(429, {"error": "resend_too_soon"})
+            return
+
+        try:
+            headers, numbers = pypush_gsa_icloud.list_trusted_phone_numbers(
+                pending.dsid, pending.idms_token)
+        except requests.exceptions.RequestException:
+            self._send_json(502, {"error": "apple_unreachable"})
+            return
+
+        if numbers is None:
+            self._send_json(502, {"error": "apple_page_unrecognized"})
+            return
+        if not numbers:
+            self._send_json(400, {"error": "no_trusted_phone"})
+            return
+
+        phone_id = body.get('phoneId')
+        if phone_id is None:
+            phone = numbers[0]
+        else:
+            # bool is a subclass of int in Python - reject it explicitly so
+            # True/False can't silently match phone id 1/0.
+            if isinstance(phone_id, bool) or not isinstance(phone_id, int):
+                self._send_json(400, {"error": "invalid_phone_id"})
+                return
+            phone = next((n for n in numbers if n["id"] == phone_id), None)
+            if phone is None:
+                self._send_json(400, {"error": "invalid_phone_id"})
+                return
+
+        try:
+            pypush_gsa_icloud.trigger_phone_second_factor(headers, phone["id"], mode)
+        except pypush_gsa_icloud.ApplePhoneTriggerRejected as e:
+            self._send_json(429, {"error": "apple_refused_code", "status": e.status_code})
+            return
+        except requests.exceptions.RequestException:
+            self._send_json(502, {"error": "apple_unreachable"})
+            return
+
+        pending_apple_login = replace(
+            pending, method="secondaryAuth",
+            state={"headers": headers, "sms_id": phone["id"], "mode": mode},
+            last_resend_at=time.time(), resend_count=pending.resend_count + 1,
+        )
+        self._send_json(200, {"status": "code_required", "method": mode, "phone": phone["number"]})
+
     def _handle_get_auth_apple_status(self):
         _expire_pending_login_if_stale()
         logged_in = not _apple_session_needs_login()
@@ -524,6 +614,10 @@ _SECOND_FACTOR_METHOD_NAMES = {
     "trustedDeviceSecondaryAuth": "trusted_device",
     "secondaryAuth": "sms",
 }
+
+_RESEND_MODES = ("sms", "voice")
+RESEND_COOLDOWN_SECONDS = 30
+MAX_RESENDS_PER_LOGIN = 5
 
 
 def _has_legacy_credentials(endpoint_user, endpoint_pass):
