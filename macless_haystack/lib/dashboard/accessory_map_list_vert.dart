@@ -11,12 +11,13 @@ import 'package:macless_haystack/map/map.dart';
 import 'package:macless_haystack/map/map_style_picker_button.dart';
 import 'package:macless_haystack/map/my_location_button.dart';
 import 'package:macless_haystack/notifications/notification_navigation.dart';
+import 'package:macless_haystack/refresh_coordinator.dart';
 import 'package:latlong2/latlong.dart';
 
 import '../callbacks.dart';
 
 class AccessoryMapListVertical extends StatefulWidget {
-  final LoadLocationUpdatesCallback loadLocationUpdates;
+  final RefreshCoordinator refreshCoordinator;
   final SaveOrderUpdatesCallback saveOrderUpdatesCallback;
 
   /// Displays a full-screen map with the accessory list in a draggable
@@ -24,7 +25,7 @@ class AccessoryMapListVertical extends StatefulWidget {
   /// fixed halves.
   const AccessoryMapListVertical({
     super.key,
-    required this.loadLocationUpdates,
+    required this.refreshCoordinator,
     required this.saveOrderUpdatesCallback,
   });
 
@@ -139,7 +140,7 @@ class _AccessoryMapListVerticalState extends State<AccessoryMapListVertical> {
                 Positioned.fill(
                   child: AccessoryMap(
                     mapController: _mapController,
-                    loadLocationUpdates: widget.loadLocationUpdates,
+                    refreshCoordinator: widget.refreshCoordinator,
                   ),
                 ),
                 Positioned(
@@ -219,8 +220,8 @@ class _AccessoryMapListVerticalState extends State<AccessoryMapListVertical> {
                                   ),
                                   child: AccessoryList(
                                     scrollController: scrollController,
-                                    loadLocationUpdates:
-                                        widget.loadLocationUpdates,
+                                    refreshCoordinator:
+                                        widget.refreshCoordinator,
                                     saveOrderUpdatesCallback:
                                         widget.saveOrderUpdatesCallback,
                                     centerOnPoint: _centerPoint,

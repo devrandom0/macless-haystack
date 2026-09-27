@@ -1,16 +1,19 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_settings_screens/flutter_settings_screens.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:macless_haystack/accessory/accessory_model.dart';
 import 'package:macless_haystack/map/accessory_popup.dart';
+import 'package:macless_haystack/refresh_coordinator.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-Accessory _accessory() {
+Accessory _accessory({String id = 'a'}) {
   return Accessory(
-    id: 'a',
+    id: id,
     name: 'Keys',
-    hashedPublicKey: 'hash',
+    hashedPublicKey: 'hash-$id',
     datePublished: DateTime.now(),
     lastLocation: const LatLng(10, 10),
     hashesWithTS: {},
@@ -93,5 +96,59 @@ void main() {
       (widget) => widget is IconButton && widget.tooltip == 'Navigate',
     ));
     expect(navigateButton.onPressed, isNotNull);
+  });
+
+  testWidgets(
+      'switching the selected marker mid-refresh leaves the other accessory refreshable',
+      (tester) async {
+    var completerA = Completer<void>();
+    var callCounts = <String, int>{};
+    var coordinator = RefreshCoordinator(
+      (accessory, {force = false, showFeedback = true}) async {
+        callCounts[accessory!.id] = (callCounts[accessory.id] ?? 0) + 1;
+        if (accessory.id == 'a') {
+          await completerA.future;
+        }
+      },
+    );
+    var accessoryA = _accessory(id: 'a');
+    var accessoryB = _accessory(id: 'b');
+
+    // A's refresh is started and still in flight when B becomes the
+    // selected marker below - this mirrors the map switching selection
+    // while a previous accessory's refresh is still running.
+    coordinator.refresh(accessoryA);
+
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: ValueListenableBuilder<Set<String>>(
+          valueListenable: coordinator,
+          builder: (context, refreshingIds, child) {
+            return AccessoryPopup(
+              accessory: accessoryB,
+              onNavigate: () {},
+              onHistory: () {},
+              onShare: () {},
+              onRefresh: () => coordinator.refresh(accessoryB),
+              refreshing: refreshingIds.contains(accessoryB.id),
+            ).child;
+          },
+        ),
+      ),
+    ));
+    await tester.pump(const Duration(milliseconds: 200));
+
+    expect(find.byType(CircularProgressIndicator), findsNothing);
+    var button = tester.widget<IconButton>(_refreshButton);
+    expect(button.onPressed, isNotNull);
+
+    await tester.tap(_refreshButton);
+    await tester.pump();
+
+    expect(callCounts['b'], 1);
+    expect(coordinator.isRefreshing('a'), isTrue);
+
+    completerA.complete();
+    await tester.pump();
   });
 }

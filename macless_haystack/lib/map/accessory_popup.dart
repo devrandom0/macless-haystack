@@ -9,6 +9,7 @@ import '../accessory/accessory_icon.dart';
 import '../accessory/accessory_model.dart';
 import '../util/place_format.dart';
 import '../util/time_format.dart';
+import '../widgets/refresh_icon_button.dart';
 
 /// Height of the small triangular tail pointing from the card down at the
 /// marker it belongs to.
@@ -227,20 +228,11 @@ class _PopupContent extends StatelessWidget {
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                         children: [
-                          IconButton(
+                          RefreshIconButton(
                             constraints: iconButtonConstraints,
-                            padding: const EdgeInsets.all(8),
-                            tooltip: 'Refresh this accessory',
-                            icon: refreshing
-                                ? const SizedBox(
-                                    width: 20,
-                                    height: 20,
-                                    child: CircularProgressIndicator(
-                                        strokeWidth: 2),
-                                  )
-                                : const Icon(Icons.refresh),
+                            refreshing: refreshing,
                             color: Theme.of(context).colorScheme.primary,
-                            onPressed: refreshing ? null : onRefresh,
+                            onPressed: onRefresh,
                           ),
                           IconButton(
                             constraints: iconButtonConstraints,

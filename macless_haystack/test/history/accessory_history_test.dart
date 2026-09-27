@@ -5,8 +5,8 @@ import 'package:flutter_settings_screens/flutter_settings_screens.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:macless_haystack/accessory/accessory_model.dart';
-import 'package:macless_haystack/callbacks.dart';
 import 'package:macless_haystack/history/accessory_history.dart';
+import 'package:macless_haystack/refresh_coordinator.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 Accessory _accessory({bool isActive = true}) {
@@ -31,12 +31,12 @@ final _refreshButton = find.byWidgetPredicate(
 Future<void> _pump(
   WidgetTester tester, {
   required Accessory accessory,
-  required LoadLocationUpdatesCallback loadLocationUpdates,
+  required RefreshCoordinator refreshCoordinator,
 }) async {
   await tester.pumpWidget(MaterialApp(
     home: AccessoryHistory(
       accessory: accessory,
-      loadLocationUpdates: loadLocationUpdates,
+      refreshCoordinator: refreshCoordinator,
     ),
   ));
 }
@@ -53,7 +53,9 @@ void main() {
     await _pump(
       tester,
       accessory: _accessory(),
-      loadLocationUpdates: (accessory, {force = false, showFeedback = true}) async {},
+      refreshCoordinator: RefreshCoordinator(
+        (accessory, {force = false, showFeedback = true}) async {},
+      ),
     );
 
     expect(_refreshButton, findsOneWidget);
@@ -70,12 +72,14 @@ void main() {
     await _pump(
       tester,
       accessory: accessory,
-      loadLocationUpdates: (accessory, {force = false, showFeedback = true}) async {
-        calledWith.add(accessory);
-      },
+      refreshCoordinator: RefreshCoordinator(
+        (accessory, {force = false, showFeedback = true}) async {
+          calledWith.add(accessory);
+        },
+      ),
     );
 
-    await tester.tap(find.byTooltip('Refresh this accessory'));
+    await tester.tap(_refreshButton);
     await tester.pump();
 
     expect(calledWith, [accessory]);
@@ -89,12 +93,12 @@ void main() {
     await _pump(
       tester,
       accessory: _accessory(),
-      loadLocationUpdates: (accessory, {force = false, showFeedback = true}) {
-        return completer.future;
-      },
+      refreshCoordinator: RefreshCoordinator(
+        (accessory, {force = false, showFeedback = true}) => completer.future,
+      ),
     );
 
-    await tester.tap(find.byTooltip('Refresh this accessory'));
+    await tester.tap(_refreshButton);
     await tester.pump();
 
     expect(find.byType(CircularProgressIndicator), findsOneWidget);
@@ -116,17 +120,19 @@ void main() {
     await _pump(
       tester,
       accessory: _accessory(),
-      loadLocationUpdates: (accessory, {force = false, showFeedback = true}) {
-        callCount++;
-        return completer.future;
-      },
+      refreshCoordinator: RefreshCoordinator(
+        (accessory, {force = false, showFeedback = true}) {
+          callCount++;
+          return completer.future;
+        },
+      ),
     );
 
-    await tester.tap(find.byTooltip('Refresh this accessory'));
+    await tester.tap(_refreshButton);
     await tester.pump();
     // The button is disabled now (see the test above), so this tap must not
     // reach the button's onPressed at all.
-    await tester.tap(find.byTooltip('Refresh this accessory'), warnIfMissed: false);
+    await tester.tap(_refreshButton, warnIfMissed: false);
     await tester.pump();
 
     expect(callCount, 1);
@@ -142,9 +148,11 @@ void main() {
     await _pump(
       tester,
       accessory: _accessory(isActive: false),
-      loadLocationUpdates: (accessory, {force = false, showFeedback = true}) async {
-        called = true;
-      },
+      refreshCoordinator: RefreshCoordinator(
+        (accessory, {force = false, showFeedback = true}) async {
+          called = true;
+        },
+      ),
     );
 
     var button = tester.widget<IconButton>(_refreshButton);
@@ -152,7 +160,75 @@ void main() {
     expect(called, isFalse);
   });
 
-  testWidgets('shows newly fetched history after a refresh completes',
+  testWidgets('a throwing refresh still resets the spinner', (tester) async {
+    var completer = Completer<void>();
+
+    await _pump(
+      tester,
+      accessory: _accessory(),
+      refreshCoordinator: RefreshCoordinator(
+        (accessory, {force = false, showFeedback = true}) => completer.future,
+      ),
+    );
+
+    await tester.tap(_refreshButton);
+    await tester.pump();
+    expect(find.byType(CircularProgressIndicator), findsOneWidget);
+
+    completer.completeError(Exception('boom'));
+    await tester.pump();
+
+    expect(tester.takeException(), isNull);
+    expect(find.byType(CircularProgressIndicator), findsNothing);
+    var button = tester.widget<IconButton>(_refreshButton);
+    expect(button.onPressed, isNotNull);
+  });
+
+  testWidgets('popping the history page mid-refresh does not throw',
+      (tester) async {
+    var completer = Completer<void>();
+    var refreshCoordinator = RefreshCoordinator(
+      (accessory, {force = false, showFeedback = true}) => completer.future,
+    );
+    var accessory = _accessory();
+
+    await tester.pumpWidget(MaterialApp(
+      home: Builder(
+        builder: (context) => Scaffold(
+          body: Center(
+            child: ElevatedButton(
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (context) => AccessoryHistory(
+                    accessory: accessory,
+                    refreshCoordinator: refreshCoordinator,
+                  ),
+                ),
+              ),
+              child: const Text('open'),
+            ),
+          ),
+        ),
+      ),
+    ));
+
+    await tester.tap(find.widgetWithText(ElevatedButton, 'open'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(_refreshButton);
+    await tester.pump();
+
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+    expect(find.byType(AccessoryHistory), findsNothing);
+
+    completer.complete();
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('shows newly fetched history once a refresh resolves',
       (tester) async {
     var accessory = _accessory();
     var now = DateTime.now();
@@ -160,20 +236,28 @@ void main() {
     await _pump(
       tester,
       accessory: accessory,
-      loadLocationUpdates: (accessory, {force = false, showFeedback = true}) async {
-        // Mirrors what AccessoryRegistry.loadLocationReports does: mutate
-        // the same accessory instance in place rather than replacing it.
-        accessory!.locationHistory.add(
-          Pair(const LatLng(11, 11), now, now),
-        );
-      },
+      refreshCoordinator: RefreshCoordinator(
+        (accessory, {force = false, showFeedback = true}) async {
+          // A real async gap, not a synchronous mutation - mirrors
+          // AccessoryRegistry.loadLocationReports actually awaiting its
+          // history work before returning, and mutating the same
+          // accessory instance in place rather than replacing it.
+          await Future.delayed(const Duration(milliseconds: 10));
+          accessory!.locationHistory.add(
+            Pair(const LatLng(11, 11), now, now),
+          );
+        },
+      ),
     );
 
     expect(find.text('0 history reports'), findsOneWidget);
 
-    await tester.tap(find.byTooltip('Refresh this accessory'));
+    await tester.tap(_refreshButton);
     await tester.pump();
-    await tester.pump();
+    // Still in flight - the delayed mutation hasn't landed yet.
+    expect(find.text('0 history reports'), findsOneWidget);
+
+    await tester.pump(const Duration(milliseconds: 20));
 
     expect(find.text('1 history report'), findsOneWidget);
   });

@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:maps_launcher/maps_launcher.dart';
 import 'package:share_plus/share_plus.dart';
 
-import '../callbacks.dart';
 import '../history/accessory_history.dart';
+import '../refresh_coordinator.dart';
 import 'accessory_model.dart';
 import 'share_location.dart';
 
@@ -25,14 +25,14 @@ Future<void> navigateToAccessory(Accessory accessory) async {
 void openAccessoryHistory(
   BuildContext context,
   Accessory accessory,
-  LoadLocationUpdatesCallback loadLocationUpdates,
+  RefreshCoordinator refreshCoordinator,
 ) {
   Navigator.push(
     context,
     MaterialPageRoute(
       builder: (context) => AccessoryHistory(
         accessory: accessory,
-        loadLocationUpdates: loadLocationUpdates,
+        refreshCoordinator: refreshCoordinator,
       ),
     ),
   );
