@@ -347,6 +347,21 @@ def request_sms_code(dsid, idms_token):
     return headers, sms_id
 
 
+_MASKED_PHONE_NUMBER_FIELDS = ("numberWithDialCode", "obfuscatedNumber", "lastTwoDigits")
+
+
+def _masked_phone_number(entry):
+    """Returns the first of _MASKED_PHONE_NUMBER_FIELDS present as a string
+    on `entry`, or None. Deliberately does not fall back to a plain "number"
+    field - unlike the others, that one isn't documented as masked, so
+    surfacing it could leak the account's real phone number to the client."""
+    for field in _MASKED_PHONE_NUMBER_FIELDS:
+        value = entry.get(field)
+        if isinstance(value, str):
+            return value
+    return None
+
+
 def _extract_trusted_phone_numbers(boot_args):
     """Returns a list of {'id', 'number'} dicts from the auth page's
     boot_args, supporting both the classic direct.phoneNumberVerification
@@ -376,8 +391,7 @@ def _extract_trusted_phone_numbers(boot_args):
             if phone_id in seen_ids:
                 continue
             seen_ids.add(phone_id)
-            masked = entry.get("numberWithDialCode") or entry.get("obfuscatedNumber") or entry.get("number")
-            numbers.append({"id": phone_id, "number": masked})
+            numbers.append({"id": phone_id, "number": _masked_phone_number(entry)})
     return numbers
 
 

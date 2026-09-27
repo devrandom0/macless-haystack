@@ -440,6 +440,56 @@ def test_extract_trusted_phone_numbers_ignores_entries_missing_id():
     assert gsa._extract_trusted_phone_numbers(boot_args) == []
 
 
+def test_extract_trusted_phone_numbers_accepts_obfuscated_number_field():
+    boot_args = {
+        "direct": {
+            "phoneNumberVerification": {
+                "trustedPhoneNumber": {"id": 1, "obfuscatedNumber": "(•••) •••-••34"},
+            },
+        },
+    }
+
+    assert gsa._extract_trusted_phone_numbers(boot_args) == [{"id": 1, "number": "(•••) •••-••34"}]
+
+
+def test_extract_trusted_phone_numbers_accepts_last_two_digits_field():
+    boot_args = {
+        "direct": {
+            "phoneNumberVerification": {
+                "trustedPhoneNumber": {"id": 1, "lastTwoDigits": "34"},
+            },
+        },
+    }
+
+    assert gsa._extract_trusted_phone_numbers(boot_args) == [{"id": 1, "number": "34"}]
+
+
+def test_extract_trusted_phone_numbers_never_falls_back_to_unmasked_number_field():
+    # "number" (unlike numberWithDialCode/obfuscatedNumber/lastTwoDigits) is
+    # not documented as masked - never surface it, even as a last resort.
+    boot_args = {
+        "direct": {
+            "phoneNumberVerification": {
+                "trustedPhoneNumber": {"id": 1, "number": "+15551234567"},
+            },
+        },
+    }
+
+    assert gsa._extract_trusted_phone_numbers(boot_args) == [{"id": 1, "number": None}]
+
+
+def test_extract_trusted_phone_numbers_ignores_non_string_masked_fields():
+    boot_args = {
+        "direct": {
+            "phoneNumberVerification": {
+                "trustedPhoneNumber": {"id": 1, "numberWithDialCode": 5551234},
+            },
+        },
+    }
+
+    assert gsa._extract_trusted_phone_numbers(boot_args) == [{"id": 1, "number": None}]
+
+
 def test_list_trusted_phone_numbers_parses_boot_args():
     boot_args = (
         '{"direct": {"phoneNumberVerification": '
