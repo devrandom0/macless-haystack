@@ -514,6 +514,9 @@ class ServerHandler(BaseHTTPRequestHandler):
             self._send_json(502, {"error": "apple_unreachable"})
             return
 
+        if numbers is None:
+            self._send_json(502, {"error": "apple_page_unrecognized"})
+            return
         if not numbers:
             self._send_json(400, {"error": "no_trusted_phone"})
             return
@@ -534,6 +537,9 @@ class ServerHandler(BaseHTTPRequestHandler):
 
         try:
             pypush_gsa_icloud.trigger_phone_second_factor(headers, phone["id"], mode)
+        except pypush_gsa_icloud.ApplePhoneTriggerRejected as e:
+            self._send_json(429, {"error": "apple_refused_code", "status": e.status_code})
+            return
         except requests.exceptions.RequestException:
             self._send_json(502, {"error": "apple_unreachable"})
             return

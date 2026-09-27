@@ -362,6 +362,8 @@ def test_post_apple_resend_returns_502_when_apple_unreachable_listing_numbers(se
 
 
 def test_post_apple_resend_returns_400_when_no_trusted_phone_numbers(server):
+    # An empty list means the auth page parsed fine and genuinely reported
+    # zero trusted numbers.
     _set_pending()
 
     with patch.object(mh_endpoint.pypush_gsa_icloud, "list_trusted_phone_numbers",
@@ -370,6 +372,19 @@ def test_post_apple_resend_returns_400_when_no_trusted_phone_numbers(server):
 
     assert status == 400
     assert body == {"error": "no_trusted_phone"}
+
+
+def test_post_apple_resend_returns_502_when_boot_args_page_unrecognized(server):
+    # None (as opposed to []) means the auth page itself couldn't be parsed -
+    # that's an apple-side problem worth telling apart from "no phone on file".
+    _set_pending()
+
+    with patch.object(mh_endpoint.pypush_gsa_icloud, "list_trusted_phone_numbers",
+                       return_value=({}, None)):
+        status, body = _post(server, '/auth/apple/resend', {"mode": "sms"})
+
+    assert status == 502
+    assert body == {"error": "apple_page_unrecognized"}
 
 
 def test_post_apple_resend_returns_400_when_phone_id_is_a_bool(server):
@@ -450,6 +465,36 @@ def test_post_apple_resend_returns_502_when_trigger_fails(server):
     assert body == {"error": "apple_unreachable"}
     # A failed trigger shouldn't discard the still-valid pending login.
     assert mh_endpoint.pending_apple_login is not None
+
+
+def test_post_apple_resend_returns_429_when_apple_refuses_the_trigger(server):
+    _set_pending()
+    rejected = mh_endpoint.pypush_gsa_icloud.ApplePhoneTriggerRejected(429)
+
+    with patch.object(mh_endpoint.pypush_gsa_icloud, "list_trusted_phone_numbers",
+                       return_value=({}, _numbers((1, "+1 •••1234")))), \
+            patch.object(mh_endpoint.pypush_gsa_icloud, "trigger_phone_second_factor",
+                          side_effect=rejected):
+        status, body = _post(server, '/auth/apple/resend', {"mode": "sms"})
+
+    assert status == 429
+    assert body == {"error": "apple_refused_code", "status": 429}
+    # A refused trigger shouldn't discard the still-valid pending login either.
+    assert mh_endpoint.pending_apple_login is not None
+
+
+def test_post_apple_resend_returns_429_when_apple_refuses_the_trigger_with_412(server):
+    _set_pending()
+    rejected = mh_endpoint.pypush_gsa_icloud.ApplePhoneTriggerRejected(412)
+
+    with patch.object(mh_endpoint.pypush_gsa_icloud, "list_trusted_phone_numbers",
+                       return_value=({}, _numbers((1, "+1 •••1234")))), \
+            patch.object(mh_endpoint.pypush_gsa_icloud, "trigger_phone_second_factor",
+                          side_effect=rejected):
+        status, body = _post(server, '/auth/apple/resend', {"mode": "sms"})
+
+    assert status == 429
+    assert body == {"error": "apple_refused_code", "status": 412}
 
 
 def test_post_apple_resend_switched_pending_login_verifies_with_new_mode(server):
