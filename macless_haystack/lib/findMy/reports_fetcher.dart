@@ -2,8 +2,18 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:http/http.dart' as http;
+import 'package:http/io_client.dart';
 import 'package:logger/logger.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
+
+/// Thrown when the server's live Apple fetch failed on an expired session
+/// with no cached data to fall back on (its 503 `apple_session_expired`).
+class AppleSessionExpiredException implements Exception {
+  const AppleSessionExpiredException();
+
+  @override
+  String toString() => 'The Apple ID session has expired; log in again.';
+}
 
 /// The decoded reports from a fetch, plus the server's own count of how
 /// many of them came from a live Apple fetch versus its cache. This is a
@@ -13,12 +23,23 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 /// both independently keep the server's cache warm. Callers that need
 /// "have I already seen this" should compare against locally known data
 /// instead (see AccessoryRegistry.countNewReports).
-typedef LocationReportsResult = ({List reports, int newCount});
+///
+/// [appleSessionStale] mirrors the server's own `apple_session_stale` flag
+/// (false when an older server doesn't send it at all): a 200 response can
+/// still be built entirely from cache after a failed live Apple call, and
+/// this is how that gets surfaced instead of failing silently.
+typedef LocationReportsResult = ({
+  List reports,
+  int newCount,
+  bool appleSessionStale,
+});
 
 class ReportsFetcher {
   /// Fetches the location reports corresponding to the given hashed advertisement
   /// key.
-  /// Throws [Exception] if no answer was received.
+  /// Throws [Exception] if no answer was received. Throws
+  /// [AppleSessionExpiredException] when the server reports no cache to
+  /// fall back on for an expired Apple session.
   ///
   static var logger = Logger(printer: PrettyPrinter(methodCount: 0));
 
@@ -27,6 +48,17 @@ class ReportsFetcher {
   // refresh button until the app restarts.
   static const _requestTimeout = Duration(seconds: 30);
 
+  static http.Client _createClient() {
+    if (kIsWeb) {
+      return http.Client();
+    }
+    var ioClient = HttpClient();
+    /*Ignore certificate errors*/
+    ioClient.badCertificateCallback =
+        (X509Certificate cert, String host, int port) => true;
+    return IOClient(ioClient);
+  }
+
   static Future<LocationReportsResult> fetchLocationReports(
     Iterable<String> hashedAdvertisementKeys,
     int daysToFetch,
@@ -34,6 +66,7 @@ class ReportsFetcher {
     String user,
     String pass, {
     bool force = false,
+    http.Client? client,
   }) async {
     var keys = hashedAdvertisementKeys.toList(growable: false);
     logger.i('Using ${keys.length} key(s) to ask webservice');
@@ -49,19 +82,32 @@ class ReportsFetcher {
       "force": force,
     });
 
-    if (kIsWeb) {
-      Map<String, String> requestHeaders = {"Content-Type": "application/json"};
-      if (credentials != null) {
-        requestHeaders['Authorization'] = credentials;
-      }
+    var headers = {
+      "Content-Type": "application/json",
+      if (credentials != null) "Authorization": credentials,
+    };
 
-      final response = await http
-          .post(Uri.parse(url), headers: requestHeaders, body: requestBody)
+    var effectiveClient = client ?? _createClient();
+    try {
+      var response = await effectiveClient
+          .post(Uri.parse(url), headers: headers, body: requestBody)
           .timeout(_requestTimeout);
+
       if (response.statusCode == 401) {
         throw Exception(
           "Authentication failure. Username or password is incorrect.",
         );
+      }
+      if (response.statusCode == 503) {
+        Map<String, dynamic>? decoded;
+        try {
+          decoded = jsonDecode(response.body) as Map<String, dynamic>;
+        } catch (_) {
+          decoded = null;
+        }
+        if (decoded?['error'] == 'apple_session_expired') {
+          throw const AppleSessionExpiredException();
+        }
       }
       if (response.statusCode == 200) {
         var decoded = jsonDecode(response.body);
@@ -69,54 +115,20 @@ class ReportsFetcher {
         var newCount = decoded["new_count"] is int
             ? decoded["new_count"] as int
             : out.length;
+        var appleSessionStale = decoded["appleSessionStale"] == true;
         logger.i('Found ${out.length} reports, $newCount new');
-        return (reports: out, newCount: newCount);
-      } else {
-        throw Exception(
-          "Failed to fetch location reports with status code ${response.statusCode}.\n\nResponse:\n$response",
+        return (
+          reports: out,
+          newCount: newCount,
+          appleSessionStale: appleSessionStale,
         );
       }
-    } else {
-      var httpClient = HttpClient();
-      /*Ignore certificate errors*/
-      httpClient.badCertificateCallback =
-          (X509Certificate cert, String host, int port) => true;
-
-      final request = await httpClient
-          .postUrl(Uri.parse(url))
-          .timeout(_requestTimeout);
-      request.headers.set(HttpHeaders.contentTypeHeader, "application/json");
-      if (credentials != null) {
-        request.headers.set(HttpHeaders.authorizationHeader, credentials);
-      }
-
-      request.headers.set(
-        HttpHeaders.contentLengthHeader,
-        utf8.encode(requestBody).length,
+      throw Exception(
+        "Failed to fetch location reports with status code ${response.statusCode}.\n\nResponse:\n$response",
       );
-      request.write(requestBody);
-      final response = await request.close().timeout(_requestTimeout);
-      if (response.statusCode == 401) {
-        throw Exception(
-          "Authentication failure. Username or password is incorrect.",
-        );
-      }
-      if (response.statusCode == 200) {
-        String responseBody = await response
-            .transform(utf8.decoder)
-            .join()
-            .timeout(_requestTimeout);
-        var decoded = jsonDecode(responseBody);
-        var out = decoded["results"] as List;
-        var newCount = decoded["new_count"] is int
-            ? decoded["new_count"] as int
-            : out.length;
-        logger.i('Found ${out.length} reports, $newCount new');
-        return (reports: out, newCount: newCount);
-      } else {
-        throw Exception(
-          "Failed to fetch location reports with status code ${response.statusCode}.\n\nResponse:\n$response",
-        );
+    } finally {
+      if (client == null) {
+        effectiveClient.close();
       }
     }
   }
