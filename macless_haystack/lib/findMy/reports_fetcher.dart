@@ -24,14 +24,16 @@ class AppleSessionExpiredException implements Exception {
 /// "have I already seen this" should compare against locally known data
 /// instead (see AccessoryRegistry.countNewReports).
 ///
-/// [appleSessionStale] mirrors the server's own `apple_session_stale` flag
-/// (false when an older server doesn't send it at all): a 200 response can
-/// still be built entirely from cache after a failed live Apple call, and
-/// this is how that gets surfaced instead of failing silently.
+/// [appleSessionStale] mirrors the server's own `appleSessionStale` flag:
+/// a 200 response can still be built entirely from cache after a failed
+/// live Apple call, and this is how that gets surfaced instead of failing
+/// silently. Null means no opinion at all - an older server that doesn't
+/// send the field - and must be treated as "nothing to report", never as
+/// false.
 typedef LocationReportsResult = ({
   List reports,
   int newCount,
-  bool appleSessionStale,
+  bool? appleSessionStale,
 });
 
 class ReportsFetcher {
@@ -115,7 +117,9 @@ class ReportsFetcher {
         var newCount = decoded["new_count"] is int
             ? decoded["new_count"] as int
             : out.length;
-        var appleSessionStale = decoded["appleSessionStale"] == true;
+        var appleSessionStale = decoded.containsKey("appleSessionStale")
+            ? decoded["appleSessionStale"] == true
+            : null;
         logger.i('Found ${out.length} reports, $newCount new');
         return (
           reports: out,
