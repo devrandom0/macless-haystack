@@ -4,7 +4,7 @@ import time
 
 import pytest
 import requests
-from http.client import HTTPConnection, RemoteDisconnected
+from http.client import HTTPConnection
 from http.server import HTTPServer
 from unittest.mock import MagicMock
 
@@ -134,12 +134,22 @@ def test_post_fetch_does_not_return_503_for_a_non_auth_exception_while_stale(ser
         lambda *a, **k: (_ for _ in ()).throw(ConnectionError("network down")),
     )
 
-    # The untouched non-auth-failure branch has a pre-existing, out of
-    # scope quirk (send_response with no end_headers/body -> the
-    # connection just closes) - what matters here is only that it is
-    # provably *not* the 503 apple_session_expired path.
-    with pytest.raises(RemoteDisconnected):
-        _post(server, '/', {"ids": ["hash-a"], "days": 7})
+    status, body = _post(server, '/', {"ids": ["hash-a"], "days": 7})
+
+    assert status == 501
+    assert body == {"error": "internal_error"}
+
+
+def test_post_fetch_returns_504_with_a_body_on_anisette_timeout(server, monkeypatch):
+    monkeypatch.setattr(
+        mh_endpoint.history_archiver, "fetch_reports_with_cache",
+        lambda *a, **k: (_ for _ in ()).throw(requests.exceptions.ConnectTimeout()),
+    )
+
+    status, body = _post(server, '/', {"ids": ["hash-a"], "days": 7})
+
+    assert status == 504
+    assert body == {"error": "anisette_timeout"}
 
 
 def test_is_apple_auth_exception_true_for_401_http_error():
