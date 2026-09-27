@@ -250,7 +250,9 @@ class ServerHandler(BaseHTTPRequestHandler):
             self.addCORSHeaders()
             self.end_headers()
 
-            responseBody = json.dumps({"results": results, "new_count": new_count})
+            responseBody = json.dumps({
+                "results": results, "new_count": new_count, "appleSessionStale": apple_session_stale,
+            })
             self.wfile.write(responseBody.encode())
         except requests.exceptions.ConnectTimeout:
             logger.error("Timeout to " + mh_config.getAnisetteServer() +
@@ -258,7 +260,14 @@ class ServerHandler(BaseHTTPRequestHandler):
             self.send_response(504)
         except Exception as e:
             logger.error(f"Unknown error occurred {e}", exc_info=True)
-            self.send_response(501)
+            # No cache to fall back on: fetch_reports_with_cache only ever
+            # raises here when a live Apple call failed with nothing cached
+            # to return instead, so a stale session is the actionable case
+            # worth telling the app apart from a generic failure.
+            if apple_session_stale:
+                self._send_json(503, {"error": "apple_session_expired"})
+            else:
+                self.send_response(501)
 
     def _handle_post_history_devices(self, body):
         if tracked_device_store is None or history_encryption_key is None:
@@ -529,6 +538,8 @@ def _raise_for_status_marking_stale(response):
         if response.status_code in (401, 403):
             apple_session_stale = True
         raise
+    else:
+        apple_session_stale = False
 
 
 def getAuth(regenerate=False, second_factor='sms'):
