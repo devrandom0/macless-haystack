@@ -3,6 +3,7 @@ import 'package:maps_launcher/maps_launcher.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../history/accessory_history.dart';
+import '../refresh_coordinator.dart';
 import 'accessory_model.dart';
 import 'share_location.dart';
 
@@ -17,11 +18,23 @@ Future<void> navigateToAccessory(Accessory accessory) async {
   await MapsLauncher.launchCoordinates(loc.latitude, loc.longitude, accessory.name);
 }
 
-/// Pushes the location history screen for [accessory].
-void openAccessoryHistory(BuildContext context, Accessory accessory) {
+/// Pushes the location history screen for [accessory], threading through
+/// the same single-accessory refresh path the swipe action uses so the
+/// history page's own Refresh button gets identical feedback/banner
+/// handling.
+void openAccessoryHistory(
+  BuildContext context,
+  Accessory accessory,
+  RefreshCoordinator refreshCoordinator,
+) {
   Navigator.push(
     context,
-    MaterialPageRoute(builder: (context) => AccessoryHistory(accessory: accessory)),
+    MaterialPageRoute(
+      builder: (context) => AccessoryHistory(
+        accessory: accessory,
+        refreshCoordinator: refreshCoordinator,
+      ),
+    ),
   );
 }
 

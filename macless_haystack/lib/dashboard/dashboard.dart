@@ -15,6 +15,7 @@ import 'package:macless_haystack/notifications/notification_navigation.dart';
 import 'package:macless_haystack/preferences/preferences_page.dart';
 import 'package:macless_haystack/preferences/user_preferences_model.dart';
 import 'package:macless_haystack/item_management/tag_management.dart';
+import 'package:macless_haystack/refresh_coordinator.dart';
 
 import '../accessory/accessory_model.dart';
 
@@ -89,11 +90,18 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
   /// switching away and back, instead of being torn down and recreated.
   late final List<Widget> _tabBodies = [
     AccessoryMapListVertical(
-      loadLocationUpdates: loadLocationUpdates,
+      refreshCoordinator: _refreshCoordinator,
       saveOrderUpdatesCallback: saveAccessories,
     ),
     const KeyManagement(),
   ];
+
+  /// Shared single-accessory in-flight state for every Refresh action (the
+  /// accessory list's swipe action, the map popup, and the history page),
+  /// so refreshing the same accessory from two of them at once is a no-op
+  /// while a different accessory's refresh is never blocked.
+  late final RefreshCoordinator _refreshCoordinator =
+      RefreshCoordinator(loadLocationUpdates);
 
   /// Drives the persistent "log in again" MaterialBanner. Fed from either
   /// a fetch's own appleSessionStale flag or an explicit
@@ -145,6 +153,7 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
     _appleSessionBanner.dispose();
     NotificationNavigation.pendingAccessoryId
         .removeListener(_switchToMapTabForPendingNotification);
+    _refreshCoordinator.dispose();
     super.dispose();
   }
 

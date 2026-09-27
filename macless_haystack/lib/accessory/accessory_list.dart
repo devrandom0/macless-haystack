@@ -13,6 +13,7 @@ import 'package:macless_haystack/accessory/accessory_registry.dart';
 import 'package:macless_haystack/accessory/no_accessories.dart';
 import 'package:macless_haystack/location/location_model.dart';
 import 'package:macless_haystack/preferences/user_preferences_model.dart';
+import 'package:macless_haystack/refresh_coordinator.dart';
 
 import '../callbacks.dart';
 import 'accessory_model.dart';
@@ -94,7 +95,7 @@ List<Accessory> mergeReorderedVisibleIntoFullGroup({
 }
 
 class AccessoryList extends StatefulWidget {
-  final LoadLocationUpdatesCallback loadLocationUpdates;
+  final RefreshCoordinator refreshCoordinator;
   final SaveOrderUpdatesCallback saveOrderUpdatesCallback;
   final void Function(LatLng point)? centerOnPoint;
   final ScrollController? scrollController;
@@ -105,7 +106,7 @@ class AccessoryList extends StatefulWidget {
   /// Uses the accessories in the [AccessoryRegistry].
   const AccessoryList({
     super.key,
-    required this.loadLocationUpdates,
+    required this.refreshCoordinator,
     this.centerOnPoint,
     required this.saveOrderUpdatesCallback,
     this.scrollController,
@@ -354,7 +355,15 @@ class _AccessoryListState extends State<AccessoryList> {
               children: [
                   SlidableAction(
                     onPressed: (context) async {
-                      await widget.loadLocationUpdates(accessory);
+                      try {
+                        await widget.refreshCoordinator.refresh(accessory);
+                      } catch (_) {
+                        // The coordinator's own try/finally already cleared
+                        // the in-flight flag regardless - this only stops
+                        // the error from becoming an unhandled exception,
+                        // since onPressed is a plain void callback with
+                        // nothing else to hand it to.
+                      }
                     },
                     // flutter_slidable defaults backgroundColor to a hardcoded
                     // white, which the dark-theme primary color is invisible on.
@@ -379,7 +388,8 @@ class _AccessoryListState extends State<AccessoryList> {
             ),
           if (accessory.isActive)
             SlidableAction(
-              onPressed: (context) => openAccessoryHistory(context, accessory),
+              onPressed: (context) => openAccessoryHistory(
+                  context, accessory, widget.refreshCoordinator),
               backgroundColor: Theme.of(context).colorScheme.primary,
               icon: Icons.history,
               label: isCompact ? null : 'History',

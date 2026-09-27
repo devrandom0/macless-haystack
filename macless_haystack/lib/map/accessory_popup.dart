@@ -9,6 +9,7 @@ import '../accessory/accessory_icon.dart';
 import '../accessory/accessory_model.dart';
 import '../util/place_format.dart';
 import '../util/time_format.dart';
+import '../widgets/refresh_icon_button.dart';
 
 /// Height of the small triangular tail pointing from the card down at the
 /// marker it belongs to.
@@ -30,6 +31,8 @@ class AccessoryPopup extends Marker {
     required VoidCallback onNavigate,
     required VoidCallback onHistory,
     required VoidCallback onShare,
+    required VoidCallback onRefresh,
+    bool refreshing = false,
     bool showAbove = true,
     double maxHeight = 320,
     double horizontalAlignment = 0,
@@ -72,6 +75,8 @@ class AccessoryPopup extends Marker {
                 onNavigate: onNavigate,
                 onHistory: onHistory,
                 onShare: onShare,
+                onRefresh: onRefresh,
+                refreshing: refreshing,
                 tailAbove: !showAbove,
                 // 35 accounts for the tail + gap already carved out by the
                 // padding above; without a cap here, a maxHeight tight
@@ -90,6 +95,12 @@ class _PopupContent extends StatelessWidget {
   final VoidCallback onNavigate;
   final VoidCallback onHistory;
   final VoidCallback onShare;
+  final VoidCallback onRefresh;
+
+  /// Whether this accessory's refresh is currently in flight - disables the
+  /// Refresh button and swaps its icon for a progress indicator so a second
+  /// tap can't fire a duplicate fetch.
+  final bool refreshing;
 
   /// Whether the tail points up at a marker above the card, instead of
   /// down at one below it.
@@ -106,6 +117,8 @@ class _PopupContent extends StatelessWidget {
     required this.onNavigate,
     required this.onHistory,
     required this.onShare,
+    required this.onRefresh,
+    this.refreshing = false,
     this.tailAbove = false,
     this.maxCardHeight,
   });
@@ -215,6 +228,12 @@ class _PopupContent extends StatelessWidget {
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                         children: [
+                          RefreshIconButton(
+                            constraints: iconButtonConstraints,
+                            refreshing: refreshing,
+                            color: Theme.of(context).colorScheme.primary,
+                            onPressed: onRefresh,
+                          ),
                           IconButton(
                             constraints: iconButtonConstraints,
                             padding: const EdgeInsets.all(8),

@@ -270,6 +270,50 @@ class AccessoryRegistry extends ChangeNotifier {
     }
   }
 
+  /// Fetches one accessory's reports (its own key plus any additional
+  /// keys) via [FindMyController]. Test-only seam: the real implementation
+  /// goes through that class's static, platform-backed secure storage
+  /// reads and an isolate-spawning `compute()` call, neither of which a
+  /// plain unit test can fake directly.
+  Future<ComputedLocationReports> Function(
+    Accessory accessory,
+    String? url, {
+    required bool force,
+  })
+  _fetchReportsForAccessory = _defaultFetchReportsForAccessory;
+
+  set setFetchReportsForAccessory(
+    Future<ComputedLocationReports> Function(
+      Accessory accessory,
+      String? url, {
+      required bool force,
+    })
+    fetch,
+  ) {
+    _fetchReportsForAccessory = fetch;
+  }
+
+  static Future<ComputedLocationReports> _defaultFetchReportsForAccessory(
+    Accessory accessory,
+    String? url, {
+    required bool force,
+  }) async {
+    var keyPair = await FindMyController.getKeyPair(accessory.hashedPublicKey);
+
+    List<FindMyKeyPair> hashedPublicKeys =
+        await Stream.fromIterable(accessory.additionalKeys)
+            .asyncMap(
+              (hashedPublicKey) => FindMyController.getKeyPair(hashedPublicKey),
+            )
+            .toList();
+
+    hashedPublicKeys.add(keyPair);
+
+    return catchingExpiredAppleSession(
+      () => FindMyController.computeResults(hashedPublicKeys, url, force: force),
+    );
+  }
+
   /// Fetches new location reports and matches them to their accessory.
   ///
   /// Returns how many reports are genuinely new data, not just the total
@@ -289,25 +333,9 @@ class AccessoryRegistry extends ChangeNotifier {
     String? url = Settings.getValue<String>(endpointUrl);
     for (var i = 0; i < currentAccessories.length; i++) {
       var accessory = currentAccessories.elementAt(i);
-
-      var keyPair = await FindMyController.getKeyPair(
-        accessory.hashedPublicKey,
+      runningLocationRequests.add(
+        _fetchReportsForAccessory(accessory, url, force: force),
       );
-
-      List<FindMyKeyPair> hashedPublicKeys =
-          await Stream.fromIterable(accessory.additionalKeys)
-              .asyncMap(
-                (hashedPublicKey) =>
-                    FindMyController.getKeyPair(hashedPublicKey),
-              )
-              .toList();
-
-      hashedPublicKeys.add(keyPair);
-
-      var locationRequest = catchingExpiredAppleSession(
-        () => FindMyController.computeResults(hashedPublicKeys, url, force: force),
-      );
-      runningLocationRequests.add(locationRequest);
     }
 
     var reportsForAccessories = await Future.wait(runningLocationRequests);
@@ -349,12 +377,28 @@ class AccessoryRegistry extends ChangeNotifier {
         reports,
         accessory,
         retentionDays: retentionDays,
-      );
+      ).catchError((Object error, StackTrace stackTrace) {
+        // One accessory's history failing (e.g. a bad decrypt) must not
+        // stop _storeHistory below from persisting every other
+        // accessory's, nor make the awaited call throw and abort the
+        // whole refresh - it's now awaited, so an uncaught error here
+        // would do both instead of just skipping this one entry.
+        logger.e(
+          'Error filling location history for ${accessory.id}',
+          error: error,
+          stackTrace: stackTrace,
+        );
+        return accessory.locationHistory;
+      });
     }
     // Store updated lastLocation and datePublished for accessories
     _storeAccessories();
 
-    _storeHistory(historyEntries, retentionDays);
+    // Awaited so locationHistory is actually populated - fillLocationHistory
+    // mutates it before resolving - by the time this method returns. Left
+    // as fire-and-forget, a caller (or the UI right after) could see stale
+    // data because the refresh had "finished" before this settled.
+    await _storeHistory(historyEntries, retentionDays);
 
     initialLoadFinished = true;
     notifyListeners();

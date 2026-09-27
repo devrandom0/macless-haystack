@@ -13,6 +13,7 @@ import 'package:macless_haystack/location/location_model.dart';
 import 'package:macless_haystack/map/accessory_popup.dart';
 import 'package:macless_haystack/map/map_tile_provider_model.dart';
 import 'package:macless_haystack/map/map_tile_source.dart';
+import 'package:macless_haystack/refresh_coordinator.dart';
 import 'package:provider/provider.dart';
 
 /// Whether the map should auto-fit its camera to [accessories]' current
@@ -201,9 +202,14 @@ PopupPlacement popupPlacementFor({
 
 class AccessoryMap extends StatefulWidget {
   final MapController? mapController;
+  final RefreshCoordinator refreshCoordinator;
 
   /// Displays a map with all accessories at their latest position.
-  const AccessoryMap({super.key, this.mapController});
+  const AccessoryMap({
+    super.key,
+    this.mapController,
+    required this.refreshCoordinator,
+  });
 
   @override
   State<StatefulWidget> createState() {
@@ -576,18 +582,35 @@ class _AccessoryMapState extends State<AccessoryMap> {
                 ),
               ),
           ]),
-          MarkerLayer(markers: [
-            if (selected != null)
-              AccessoryPopup(
-                accessory: selected,
-                onNavigate: () => navigateToAccessory(selected),
-                onHistory: () => openAccessoryHistory(context, selected),
-                onShare: () => shareAccessoryLocation(selected),
-                showAbove: showPopupAbove,
-                maxHeight: popupMaxHeight,
-                horizontalAlignment: popupHorizontalAlignment,
-              ),
-          ]),
+          // Only this small marker layer needs to rebuild on a refresh
+          // in-flight change, not the whole map.
+          ValueListenableBuilder<Set<String>>(
+            valueListenable: widget.refreshCoordinator,
+            builder: (context, refreshingIds, child) {
+              return MarkerLayer(markers: [
+                if (selected != null)
+                  AccessoryPopup(
+                    accessory: selected,
+                    onNavigate: () => navigateToAccessory(selected),
+                    onHistory: () => openAccessoryHistory(
+                        context, selected, widget.refreshCoordinator),
+                    onShare: () => shareAccessoryLocation(selected),
+                    onRefresh: () => widget.refreshCoordinator
+                        .refresh(selected)
+                        // The coordinator's own try/finally already cleared
+                        // the in-flight flag regardless - this only stops
+                        // the error from becoming an unhandled exception,
+                        // since onRefresh is a plain void callback with
+                        // nothing else to hand it to.
+                        .catchError((_) {}),
+                    refreshing: refreshingIds.contains(selected.id),
+                    showAbove: showPopupAbove,
+                    maxHeight: popupMaxHeight,
+                    horizontalAlignment: popupHorizontalAlignment,
+                  ),
+              ]);
+            },
+          ),
           RichAttributionWidget(
             alignment: AttributionAlignment.bottomLeft,
             attributions: [
