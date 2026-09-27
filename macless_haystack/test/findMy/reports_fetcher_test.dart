@@ -41,9 +41,24 @@ void main() {
     expect(result.newCount, 1);
   });
 
-  test('fetchLocationReports reports appleSessionStale false when the server omits it', () async {
+  test('fetchLocationReports reports appleSessionStale as null when the server omits it '
+      '(no live opinion, e.g. an older server)', () async {
     var client = MockClient(
       (request) async => http.Response(jsonEncode({"results": [], "new_count": 0}), 200),
+    );
+
+    var result = await ReportsFetcher.fetchLocationReports(['key-a'], 7, url, '', '', client: client);
+
+    expect(result.appleSessionStale, isNull);
+  });
+
+  test('fetchLocationReports reports appleSessionStale false when the server explicitly says so',
+      () async {
+    var client = MockClient(
+      (request) async => http.Response(
+        jsonEncode({"results": [], "new_count": 0, "appleSessionStale": false}),
+        200,
+      ),
     );
 
     var result = await ReportsFetcher.fetchLocationReports(['key-a'], 7, url, '', '', client: client);
