@@ -9,7 +9,7 @@ import ssl
 import sys
 import threading
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime,  timezone
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
@@ -43,6 +43,10 @@ class PendingAppleLogin:
     username: str
     password: str
     started_at: float
+    # Kept around so /auth/apple/resend can request a phone code without
+    # requiring the user to re-enter their password mid-flow.
+    dsid: str = None
+    idms_token: str = None
 
 
 pending_apple_login = None
@@ -219,6 +223,15 @@ class ServerHandler(BaseHTTPRequestHandler):
             self._handle_post_auth_apple_verify(body)
             return
 
+        if path == '/auth/apple/resend':
+            try:
+                body = json.loads(post_body)
+            except json.JSONDecodeError as e:
+                self._send_json(400, {"error": str(e)})
+                return
+            self._handle_post_auth_apple_resend(body)
+            return
+
         if path == '/auth/apple/logout':
             self._handle_post_auth_apple_logout()
             return
@@ -379,7 +392,7 @@ class ServerHandler(BaseHTTPRequestHandler):
                 return
             pending_apple_login = PendingAppleLogin(
                 method=result.method, state=state, username=username, password=password,
-                started_at=time.time(),
+                started_at=time.time(), dsid=result.dsid, idms_token=result.idms_token,
             )
             self._send_json(200, {
                 "status": "code_required",
@@ -461,6 +474,58 @@ class ServerHandler(BaseHTTPRequestHandler):
         pending_apple_login = None
         self._send_json(200, {"status": "authenticated"})
 
+    def _handle_post_auth_apple_resend(self, body):
+        global pending_apple_login
+
+        pending = pending_apple_login
+        if pending is None:
+            self._send_json(409, {"error": "no_pending_login"})
+            return
+        if time.time() - pending.started_at > PENDING_LOGIN_TIMEOUT_SECONDS:
+            pending_apple_login = None
+            self._send_json(410, {"error": "login_expired"})
+            return
+
+        try:
+            mode = body['mode']
+            if mode not in _RESEND_MODES:
+                raise ValueError("invalid mode")
+        except (KeyError, TypeError, ValueError):
+            self._send_json(400, {"error": "invalid_mode"})
+            return
+
+        try:
+            headers, numbers = pypush_gsa_icloud.list_trusted_phone_numbers(
+                pending.dsid, pending.idms_token)
+        except requests.exceptions.RequestException:
+            self._send_json(502, {"error": "apple_unreachable"})
+            return
+
+        if not numbers:
+            self._send_json(400, {"error": "no_trusted_phone"})
+            return
+
+        phone_id = body.get('phoneId')
+        if phone_id is None:
+            phone = numbers[0]
+        else:
+            phone = next((n for n in numbers if n["id"] == phone_id), None)
+            if phone is None:
+                self._send_json(400, {"error": "invalid_phone_id"})
+                return
+
+        try:
+            pypush_gsa_icloud.trigger_phone_second_factor(headers, phone["id"], mode)
+        except requests.exceptions.RequestException:
+            self._send_json(502, {"error": "apple_unreachable"})
+            return
+
+        pending_apple_login = replace(
+            pending, method="secondaryAuth",
+            state={"headers": headers, "sms_id": phone["id"], "mode": mode},
+        )
+        self._send_json(200, {"status": "code_required", "method": mode, "phone": phone["number"]})
+
     def _handle_get_auth_apple_status(self):
         _expire_pending_login_if_stale()
         logged_in = os.path.exists(mh_config.getConfigFile()) and not apple_session_stale
@@ -491,6 +556,8 @@ _SECOND_FACTOR_METHOD_NAMES = {
     "trustedDeviceSecondaryAuth": "trusted_device",
     "secondaryAuth": "sms",
 }
+
+_RESEND_MODES = ("sms", "voice")
 
 
 def _has_legacy_credentials(endpoint_user, endpoint_pass):

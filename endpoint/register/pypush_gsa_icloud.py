@@ -366,12 +366,97 @@ def request_sms_code(dsid, idms_token):
     return headers, sms_id
 
 
-def submit_sms_code(headers, sms_id, code):
+def _extract_trusted_phone_numbers(boot_args):
+    """Returns a list of {'id', 'number'} dicts from the auth page's
+    boot_args, supporting both the classic direct.phoneNumberVerification
+    shape and the newer direct.twoSV.phoneNumberVerification shape some
+    accounts get. Each shape can carry a single trustedPhoneNumber and/or a
+    trustedPhoneNumbers list; entries with the same id are only kept once."""
+    direct = boot_args.get("direct", {})
+    two_sv = direct.get("twoSV", {})
+    candidates = [
+        direct.get("phoneNumberVerification"),
+        two_sv.get("phoneNumberVerification") if isinstance(two_sv, dict) else None,
+    ]
+
+    numbers = []
+    seen_ids = set()
+    for candidate in candidates:
+        if not isinstance(candidate, dict):
+            continue
+        entries = list(candidate.get("trustedPhoneNumbers") or [])
+        single = candidate.get("trustedPhoneNumber")
+        if isinstance(single, dict):
+            entries.append(single)
+        for entry in entries:
+            if not isinstance(entry, dict) or "id" not in entry:
+                continue
+            phone_id = entry["id"]
+            if phone_id in seen_ids:
+                continue
+            seen_ids.add(phone_id)
+            masked = entry.get("numberWithDialCode") or entry.get("obfuscatedNumber") or entry.get("number")
+            numbers.append({"id": phone_id, "number": masked})
+    return numbers
+
+
+def list_trusted_phone_numbers(dsid, idms_token):
+    """Fetches the auth page's boot_args and returns (headers, numbers) -
+    headers ready for trigger_phone_second_factor/submit_sms_code, and the
+    account's trusted phone numbers (masked, with their Apple-assigned ids).
+    An empty list means the page carried none Apple would recognize."""
+    headers = _common_2fa_headers(dsid, idms_token)
+    headers["X-Apple-App-Info"] = "com.apple.gs.xcode.auth"
+    headers["X-Xcode-Version"] = "11.2 (11B41)"
+
+    pattern = r'<script.*class="boot_args">\s*(.*?)\s*</script>'
+    with requests.get("https://gsa.apple.com/auth", headers=headers, verify=False) as auth:
+        auth.raise_for_status()
+        match = re.search(pattern, auth.text, re.DOTALL)
+        if not match:
+            # Never log the raw page - see request_sms_code.
+            logger.debug(f"boot_args script tag not found in auth page ({len(auth.text)} bytes)")
+            return headers, []
+        try:
+            boot_args = json.loads(match.group(1).strip())
+        except json.JSONDecodeError:
+            logger.debug("boot_args script tag present but not valid JSON")
+            return headers, []
+        numbers = _extract_trusted_phone_numbers(boot_args)
+
+    return headers, numbers
+
+
+def trigger_phone_second_factor(headers, phone_id, mode):
+    """Asks Apple to send a new 2FA code to a trusted phone number, by SMS
+    or voice call. `headers` comes from list_trusted_phone_numbers/
+    request_sms_code."""
+    assert mode in ("sms", "voice")
+    # Anisette metadata is meant to be single-use; regenerate it right before sending,
+    # same as submit_sms_code/submit_trusted_device_code do before their own request.
+    trigger_headers = dict(headers)
+    trigger_headers.update(generate_anisette_headers())
+    body = {"phoneNumber": {"id": phone_id}, "mode": mode}
+
+    with requests.put(
+            "https://gsa.apple.com/auth/verify/phone/",
+            json=body,
+            headers=trigger_headers,
+            verify=False,
+            timeout=5,
+    ) as resp:
+        resp.raise_for_status()
+
+    logger.debug(f"HTTP-Code: {resp.status_code} with {len(resp.text)} bytes")
+    logger.info(f"Requested {mode} 2FA code for phone id {phone_id}")
+
+
+def submit_sms_code(headers, sms_id, code, mode="sms"):
     # Anisette metadata is meant to be single-use; the trigger/wait/resend round trip
     # before this can stretch well past that, so regenerate it right before submitting.
     submit_headers = dict(headers)
     submit_headers.update(generate_anisette_headers())
-    body = {"phoneNumber": {"id": sms_id}, "mode": "sms", "securityCode": {"code": code}}
+    body = {"phoneNumber": {"id": sms_id}, "mode": mode, "securityCode": {"code": code}}
 
     # Send the 2FA code to Apple
     with requests.post(
@@ -502,6 +587,7 @@ def submit_second_factor_code(method, state, code):
     if method == "trustedDeviceSecondaryAuth":
         submit_trusted_device_code(state["headers"], code)
     elif method == "secondaryAuth":
-        submit_sms_code(state["headers"], state["sms_id"], code)
+        mode = state.get("mode", "sms")
+        submit_sms_code(state["headers"], state["sms_id"], code, mode)
     else:
         raise AppleAuthError(f"unknown_auth_value:{method}")
