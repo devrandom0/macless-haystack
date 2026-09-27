@@ -3,6 +3,7 @@ import 'package:flutter_settings_screens/flutter_settings_screens.dart';
 import 'package:logger/logger.dart';
 import 'package:macless_haystack/apple_auth/apple_auth_page.dart';
 import 'package:macless_haystack/apple_auth/apple_auth_service.dart';
+import 'package:macless_haystack/dashboard/apple_session_banner_controller.dart';
 import 'package:macless_haystack/item_management/refresh_action.dart';
 import 'package:provider/provider.dart';
 import 'package:macless_haystack/accessory/accessory_registry.dart';
@@ -94,16 +95,16 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
     const KeyManagement(),
   ];
 
-  /// Whether the server's Apple session is known to be expired - drives the
-  /// persistent "log in again" MaterialBanner. Set from either a fetch's
-  /// own appleSessionStale flag or an explicit /auth/apple/status check
-  /// (see [_checkAppleSessionStatus]), whichever last had an opinion.
-  bool _appleSessionExpired = false;
+  /// Drives the persistent "log in again" MaterialBanner. Fed from either
+  /// a fetch's own appleSessionStale flag or an explicit
+  /// /auth/apple/status check (see [_checkAppleSessionStatus]).
+  final _appleSessionBanner = AppleSessionBannerController();
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _appleSessionBanner.addListener(_syncAppleSessionBanner);
 
     // Initialize models and preferences
     var userPreferences = Provider.of<UserPreferences>(context, listen: false);
@@ -140,6 +141,8 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _appleSessionBanner.removeListener(_syncAppleSessionBanner);
+    _appleSessionBanner.dispose();
     NotificationNavigation.pendingAccessoryId
         .removeListener(_switchToMapTabForPendingNotification);
     super.dispose();
@@ -155,9 +158,11 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
   /// Checks the server's Apple auth status directly, independent of any
   /// fetch, so a session that expired while the app was backgrounded shows
   /// up as soon as it's resumed rather than waiting for the next refresh.
-  /// An endpoint that fails or doesn't have the status route at all (404,
-  /// older server) is ignored silently - this is a best-effort extra
-  /// signal, not the primary one (see [loadLocationUpdates]).
+  /// An unconfigured/malformed endpoint URL, a timeout, or an endpoint
+  /// that fails or doesn't have the status route at all (404, older
+  /// server) is ignored silently by getStatus or this catch alike - this
+  /// is a best-effort extra signal, not the primary one (see
+  /// [loadLocationUpdates]).
   Future<void> _checkAppleSessionStatus() async {
     try {
       var url = Settings.getValue<String>(
@@ -167,19 +172,17 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
       var user = Settings.getValue<String>(endpointUser, defaultValue: '')!;
       var pass = Settings.getValue<String>(endpointPass, defaultValue: '')!;
       var status = await AppleAuthService.getStatus(url, user, pass);
-      _setAppleSessionExpired(!status.loggedIn);
+      _appleSessionBanner.reportStale(!status.loggedIn);
     } catch (_) {
       // Best-effort only - ignored silently, see method doc.
     }
   }
 
-  /// Shows or hides the persistent "Apple ID login expired" banner and
-  /// keeps [_appleSessionExpired] in sync with the last thing that had an
-  /// opinion about it (a fetch's own flag, or [_checkAppleSessionStatus]).
-  void _setAppleSessionExpired(bool expired) {
-    if (!mounted || _appleSessionExpired == expired) return;
-    setState(() => _appleSessionExpired = expired);
-    if (expired) {
+  /// Mirrors [_appleSessionBanner]'s visibility onto the actual
+  /// ScaffoldMessenger banner - called whenever the controller notifies.
+  void _syncAppleSessionBanner() {
+    if (!mounted) return;
+    if (_appleSessionBanner.visible) {
       _showAppleSessionExpiredBanner();
     } else {
       ScaffoldMessenger.of(context).hideCurrentMaterialBanner();
@@ -195,7 +198,7 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
         actions: [
           TextButton(
             onPressed: () async {
-              ScaffoldMessenger.of(context).hideCurrentMaterialBanner();
+              _appleSessionBanner.dismiss();
               var url = Settings.getValue<String>(
                 endpointUrl,
                 defaultValue: 'http://localhost:6176',
@@ -208,7 +211,11 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
                 endpointPass,
                 defaultValue: '',
               )!;
-              await Navigator.of(context).push(
+              // Captured before the await - context itself must not be
+              // used again after it if the widget got disposed/deactivated
+              // in the meantime.
+              var navigator = Navigator.of(context);
+              await navigator.push(
                 MaterialPageRoute(
                   builder: (context) => AppleAuthPage(
                     endpointUrl: url,
@@ -218,13 +225,13 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
                   ),
                 ),
               );
+              if (!mounted) return;
               _checkAppleSessionStatus();
             },
             child: const Text('Re-login'),
           ),
           TextButton(
-            onPressed: () =>
-                ScaffoldMessenger.of(context).hideCurrentMaterialBanner(),
+            onPressed: () => _appleSessionBanner.dismiss(),
             child: const Text('Dismiss'),
           ),
         ],
@@ -272,7 +279,7 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
         accessories.where((a) => a.isActive),
         force: force,
       );
-      _setAppleSessionExpired(result.appleSessionStale);
+      _appleSessionBanner.reportStale(result.appleSessionStale);
       var message = fetchFeedbackMessage(
         showFeedback: showFeedback,
         newCount: result.newCount,
