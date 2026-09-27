@@ -10,6 +10,7 @@ import 'package:macless_haystack/location/location_model.dart';
 import 'package:macless_haystack/map/map_style_picker_button.dart';
 import 'package:macless_haystack/map/map_tile_provider_model.dart';
 import 'package:macless_haystack/map/map_tile_source.dart';
+import 'package:macless_haystack/preferences/preference_switch_tile.dart';
 import 'package:macless_haystack/preferences/theme_model.dart';
 import 'package:macless_haystack/preferences/user_preferences_model.dart';
 import 'package:macless_haystack/util/theme_mode.dart';
@@ -137,7 +138,7 @@ class _PreferencesPageState extends State<PreferencesPage> {
   }
 
   Widget getLocationTile() {
-    return SwitchSettingsTile(
+    return PreferenceSwitchTile(
       settingKey: locationAccessWantedKey,
       title: "Show this device's location",
       onChange: (showLocation) {
@@ -300,7 +301,7 @@ class _PreferencesPageState extends State<PreferencesPage> {
   }
 
   Widget getFetchOnStartupTile() {
-    return SwitchSettingsTile(
+    return PreferenceSwitchTile(
       settingKey: fetchLocationOnStartupKey,
       defaultValue: true,
       title: 'Fetch locations on startup',
@@ -308,7 +309,7 @@ class _PreferencesPageState extends State<PreferencesPage> {
   }
 
   Widget getLowBatteryNotificationsTile() {
-    return SwitchSettingsTile(
+    return PreferenceSwitchTile(
       settingKey: lowBatteryNotificationsEnabledKey,
       defaultValue: true,
       title: 'Low battery notifications',
@@ -317,12 +318,11 @@ class _PreferencesPageState extends State<PreferencesPage> {
   }
 
   Widget getCompactAccessoryListTile() {
-    return SwitchSettingsTile(
+    return PreferenceSwitchTile(
       settingKey: compactAccessoryListKey,
       defaultValue: true,
       title: 'Compact accessory list',
       subtitle: 'Show icon, name, distance, and last seen on one line',
-      activeColor: Theme.of(context).colorScheme.onPrimary,
     );
   }
 
@@ -448,7 +448,7 @@ class _PreferencesPageState extends State<PreferencesPage> {
   }
 
   Widget getAppleAuthTile() {
-    return SwitchSettingsTile(
+    return PreferenceSwitchTile(
       settingKey: appleAuthEnabledKey,
       defaultValue: false,
       title: 'Enable in-app Apple ID login',
