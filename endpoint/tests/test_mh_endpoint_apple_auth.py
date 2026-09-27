@@ -81,6 +81,7 @@ def test_get_auth_raises_instead_of_prompting_interactively_when_unconfigured(tm
 
 def test_complete_apple_login_writes_auth_json_and_clears_stale_flag(tmp_path, monkeypatch):
     monkeypatch.setattr(mh_config, "getConfigFile", lambda: str(tmp_path / "auth.json"))
+    (tmp_path / "apple_session_stale").touch()
     mh_endpoint.apple_session_stale = True
 
     with patch.object(mh_endpoint.pypush_gsa_icloud, "register_mobileme",
@@ -90,6 +91,7 @@ def test_complete_apple_login_writes_auth_json_and_clears_stale_flag(tmp_path, m
     with open(tmp_path / "auth.json") as f:
         assert json.load(f) == {"dsid": "d-1", "searchPartyToken": "spt-1"}
     assert mh_endpoint.apple_session_stale is False
+    assert not (tmp_path / "apple_session_stale").exists()
 
 
 def test_post_apple_login_authenticates_immediately_when_no_second_factor(server):
@@ -299,7 +301,8 @@ def test_get_apple_status_reports_not_pending_once_pending_login_expired(server)
     assert mh_endpoint.pending_apple_login is None
 
 
-def test_raise_for_status_marking_stale_sets_flag_on_401():
+def test_raise_for_status_marking_stale_sets_flag_on_401(tmp_path, monkeypatch):
+    monkeypatch.setattr(mh_config, "getConfigFile", lambda: str(tmp_path / "auth.json"))
     mh_endpoint.apple_session_stale = False
     response = MagicMock()
     response.status_code = 401
@@ -311,7 +314,34 @@ def test_raise_for_status_marking_stale_sets_flag_on_401():
     assert mh_endpoint.apple_session_stale is True
 
 
-def test_raise_for_status_marking_stale_clears_flag_on_success():
+def test_raise_for_status_marking_stale_sets_flag_on_403(tmp_path, monkeypatch):
+    monkeypatch.setattr(mh_config, "getConfigFile", lambda: str(tmp_path / "auth.json"))
+    mh_endpoint.apple_session_stale = False
+    response = MagicMock()
+    response.status_code = 403
+    response.raise_for_status.side_effect = requests.exceptions.HTTPError("403")
+
+    with pytest.raises(requests.exceptions.HTTPError):
+        mh_endpoint._raise_for_status_marking_stale(response)
+
+    assert mh_endpoint.apple_session_stale is True
+
+
+def test_raise_for_status_marking_stale_writes_a_marker_file_on_401(tmp_path, monkeypatch):
+    monkeypatch.setattr(mh_config, "getConfigFile", lambda: str(tmp_path / "auth.json"))
+    mh_endpoint.apple_session_stale = False
+    response = MagicMock()
+    response.status_code = 401
+    response.raise_for_status.side_effect = requests.exceptions.HTTPError("401")
+
+    with pytest.raises(requests.exceptions.HTTPError):
+        mh_endpoint._raise_for_status_marking_stale(response)
+
+    assert (tmp_path / "apple_session_stale").exists()
+
+
+def test_raise_for_status_marking_stale_clears_flag_on_success(tmp_path, monkeypatch):
+    monkeypatch.setattr(mh_config, "getConfigFile", lambda: str(tmp_path / "auth.json"))
     mh_endpoint.apple_session_stale = True
     response = MagicMock()
     response.raise_for_status.return_value = None
@@ -319,6 +349,18 @@ def test_raise_for_status_marking_stale_clears_flag_on_success():
     mh_endpoint._raise_for_status_marking_stale(response)
 
     assert mh_endpoint.apple_session_stale is False
+
+
+def test_raise_for_status_marking_stale_removes_the_marker_file_on_success(tmp_path, monkeypatch):
+    monkeypatch.setattr(mh_config, "getConfigFile", lambda: str(tmp_path / "auth.json"))
+    (tmp_path / "apple_session_stale").touch()
+    mh_endpoint.apple_session_stale = True
+    response = MagicMock()
+    response.raise_for_status.return_value = None
+
+    mh_endpoint._raise_for_status_marking_stale(response)
+
+    assert not (tmp_path / "apple_session_stale").exists()
 
 
 def test_raise_for_status_marking_stale_leaves_flag_alone_on_server_error():
@@ -333,8 +375,76 @@ def test_raise_for_status_marking_stale_leaves_flag_alone_on_server_error():
     assert mh_endpoint.apple_session_stale is False
 
 
+def test_apple_session_needs_login_true_when_stale_flag_set(tmp_path, monkeypatch):
+    monkeypatch.setattr(mh_config, "getConfigFile", lambda: str(tmp_path / "auth.json"))
+    (tmp_path / "auth.json").write_text('{"dsid": "d-1", "searchPartyToken": "t-1"}')
+    mh_endpoint.apple_session_stale = True
+
+    assert mh_endpoint._apple_session_needs_login() is True
+
+
+def test_apple_session_needs_login_false_when_auth_json_exists_and_not_stale(tmp_path, monkeypatch):
+    monkeypatch.setattr(mh_config, "getConfigFile", lambda: str(tmp_path / "auth.json"))
+    (tmp_path / "auth.json").write_text('{"dsid": "d-1", "searchPartyToken": "t-1"}')
+    mh_endpoint.apple_session_stale = False
+
+    assert mh_endpoint._apple_session_needs_login() is False
+
+
+def test_apple_session_needs_login_true_when_no_auth_json_and_no_config_credentials(tmp_path, monkeypatch):
+    monkeypatch.setattr(mh_config, "getConfigFile", lambda: str(tmp_path / "auth.json"))
+    monkeypatch.setattr(mh_config, "getUser", lambda: None)
+    monkeypatch.setattr(mh_config, "getPass", lambda: None)
+    mh_endpoint.apple_session_stale = False
+
+    assert mh_endpoint._apple_session_needs_login() is True
+
+
+def test_apple_session_needs_login_false_when_no_auth_json_but_config_credentials_present(tmp_path, monkeypatch):
+    # getAuth can silently regenerate a session from config.ini's
+    # appleid/appleid_pass in this case (see getAuth), so there's nothing
+    # actionable to tell the user about.
+    monkeypatch.setattr(mh_config, "getConfigFile", lambda: str(tmp_path / "auth.json"))
+    monkeypatch.setattr(mh_config, "getUser", lambda: "user@example.com")
+    monkeypatch.setattr(mh_config, "getPass", lambda: "hunter2")
+    mh_endpoint.apple_session_stale = False
+
+    assert mh_endpoint._apple_session_needs_login() is False
+
+
+def test_apple_session_needs_login_true_when_no_auth_json_and_only_user_configured(tmp_path, monkeypatch):
+    monkeypatch.setattr(mh_config, "getConfigFile", lambda: str(tmp_path / "auth.json"))
+    monkeypatch.setattr(mh_config, "getUser", lambda: "user@example.com")
+    monkeypatch.setattr(mh_config, "getPass", lambda: None)
+    mh_endpoint.apple_session_stale = False
+
+    assert mh_endpoint._apple_session_needs_login() is True
+
+
+def test_apple_session_stale_marker_persists_across_a_simulated_restart(tmp_path, monkeypatch):
+    monkeypatch.setattr(mh_config, "getConfigFile", lambda: str(tmp_path / "auth.json"))
+    mh_endpoint._mark_apple_session_stale(True)
+
+    # Simulate a process restart: the in-memory flag resets to its
+    # module-load default, but the marker file on disk doesn't.
+    mh_endpoint.apple_session_stale = False
+    mh_endpoint._load_persisted_apple_session_stale()
+
+    assert mh_endpoint.apple_session_stale is True
+
+
+def test_apple_session_stale_marker_load_is_false_when_no_marker_exists(tmp_path, monkeypatch):
+    monkeypatch.setattr(mh_config, "getConfigFile", lambda: str(tmp_path / "auth.json"))
+    mh_endpoint.apple_session_stale = True
+
+    mh_endpoint._load_persisted_apple_session_stale()
+
+    assert mh_endpoint.apple_session_stale is False
+
+
 def test_post_apple_logout_removes_auth_json_and_clears_state(server, tmp_path):
     (tmp_path / "auth.json").write_text('{"dsid": "d-1", "searchPartyToken": "t-1"}')
+    (tmp_path / "apple_session_stale").touch()
     mh_endpoint.apple_session_stale = True
     _set_pending()
 
@@ -343,6 +453,7 @@ def test_post_apple_logout_removes_auth_json_and_clears_state(server, tmp_path):
     assert status == 200
     assert body == {"status": "logged_out"}
     assert not (tmp_path / "auth.json").exists()
+    assert not (tmp_path / "apple_session_stale").exists()
     assert mh_endpoint.apple_session_stale is False
     assert mh_endpoint.pending_apple_login is None
 
