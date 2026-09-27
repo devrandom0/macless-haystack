@@ -7,6 +7,7 @@ import 'package:flutter_settings_screens/flutter_settings_screens.dart';
 import 'package:logger/logger.dart';
 import 'package:macless_haystack/accessory/accessory_model.dart';
 import 'package:latlong2/latlong.dart';
+import 'package:macless_haystack/callbacks.dart';
 import 'package:macless_haystack/history/days_selection_slider.dart';
 import 'package:macless_haystack/history/gpx_export.dart';
 import 'package:macless_haystack/history/location_popup.dart';
@@ -20,6 +21,7 @@ import 'dart:math';
 
 class AccessoryHistory extends StatefulWidget {
   final Accessory accessory;
+  final LoadLocationUpdatesCallback loadLocationUpdates;
 
   /// Shows previous locations of a specific [accessory] on a map.
   /// The locations are connected by a chronological line.
@@ -27,6 +29,7 @@ class AccessoryHistory extends StatefulWidget {
   const AccessoryHistory({
     super.key,
     required this.accessory,
+    required this.loadLocationUpdates,
   });
 
   @override
@@ -40,6 +43,9 @@ class _AccessoryHistoryState extends State<AccessoryHistory> {
 
   bool showPopup = false;
   Pair<dynamic, dynamic>? popupEntry;
+
+  /// Guards against a second tap while a refresh is already in flight.
+  bool _refreshing = false;
 
   int numberOfDays = 7;
   bool isLineLayerVisible = true;
@@ -100,6 +106,19 @@ class _AccessoryHistoryState extends State<AccessoryHistory> {
       appBar: AppBar(
         title: Text(widget.accessory.name, overflow: TextOverflow.ellipsis),
         actions: [
+          IconButton(
+            tooltip: 'Refresh this accessory',
+            onPressed: widget.accessory.isActive && !_refreshing
+                ? _refresh
+                : null,
+            icon: _refreshing
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.refresh),
+          ),
           IconButton(
             tooltip: 'Export history',
             onPressed:
@@ -330,6 +349,18 @@ class _AccessoryHistoryState extends State<AccessoryHistory> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       mapReady();
     });
+  }
+
+  /// Reuses the dashboard's single-accessory refresh path, so this page
+  /// gets the same feedback snackbars and Apple-session banner handling as
+  /// the swipe-right refresh action. [widget.accessory] is the same
+  /// instance the registry mutates in place, so a plain setState after the
+  /// await is enough to pick up the newly fetched history.
+  Future<void> _refresh() async {
+    setState(() => _refreshing = true);
+    await widget.loadLocationUpdates(widget.accessory);
+    if (!mounted) return;
+    setState(() => _refreshing = false);
   }
 
   /// Exports [entries] - the currently-filtered history, matching what's

@@ -137,7 +137,10 @@ class _AccessoryMapListVerticalState extends State<AccessoryMapListVertical> {
             return Stack(
               children: [
                 Positioned.fill(
-                  child: AccessoryMap(mapController: _mapController),
+                  child: AccessoryMap(
+                    mapController: _mapController,
+                    loadLocationUpdates: widget.loadLocationUpdates,
+                  ),
                 ),
                 Positioned(
                   top: 12,

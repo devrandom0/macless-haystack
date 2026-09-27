@@ -9,6 +9,7 @@ import 'package:macless_haystack/accessory/accessory_icon.dart';
 import 'package:macless_haystack/accessory/accessory_list.dart';
 import 'package:macless_haystack/accessory/accessory_model.dart';
 import 'package:macless_haystack/accessory/accessory_registry.dart';
+import 'package:macless_haystack/callbacks.dart';
 import 'package:macless_haystack/location/location_model.dart';
 import 'package:macless_haystack/map/accessory_popup.dart';
 import 'package:macless_haystack/map/map_tile_provider_model.dart';
@@ -201,9 +202,14 @@ PopupPlacement popupPlacementFor({
 
 class AccessoryMap extends StatefulWidget {
   final MapController? mapController;
+  final LoadLocationUpdatesCallback loadLocationUpdates;
 
   /// Displays a map with all accessories at their latest position.
-  const AccessoryMap({super.key, this.mapController});
+  const AccessoryMap({
+    super.key,
+    this.mapController,
+    required this.loadLocationUpdates,
+  });
 
   @override
   State<StatefulWidget> createState() {
@@ -220,6 +226,10 @@ class _AccessoryMapState extends State<AccessoryMap> {
   // mounted - onMapReady is the real signal for that, not a guessed delay.
   bool _mapReady = false;
   String? _selectedAccessoryId;
+  // Only one accessory can be selected (and so poppable-up) at a time, so a
+  // single id - rather than a set - is enough to guard against a second tap
+  // while its refresh is still in flight.
+  String? _refreshingAccessoryId;
   StreamSubscription<MapEvent>? _mapEventSubscription;
   // The cluster layer re-clusters from scratch (an O(markers x zoom levels)
   // rebuild) whenever its markers list changes identity, and a fresh
@@ -307,6 +317,17 @@ class _AccessoryMapState extends State<AccessoryMap> {
       _cachedAccessoryMarkers = accessoryMarkers(accessories);
     }
     return _cachedAccessoryMarkers!;
+  }
+
+  /// Reuses the dashboard's single-accessory refresh path for the map
+  /// popup's own Refresh action - same feedback snackbars, same
+  /// Apple-session banner handling as the accessory list's swipe action.
+  Future<void> _refreshAccessory(Accessory accessory) async {
+    if (_refreshingAccessoryId != null) return;
+    setState(() => _refreshingAccessoryId = accessory.id);
+    await widget.loadLocationUpdates(accessory);
+    if (!mounted) return;
+    setState(() => _refreshingAccessoryId = null);
   }
 
   void fitToContent(List<Accessory> accessories, LatLng? hereLocation) {
@@ -581,8 +602,11 @@ class _AccessoryMapState extends State<AccessoryMap> {
               AccessoryPopup(
                 accessory: selected,
                 onNavigate: () => navigateToAccessory(selected),
-                onHistory: () => openAccessoryHistory(context, selected),
+                onHistory: () => openAccessoryHistory(
+                    context, selected, widget.loadLocationUpdates),
                 onShare: () => shareAccessoryLocation(selected),
+                onRefresh: () => _refreshAccessory(selected),
+                refreshing: _refreshingAccessoryId == selected.id,
                 showAbove: showPopupAbove,
                 maxHeight: popupMaxHeight,
                 horizontalAlignment: popupHorizontalAlignment,

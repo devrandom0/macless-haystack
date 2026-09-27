@@ -379,7 +379,8 @@ class _AccessoryListState extends State<AccessoryList> {
             ),
           if (accessory.isActive)
             SlidableAction(
-              onPressed: (context) => openAccessoryHistory(context, accessory),
+              onPressed: (context) => openAccessoryHistory(
+                  context, accessory, widget.loadLocationUpdates),
               backgroundColor: Theme.of(context).colorScheme.primary,
               icon: Icons.history,
               label: isCompact ? null : 'History',
