@@ -1,5 +1,7 @@
+import 'dart:async';
 import 'dart:convert';
 
+import 'package:fake_async/fake_async.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:macless_haystack/apple_auth/apple_auth_service.dart';
@@ -108,6 +110,49 @@ void main() {
 
     expect(status.loggedIn, true);
     expect(status.pending, false);
+  });
+
+  test('getStatus times out after 10 seconds instead of hanging forever', () {
+    fakeAsync((async) {
+      var client = MockClient((request) async {
+        await Future.delayed(const Duration(seconds: 30));
+        return http.Response('{"loggedIn":true,"pending":false}', 200);
+      });
+
+      Object? caughtError;
+      unawaited(
+        AppleAuthService.getStatus(httpUrl, '', '', client: client).catchError((e) {
+          caughtError = e;
+          return const AppleAuthStatus(loggedIn: false, pending: false);
+        }),
+      );
+
+      async.elapse(const Duration(seconds: 11));
+
+      expect(caughtError, isA<TimeoutException>());
+    });
+  });
+
+  test('getStatus makes no request and throws for an empty url', () async {
+    var client = MockClient((request) async {
+      fail('should not make a network request for an empty url');
+    });
+
+    expect(
+      () => AppleAuthService.getStatus('', '', '', client: client),
+      throwsA(anything),
+    );
+  });
+
+  test('getStatus makes no request and throws for a url with no authority', () async {
+    var client = MockClient((request) async {
+      fail('should not make a network request for a url with no authority');
+    });
+
+    expect(
+      () => AppleAuthService.getStatus('not-a-url', '', '', client: client),
+      throwsA(anything),
+    );
   });
 
   test('getStatus throws on a non-200 response', () async {
