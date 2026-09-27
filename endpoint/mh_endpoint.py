@@ -509,6 +509,11 @@ class ServerHandler(BaseHTTPRequestHandler):
         if phone_id is None:
             phone = numbers[0]
         else:
+            # bool is a subclass of int in Python - reject it explicitly so
+            # True/False can't silently match phone id 1/0.
+            if isinstance(phone_id, bool) or not isinstance(phone_id, int):
+                self._send_json(400, {"error": "invalid_phone_id"})
+                return
             phone = next((n for n in numbers if n["id"] == phone_id), None)
             if phone is None:
                 self._send_json(400, {"error": "invalid_phone_id"})

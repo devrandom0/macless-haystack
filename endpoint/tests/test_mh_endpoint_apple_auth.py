@@ -320,6 +320,31 @@ def test_post_apple_resend_returns_400_when_no_trusted_phone_numbers(server):
     assert body == {"error": "no_trusted_phone"}
 
 
+def test_post_apple_resend_returns_400_when_phone_id_is_a_bool(server):
+    # bool is a subclass of int in Python - True/False would otherwise
+    # silently match phone id 1/0.
+    _set_pending()
+
+    with patch.object(mh_endpoint.pypush_gsa_icloud, "list_trusted_phone_numbers",
+                       return_value=({}, _numbers((1, "+1 •••1234")))) as mock_list:
+        status, body = _post(server, '/auth/apple/resend', {"mode": "sms", "phoneId": True})
+
+    assert status == 400
+    assert body == {"error": "invalid_phone_id"}
+    mock_list.assert_called_once()
+
+
+def test_post_apple_resend_returns_400_when_phone_id_is_not_an_int(server):
+    _set_pending()
+
+    with patch.object(mh_endpoint.pypush_gsa_icloud, "list_trusted_phone_numbers",
+                       return_value=({}, _numbers((1, "+1 •••1234")))):
+        status, body = _post(server, '/auth/apple/resend', {"mode": "sms", "phoneId": "1"})
+
+    assert status == 400
+    assert body == {"error": "invalid_phone_id"}
+
+
 def test_post_apple_resend_returns_400_for_unknown_phone_id(server):
     _set_pending()
 
