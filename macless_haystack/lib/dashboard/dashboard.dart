@@ -379,12 +379,15 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
               ),
             IconButton(
               tooltip: 'Settings',
-              onPressed: () {
-                Navigator.push(
+              onPressed: () async {
+                await Navigator.push(
                   context,
                   MaterialPageRoute(
                       builder: (context) => const PreferencesPage()),
                 );
+                // Settings can log in/out of Apple or repoint the endpoint.
+                if (!mounted) return;
+                _checkAppleSessionStatus();
               },
               icon: const Icon(Icons.settings),
             ),
