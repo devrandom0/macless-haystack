@@ -9,6 +9,7 @@ import 'package:macless_haystack/findMy/find_my_controller.dart';
 import 'package:macless_haystack/findMy/models.dart';
 import 'package:flutter_settings_screens/flutter_settings_screens.dart';
 import 'package:macless_haystack/preferences/user_preferences_model.dart';
+import 'package:macless_haystack/findMy/reports_fetcher.dart';
 
 const accessoryStorageKey = 'ACCESSORIES';
 const historyStorageKey = 'HISTORY';
@@ -57,6 +58,28 @@ class AccessoryRegistry extends ChangeNotifier {
       _accessories = [];
     }
     await loadHistory();
+
+    // Also fetch registered remote devices from the endpoint
+    try {
+      String? url = Settings.getValue<String>(endpointUrl);
+      String user = Settings.getValue<String>(endpointUser, defaultValue: '')!;
+      String pass = Settings.getValue<String>(endpointPass, defaultValue: '')!;
+      if (url != null && url.isNotEmpty) {
+        var remoteDevices = await ReportsFetcher.fetchDevices(url, user, pass);
+        for (var devJson in remoteDevices) {
+          try {
+            var dev = Accessory.fromJson(devJson);
+            if (!_accessories.any((a) => a.id == dev.id || a.hashedPublicKey == dev.hashedPublicKey)) {
+              _accessories.add(dev);
+            }
+          } catch (e) {
+            logger.w('Skipping invalid remote device format: $e');
+          }
+        }
+      }
+    } catch (e) {
+      logger.w('Could not load remote devices from endpoint: $e');
+    }
 
     loading = false;
 

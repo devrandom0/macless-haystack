@@ -29,12 +29,65 @@ class _PreferencesPageState extends State<PreferencesPage> {
             getUrlTile(),
             getUserTile(),
             getPassTile(),
+            getAppleIdTile(),
             getNumberofDaysTile(),
             ListTile(
               title: getAbout(),
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  getAppleIdTile() {
+    return ListTile(
+      leading: const Icon(Icons.apple),
+      title: const Text('Apple Find My Login'),
+      subtitle: const Text('Log into Apple ID via endpoint to fetch account devices'),
+      trailing: ElevatedButton(
+        child: const Text('Login'),
+        onPressed: () => _showAppleLoginDialog(),
+      ),
+    );
+  }
+
+  void _showAppleLoginDialog() {
+    final usernameController = TextEditingController();
+    final passwordController = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Apple ID Login'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: usernameController,
+              decoration: const InputDecoration(labelText: 'Apple ID Email'),
+            ),
+            TextField(
+              controller: passwordController,
+              decoration: const InputDecoration(labelText: 'Password'),
+              obscureText: true,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            child: const Text('Cancel'),
+            onPressed: () => Navigator.of(ctx).pop(),
+          ),
+          ElevatedButton(
+            child: const Text('Sign In'),
+            onPressed: () async {
+              Navigator.of(ctx).pop();
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Logging into Apple ID...')),
+              );
+            },
+          ),
+        ],
       ),
     );
   }
