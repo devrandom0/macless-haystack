@@ -25,21 +25,21 @@
 - Modify: `endpoint/Dockerfile`
 - Test: `endpoint/test_findmy_service.py`
 
-- [ ] Add `findmy` to `endpoint/requirements.txt`.
-- [ ] Create a `FindMyService` helper class wrapping `findmy` account login, 2FA submission, and device/report retrieval.
-- [ ] Write unit tests for `FindMyService` mocking the `findmy` client calls.
-- [ ] Run tests and verify success.
+- [x] Add `findmy` to `endpoint/requirements.txt`.
+- [x] Create a `FindMyService` helper class wrapping `findmy` account login, 2FA submission, and device/report retrieval.
+- [x] Write unit tests for `FindMyService` mocking the `findmy` client calls.
+- [x] Run tests and verify success.
 
 ### Task 2: Backend REST Endpoints for Device Discovery & Auth
 **Files:**
 - Modify: `endpoint/mh_endpoint.py`
 - Test: `endpoint/test_endpoint_api.py`
 
-- [ ] Expose `GET /api/devices` to return all discovered devices and accessories.
-- [ ] Expose `POST /api/auth/login` and `POST /api/auth/2fa` to support signing in via app credentials.
-- [ ] Expose `POST /api/reports` to retrieve location reports for both official devices and DIY keys.
-- [ ] Write integration tests verifying response serialization and error handling.
-- [ ] Run tests and verify success.
+- [x] Expose `GET /api/devices` to return all discovered devices and accessories.
+- [x] Expose `POST /api/auth/login` and `POST /api/auth/2fa` to support signing in via app credentials.
+- [x] Expose `POST /api/reports` to retrieve location reports for both official devices and DIY keys.
+- [x] Write integration tests verifying response serialization and error handling.
+- [x] Run tests and verify success.
 
 ### Task 3: Frontend Client Integration for Account Devices & Map Rendering
 **Files:**
@@ -48,7 +48,7 @@
 - Modify: `macless_haystack/lib/preferences/preferences_page.dart`
 - Test: `macless_haystack/test/accessory/accessory_registry_test.dart`
 
-- [ ] Add Apple ID login and 2FA dialog triggers in `preferences_page.dart`.
-- [ ] Extend `AccessoryRegistry` to load devices from `GET /api/devices` in addition to local JSON imports.
-- [ ] Map discovered Apple devices to `AccessoryModel` items so they render seamlessly on the dashboard and map.
-- [ ] Run Flutter tests and verify success.
+- [x] Add Apple ID login and 2FA dialog triggers in `preferences_page.dart`.
+- [x] Extend `AccessoryRegistry` to load devices from `GET /api/devices` in addition to local JSON imports.
+- [x] Map discovered Apple devices to `AccessoryModel` items so they render seamlessly on the dashboard and map.
+- [x] Run Flutter tests and verify success.
