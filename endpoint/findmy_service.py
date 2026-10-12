@@ -72,11 +72,41 @@ class FindMyService:
             "timestamp": report.timestamp.isoformat() if hasattr(report.timestamp, "isoformat") else str(report.timestamp),
         }
 
+    def list_devices(self) -> List[Dict[str, Any]]:
+        devices_file = os.path.join(os.path.dirname(os.path.abspath(self.storage_path)), "registered_devices.json")
+        if os.path.exists(devices_file):
+            try:
+                with open(devices_file, "r") as f:
+                    return json.load(f)
+            except Exception as e:
+                logger.error("Error reading registered_devices.json: %s", e)
+        return []
+
+    def register_device(self, device_data: Dict[str, Any]) -> bool:
+        devices_file = os.path.join(os.path.dirname(os.path.abspath(self.storage_path)), "registered_devices.json")
+        devices = self.list_devices()
+        device_id = device_data.get("id")
+        updated = False
+        for idx, d in enumerate(devices):
+            if d.get("id") == device_id:
+                devices[idx] = device_data
+                updated = True
+                break
+        if not updated:
+            devices.append(device_data)
+        os.makedirs(os.path.dirname(devices_file), exist_ok=True)
+        with open(devices_file, "w") as f:
+            json.dump(devices, f, indent=2)
+        return True
+
     def fetch_reports_for_key(self, private_key_b64: str) -> List[Dict[str, Any]]:
         if not self._account or self._account.login_state != LoginState.LOGGED_IN:
             return []
-        key = KeyPair.from_b64(private_key_b64)
-        reports = self._account.fetch_location_history(key)
-        if isinstance(reports, list):
-            return [self.format_report(r) for r in reports]
+        try:
+            key = KeyPair.from_b64(private_key_b64)
+            reports = self._account.fetch_location_history(key)
+            if isinstance(reports, list):
+                return [self.format_report(r) for r in reports]
+        except Exception as e:
+            logger.error("Failed to fetch reports for key: %s", e)
         return []
