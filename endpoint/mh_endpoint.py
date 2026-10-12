@@ -23,19 +23,14 @@ from history import crypto
 from history.registry import TrackedDeviceStore
 from history.store import HistoryStore
 from register import apple_cryptography, pypush_gsa_icloud
-<<<<<<< HEAD
 import web_static
-||||||| 0bda271
-=======
 try:
     from findmy_service import FindMyService
 except ImportError:
     from endpoint.findmy_service import FindMyService
->>>>>>> devrandom0/fetch_all_devices
 
 logger = logging.getLogger()
 
-<<<<<<< HEAD
 history_store = None
 tracked_device_store = None
 history_encryption_key = None
@@ -65,13 +60,11 @@ class PendingAppleLogin:
 
 pending_apple_login = None
 apple_session_stale = False
-||||||| 0bda271
-=======
+
 findmy_service = FindMyService(
     anisette_url=mh_config.getAnisetteServer(),
     storage_path=os.path.join(mh_config.getConfigPath(), "findmy_account.json"),
 )
->>>>>>> devrandom0/fetch_all_devices
 
 
 class ServerHandler(BaseHTTPRequestHandler):
@@ -133,7 +126,6 @@ class ServerHandler(BaseHTTPRequestHandler):
             self.end_headers()
             return
 
-<<<<<<< HEAD
         path = urlparse(self.path).path
         if path.startswith('/webapp'):
             self._serve_static(path)
@@ -155,8 +147,8 @@ class ServerHandler(BaseHTTPRequestHandler):
 
         if path == '/auth/apple/status':
             self._handle_get_auth_apple_status()
-||||||| 0bda271
-=======
+            return
+
         if self.path == "/api/status":
             self.send_response(200)
             self.addCORSHeaders()
@@ -173,7 +165,6 @@ class ServerHandler(BaseHTTPRequestHandler):
             self.end_headers()
             devices_data = {"devices": findmy_service.list_devices()}
             self.wfile.write(json.dumps(devices_data).encode())
->>>>>>> devrandom0/fetch_all_devices
             return
 
         self.send_response(200)
