@@ -136,4 +136,49 @@ class ReportsFetcher {
       }
     }
   }
+
+  static Future<List<Map<String, dynamic>>> fetchDevices(
+      String url, String user, String pass) async {
+    String? credentials;
+    if (user.trim().isNotEmpty || pass.trim().isNotEmpty) {
+      credentials = 'Basic ${base64.encode(utf8.encode("$user:$pass"))}';
+    }
+
+    var uri = Uri.parse(url.endsWith('/') ? '${url}api/devices' : '$url/api/devices');
+
+    if (kIsWeb) {
+      Map<String, String> requestHeaders = {
+        "Content-Type": "application/json",
+      };
+      if (credentials != null) {
+        requestHeaders['Authorization'] = credentials;
+      }
+      final response = await http.get(uri, headers: requestHeaders);
+      if (response.statusCode == 200) {
+        var data = jsonDecode(response.body);
+        List rawList = data['devices'] ?? [];
+        return rawList.map((e) => Map<String, dynamic>.from(e)).toList();
+      }
+    } else {
+      var httpClient = HttpClient();
+      try {
+        httpClient.badCertificateCallback =
+            (X509Certificate cert, String host, int port) => true;
+        final request = await httpClient.getUrl(uri);
+        if (credentials != null) {
+          request.headers.set(HttpHeaders.authorizationHeader, credentials);
+        }
+        final response = await request.close();
+        if (response.statusCode == 200) {
+          String body = await response.transform(utf8.decoder).join();
+          var data = jsonDecode(body);
+          List rawList = data['devices'] ?? [];
+          return rawList.map((e) => Map<String, dynamic>.from(e)).toList();
+        }
+      } finally {
+        httpClient.close();
+      }
+    }
+    return [];
+  }
 }

@@ -23,10 +23,19 @@ from history import crypto
 from history.registry import TrackedDeviceStore
 from history.store import HistoryStore
 from register import apple_cryptography, pypush_gsa_icloud
+<<<<<<< HEAD
 import web_static
+||||||| 0bda271
+=======
+try:
+    from findmy_service import FindMyService
+except ImportError:
+    from endpoint.findmy_service import FindMyService
+>>>>>>> devrandom0/fetch_all_devices
 
 logger = logging.getLogger()
 
+<<<<<<< HEAD
 history_store = None
 tracked_device_store = None
 history_encryption_key = None
@@ -56,6 +65,13 @@ class PendingAppleLogin:
 
 pending_apple_login = None
 apple_session_stale = False
+||||||| 0bda271
+=======
+findmy_service = FindMyService(
+    anisette_url=mh_config.getAnisetteServer(),
+    storage_path=os.path.join(mh_config.getConfigPath(), "findmy_account.json"),
+)
+>>>>>>> devrandom0/fetch_all_devices
 
 
 class ServerHandler(BaseHTTPRequestHandler):
@@ -72,10 +88,8 @@ class ServerHandler(BaseHTTPRequestHandler):
 
     def addCORSHeaders(self):
         self.send_header('Access-Control-Allow-Origin', '*')
-        self.send_header('Access-Control-Allow-Methods', 'GET, OPTIONS')
-        self.send_header("Access-Control-Allow-Headers", "X-Requested-With")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type")
-        self.send_header("Access-Control-Allow-Headers", "Authorization")
+        self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+        self.send_header("Access-Control-Allow-Headers", "X-Requested-With, Content-Type, Authorization")
         self.send_header("Access-Control-Allow-Private-Network","true")
 
     def _send_json(self, status, body):
@@ -119,6 +133,7 @@ class ServerHandler(BaseHTTPRequestHandler):
             self.end_headers()
             return
 
+<<<<<<< HEAD
         path = urlparse(self.path).path
         if path.startswith('/webapp'):
             self._serve_static(path)
@@ -140,6 +155,25 @@ class ServerHandler(BaseHTTPRequestHandler):
 
         if path == '/auth/apple/status':
             self._handle_get_auth_apple_status()
+||||||| 0bda271
+=======
+        if self.path == "/api/status":
+            self.send_response(200)
+            self.addCORSHeaders()
+            self.send_header('Content-Type', 'application/json')
+            self.end_headers()
+            status_data = {"status": "ok", "findmy": findmy_service.get_status()}
+            self.wfile.write(json.dumps(status_data).encode())
+            return
+
+        if self.path == "/api/devices":
+            self.send_response(200)
+            self.addCORSHeaders()
+            self.send_header('Content-Type', 'application/json')
+            self.end_headers()
+            devices_data = {"devices": findmy_service.list_devices()}
+            self.wfile.write(json.dumps(devices_data).encode())
+>>>>>>> devrandom0/fetch_all_devices
             return
 
         self.send_response(200)
@@ -196,7 +230,6 @@ class ServerHandler(BaseHTTPRequestHandler):
             content_len = int(self.headers.get('content-length', 0) or 0)
 
         post_body = self.rfile.read(content_len)
-
         path = urlparse(self.path).path
         if path == '/history/devices':
             try:
@@ -241,8 +274,52 @@ class ServerHandler(BaseHTTPRequestHandler):
             self._handle_post_auth_apple_logout()
             return
 
-        logger.debug('Getting with post: ' + str(post_body))
+        logger.debug('POST request to %s', self.path)
         body = json.loads(post_body)
+
+        if self.path == "/api/auth/login":
+            res = findmy_service.login(body.get("username", ""), body.get("password", ""))
+            self.send_response(200)
+            self.addCORSHeaders()
+            self.send_header('Content-Type', 'application/json')
+            self.end_headers()
+            self.wfile.write(json.dumps(res).encode())
+            return
+
+        if self.path == "/api/auth/2fa":
+            res = findmy_service.submit_2fa(body.get("code", ""), method=body.get("method", "trusted_device"))
+            self.send_response(200)
+            self.addCORSHeaders()
+            self.send_header('Content-Type', 'application/json')
+            self.end_headers()
+            self.wfile.write(json.dumps(res).encode())
+            return
+
+        if self.path == "/api/devices":
+            success = findmy_service.register_device(body)
+            self.send_response(200)
+            self.addCORSHeaders()
+            self.send_header('Content-Type', 'application/json')
+            self.end_headers()
+            self.wfile.write(json.dumps({"success": success}).encode())
+            return
+
+        if self.path == "/api/reports":
+            private_key = body.get("private_key")
+            if not private_key:
+                self.send_response(400)
+                self.addCORSHeaders()
+                self.send_header('Content-Type', 'application/json')
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": "Missing required field: private_key"}).encode())
+                return
+            reports = findmy_service.fetch_reports_for_key(private_key)
+            self.send_response(200)
+            self.addCORSHeaders()
+            self.send_header('Content-Type', 'application/json')
+            self.end_headers()
+            self.wfile.write(json.dumps({"reports": reports}).encode())
+            return
 
         days = body.get('days', 7)
         force = body.get('force', False)

@@ -4,3 +4,4 @@ pbkdf2
 srp
 pycryptodome
 configparser
+findmy>=0.10.2

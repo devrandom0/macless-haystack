@@ -15,6 +15,7 @@ import 'package:macless_haystack/findMy/reports_fetcher.dart' show AppleSessionE
 import 'package:flutter_settings_screens/flutter_settings_screens.dart';
 import 'package:macless_haystack/notifications/battery_notification_service.dart';
 import 'package:macless_haystack/preferences/user_preferences_model.dart';
+import 'package:macless_haystack/findMy/reports_fetcher.dart';
 
 const accessoryStorageKey = 'ACCESSORIES';
 const historyStorageKey = 'HISTORY';
@@ -171,6 +172,28 @@ class AccessoryRegistry extends ChangeNotifier {
     }
     await loadHistory();
 
+    // Also fetch registered remote devices from the endpoint
+    try {
+      String? url = Settings.getValue<String>(endpointUrl);
+      String user = Settings.getValue<String>(endpointUser, defaultValue: '')!;
+      String pass = Settings.getValue<String>(endpointPass, defaultValue: '')!;
+      if (url != null && url.isNotEmpty) {
+        var remoteDevices = await ReportsFetcher.fetchDevices(url, user, pass);
+        for (var devJson in remoteDevices) {
+          try {
+            var dev = Accessory.fromJson(devJson);
+            if (!_accessories.any((a) => a.id == dev.id || a.hashedPublicKey == dev.hashedPublicKey)) {
+              _accessories.add(dev);
+            }
+          } catch (e) {
+            logger.w('Skipping invalid remote device format: $e');
+          }
+        }
+      }
+    } catch (e) {
+      logger.w('Could not load remote devices from endpoint: $e');
+    }
+
     loading = false;
 
     notifyListeners();
@@ -298,20 +321,28 @@ class AccessoryRegistry extends ChangeNotifier {
     String? url, {
     required bool force,
   }) async {
-    var keyPair = await FindMyController.getKeyPair(accessory.hashedPublicKey);
+    try {
+      var keyPair = await FindMyController.getKeyPair(accessory.hashedPublicKey);
 
-    List<FindMyKeyPair> hashedPublicKeys =
-        await Stream.fromIterable(accessory.additionalKeys)
-            .asyncMap(
-              (hashedPublicKey) => FindMyController.getKeyPair(hashedPublicKey),
-            )
-            .toList();
+      List<FindMyKeyPair> hashedPublicKeys =
+          await Stream.fromIterable(accessory.additionalKeys)
+              .asyncMap(
+                (hashedPublicKey) => FindMyController.getKeyPair(hashedPublicKey),
+              )
+              .toList();
 
-    hashedPublicKeys.add(keyPair);
+      hashedPublicKeys.add(keyPair);
 
-    return catchingExpiredAppleSession(
-      () => FindMyController.computeResults(hashedPublicKeys, url, force: force),
-    );
+      return catchingExpiredAppleSession(
+        () => FindMyController.computeResults(hashedPublicKeys, url, force: force),
+      );
+    } catch (e) {
+      return (
+        reports: <FindMyLocationReport>[],
+        newCount: 0,
+        appleSessionStale: null,
+      );
+    }
   }
 
   /// Fetches new location reports and matches them to their accessory.
@@ -331,6 +362,7 @@ class AccessoryRegistry extends ChangeNotifier {
 
     // request location updates for all accessories simultaneously
     String? url = Settings.getValue<String>(endpointUrl);
+    List<Accessory> accessoriesToQuery = [];
     for (var i = 0; i < currentAccessories.length; i++) {
       var accessory = currentAccessories.elementAt(i);
       runningLocationRequests.add(
