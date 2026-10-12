@@ -111,18 +111,22 @@ class ReportsFetcher {
       }
     } else {
       var httpClient = HttpClient();
-      httpClient.badCertificateCallback =
-          (X509Certificate cert, String host, int port) => true;
-      final request = await httpClient.getUrl(uri);
-      if (credentials != null) {
-        request.headers.set(HttpHeaders.authorizationHeader, credentials);
-      }
-      final response = await request.close();
-      if (response.statusCode == 200) {
-        String body = await response.transform(utf8.decoder).join();
-        var data = jsonDecode(body);
-        List rawList = data['devices'] ?? [];
-        return rawList.map((e) => Map<String, dynamic>.from(e)).toList();
+      try {
+        httpClient.badCertificateCallback =
+            (X509Certificate cert, String host, int port) => true;
+        final request = await httpClient.getUrl(uri);
+        if (credentials != null) {
+          request.headers.set(HttpHeaders.authorizationHeader, credentials);
+        }
+        final response = await request.close();
+        if (response.statusCode == 200) {
+          String body = await response.transform(utf8.decoder).join();
+          var data = jsonDecode(body);
+          List rawList = data['devices'] ?? [];
+          return rawList.map((e) => Map<String, dynamic>.from(e)).toList();
+        }
+      } finally {
+        httpClient.close();
       }
     }
     return [];

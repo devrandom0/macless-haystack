@@ -108,9 +108,12 @@ class FindMyController {
   /// corresponding [FindMyKeyPair] from the local [FlutterSecureStorage].
   static Future<FindMyKeyPair> getKeyPair(String base64HashedPublicKey) async {
     final privateKeyBase64 = await _storage.read(key: base64HashedPublicKey);
+    if (privateKeyBase64 == null) {
+      throw FormatException('No private key found for key $base64HashedPublicKey');
+    }
 
     ECPrivateKey privateKey = ECPrivateKey(
-        pc_utils.decodeBigIntWithSign(1, base64Decode(privateKeyBase64!)),
+        pc_utils.decodeBigIntWithSign(1, base64Decode(privateKeyBase64)),
         _curveParams);
     ECPublicKey publicKey = _derivePublicKey(privateKey);
 

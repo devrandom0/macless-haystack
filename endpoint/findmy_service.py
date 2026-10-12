@@ -28,39 +28,60 @@ class FindMyService:
         if not self._account:
             return {"logged_in": False, "state": "LOGGED_OUT"}
         is_logged_in = self._account.login_state == LoginState.LOGGED_IN
+        account_name = None
+        first_name = None
+        last_name = None
+        if is_logged_in:
+            try:
+                account_name = self._account.account_name
+                first_name = self._account.first_name
+                last_name = self._account.last_name
+            except Exception:
+                pass
         return {
             "logged_in": is_logged_in,
             "state": str(self._account.login_state.name if hasattr(self._account.login_state, "name") else self._account.login_state),
-            "account_name": self._account.account_name,
-            "first_name": self._account.first_name,
-            "last_name": self._account.last_name,
+            "account_name": account_name,
+            "first_name": first_name,
+            "last_name": last_name,
         }
 
     def login(self, username: str, password: str) -> Dict[str, Any]:
-        self._account = AppleAccount(self._provider)
-        state = self._account.login(username, password)
-        state_str = state.name if hasattr(state, "name") else str(state)
-        if state == LoginState.LOGGED_IN:
-            os.makedirs(os.path.dirname(os.path.abspath(self.storage_path)), exist_ok=True)
-            self._account.to_json(self.storage_path)
-            return {"logged_in": True, "state": state_str}
-        return {"logged_in": False, "state": state_str}
+        try:
+            self._account = AppleAccount(self._provider)
+            state = self._account.login(username, password)
+            state_str = state.name if hasattr(state, "name") else str(state)
+            if state == LoginState.LOGGED_IN:
+                os.makedirs(os.path.dirname(os.path.abspath(self.storage_path)), exist_ok=True)
+                self._account.to_json(self.storage_path)
+                return {"logged_in": True, "state": state_str}
+            return {"logged_in": False, "state": state_str}
+        except Exception as e:
+            logger.error("Login failed: %s", e)
+            return {"logged_in": False, "state": "ERROR", "error": str(e)}
 
     def submit_2fa(self, code: str, method: str = "trusted_device") -> Dict[str, Any]:
         if not self._account:
             return {"success": False, "error": "No account login in progress"}
-        if method == "sms":
-            methods = self._account.get_2fa_methods()
-            phone_id = methods[0].phone_number_id if methods else 0
-            state = self._account.sms_2fa_submit(phone_id, code)
-        else:
-            state = self._account.td_2fa_submit(code)
-        state_str = state.name if hasattr(state, "name") else str(state)
-        if state == LoginState.LOGGED_IN:
-            os.makedirs(os.path.dirname(os.path.abspath(self.storage_path)), exist_ok=True)
-            self._account.to_json(self.storage_path)
-            return {"success": True, "state": state_str}
-        return {"success": False, "state": state_str}
+        try:
+            if method == "sms":
+                methods = self._account.get_2fa_methods()
+                sms_methods = [m for m in methods if hasattr(m, "phone_number_id")]
+                if not sms_methods:
+                    return {"success": False, "error": "No SMS 2FA method available"}
+                phone_id = sms_methods[0].phone_number_id
+                state = self._account.sms_2fa_submit(phone_id, code)
+            else:
+                state = self._account.td_2fa_submit(code)
+            state_str = state.name if hasattr(state, "name") else str(state)
+            if state == LoginState.LOGGED_IN:
+                os.makedirs(os.path.dirname(os.path.abspath(self.storage_path)), exist_ok=True)
+                self._account.to_json(self.storage_path)
+                return {"success": True, "state": state_str}
+            return {"success": False, "state": state_str}
+        except Exception as e:
+            logger.error("2FA submission failed: %s", e)
+            return {"success": False, "error": str(e)}
 
     def format_report(self, report: LocationReport) -> Dict[str, Any]:
         return {
@@ -83,12 +104,14 @@ class FindMyService:
         return []
 
     def register_device(self, device_data: Dict[str, Any]) -> bool:
+        if not isinstance(device_data, dict) or not device_data.get("id"):
+            return False
         devices_file = os.path.join(os.path.dirname(os.path.abspath(self.storage_path)), "registered_devices.json")
         devices = self.list_devices()
-        device_id = device_data.get("id")
+        device_id = str(device_data["id"])
         updated = False
         for idx, d in enumerate(devices):
-            if d.get("id") == device_id:
+            if str(d.get("id")) == device_id:
                 devices[idx] = device_data
                 updated = True
                 break

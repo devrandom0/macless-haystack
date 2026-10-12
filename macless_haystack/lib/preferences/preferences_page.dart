@@ -1,5 +1,8 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 import 'package:provider/provider.dart';
+import 'package:macless_haystack/accessory/accessory_registry.dart';
 import 'package:macless_haystack/location/location_model.dart';
 import 'package:macless_haystack/preferences/user_preferences_model.dart';
 import 'package:flutter_settings_screens/flutter_settings_screens.dart';
@@ -81,10 +84,113 @@ class _PreferencesPageState extends State<PreferencesPage> {
           ElevatedButton(
             child: const Text('Sign In'),
             onPressed: () async {
+              final user = usernameController.text.trim();
+              final pass = passwordController.text;
               Navigator.of(ctx).pop();
+              if (user.isEmpty || pass.isEmpty) return;
+
               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(content: Text('Logging into Apple ID...')),
               );
+
+              String? url = Settings.getValue<String>(endpointUrl);
+              if (url == null || url.isEmpty) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Please configure the endpoint URL first')),
+                );
+                return;
+              }
+
+              try {
+                final loginUri = Uri.parse(url.endsWith('/') ? '${url}api/auth/login' : '$url/api/auth/login');
+                final response = await http.post(
+                  loginUri,
+                  headers: {'Content-Type': 'application/json'},
+                  body: jsonEncode({'username': user, 'password': pass}),
+                );
+                final res = jsonDecode(response.body);
+                if (res['state'] == 'REQUIRE_2FA') {
+                  if (mounted) _show2FADialog(url);
+                } else if (res['logged_in'] == true) {
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Apple ID Login Successful! Refreshing devices...')),
+                    );
+                    Provider.of<AccessoryRegistry>(context, listen: false).loadAccessories();
+                  }
+                } else {
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('Login failed: ${res['error'] ?? res['state']}')),
+                    );
+                  }
+                }
+              } catch (e) {
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Error connecting to endpoint: $e')),
+                  );
+                }
+              }
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _show2FADialog(String url) {
+    final codeController = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Enter 2FA Code'),
+        content: TextField(
+          controller: codeController,
+          decoration: const InputDecoration(labelText: 'Verification Code'),
+          keyboardType: TextInputType.number,
+        ),
+        actions: [
+          TextButton(
+            child: const Text('Cancel'),
+            onPressed: () => Navigator.of(ctx).pop(),
+          ),
+          ElevatedButton(
+            child: const Text('Submit'),
+            onPressed: () async {
+              final code = codeController.text.trim();
+              Navigator.of(ctx).pop();
+              if (code.isEmpty) return;
+
+              try {
+                final auth2faUri = Uri.parse(url.endsWith('/') ? '${url}api/auth/2fa' : '$url/api/auth/2fa');
+                final response = await http.post(
+                  auth2faUri,
+                  headers: {'Content-Type': 'application/json'},
+                  body: jsonEncode({'code': code, 'method': 'trusted_device'}),
+                );
+                final res = jsonDecode(response.body);
+                if (res['success'] == true) {
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('2FA Verified! Refreshing devices...')),
+                    );
+                    Provider.of<AccessoryRegistry>(context, listen: false).loadAccessories();
+                  }
+                } else {
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('2FA verification failed: ${res['error'] ?? res['state']}')),
+                    );
+                  }
+                }
+              } catch (e) {
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Error submitting 2FA: $e')),
+                  );
+                }
+              }
             },
           ),
         ],

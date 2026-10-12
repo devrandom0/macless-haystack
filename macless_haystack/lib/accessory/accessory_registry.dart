@@ -110,30 +110,36 @@ class AccessoryRegistry extends ChangeNotifier {
 
     // request location updates for all accessories simultaneously
     String? url = Settings.getValue<String>(endpointUrl);
+    List<Accessory> accessoriesToQuery = [];
     for (var i = 0; i < currentAccessories.length; i++) {
       var accessory = currentAccessories.elementAt(i);
 
-      var keyPair =
-          await FindMyController.getKeyPair(accessory.hashedPublicKey);
+      try {
+        var keyPair =
+            await FindMyController.getKeyPair(accessory.hashedPublicKey);
 
-      List<FindMyKeyPair> hashedPublicKeys =
-          await Stream.fromIterable(accessory.additionalKeys)
-              .asyncMap((hashedPublicKey) =>
-                  FindMyController.getKeyPair(hashedPublicKey))
-              .toList();
+        List<FindMyKeyPair> hashedPublicKeys =
+            await Stream.fromIterable(accessory.additionalKeys)
+                .asyncMap((hashedPublicKey) =>
+                    FindMyController.getKeyPair(hashedPublicKey))
+                .toList();
 
-      hashedPublicKeys.add(keyPair);
+        hashedPublicKeys.add(keyPair);
 
-      var locationRequest =
-          FindMyController.computeResults(hashedPublicKeys, url);
-      runningLocationRequests.add(locationRequest);
+        var locationRequest =
+            FindMyController.computeResults(hashedPublicKeys, url);
+        runningLocationRequests.add(locationRequest);
+        accessoriesToQuery.add(accessory);
+      } catch (e) {
+        logger.d('Accessory ${accessory.name} has no local private key, skipping local decrypt fetch');
+      }
     }
 
     var reportsForAccessories = await Future.wait(runningLocationRequests);
     int out = 0;
     Map<Accessory, Future<List<Pair<dynamic, dynamic>>>> historyEntries = {};
-    for (var i = 0; i < currentAccessories.length; i++) {
-      var accessory = currentAccessories.elementAt(i);
+    for (var i = 0; i < accessoriesToQuery.length; i++) {
+      var accessory = accessoriesToQuery.elementAt(i);
       var reports = reportsForAccessories.elementAt(i);
       out += reports.length;
       logger.i(

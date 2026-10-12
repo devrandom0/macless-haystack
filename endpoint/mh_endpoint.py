@@ -103,7 +103,7 @@ class ServerHandler(BaseHTTPRequestHandler):
             content_len = int(self.headers.get('content-length'))
 
         post_body = self.rfile.read(content_len)
-        logger.debug('Getting with post: ' + str(post_body))
+        logger.debug('POST request to %s', self.path)
         body = json.loads(post_body)
 
         if self.path == "/api/auth/login":
@@ -135,14 +135,20 @@ class ServerHandler(BaseHTTPRequestHandler):
 
         if self.path == "/api/reports":
             private_key = body.get("private_key")
-            if private_key:
-                reports = findmy_service.fetch_reports_for_key(private_key)
-                self.send_response(200)
+            if not private_key:
+                self.send_response(400)
                 self.addCORSHeaders()
                 self.send_header('Content-Type', 'application/json')
                 self.end_headers()
-                self.wfile.write(json.dumps({"reports": reports}).encode())
+                self.wfile.write(json.dumps({"error": "Missing required field: private_key"}).encode())
                 return
+            reports = findmy_service.fetch_reports_for_key(private_key)
+            self.send_response(200)
+            self.addCORSHeaders()
+            self.send_header('Content-Type', 'application/json')
+            self.end_headers()
+            self.wfile.write(json.dumps({"reports": reports}).encode())
+            return
 
         if "days" in body:
             days = body['days']
